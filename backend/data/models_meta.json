@@ -1,0 +1,13 @@
+[
+  {
+    "id": "strata-main",
+    "name": "地层三维模型",
+    "type": "stratum",
+    "version": "1.0",
+    "format": "glb",
+    "description": "煤系地层完整三维模型",
+    "fileName": "model_20251103_160811.glb",
+    "fileUrl": "/static/models/strata/model_20251103_160811.glb",
+    "bbox": null
+  }
+]

@@ -1,0 +1,57 @@
+[
+  {
+    "id": "wf-001",
+    "code": "2201",
+    "name": "2201综采工作面",
+    "status": "开采中",
+    "description": "主采煤层，当前正在生产",
+    "modelId": "wf-model-001",
+    "length": 200,
+    "width": 120,
+    "coalSeam": "8#煤"
+  },
+  {
+    "id": "wf-002",
+    "code": "2202",
+    "name": "2202综采工作面",
+    "status": "已完成",
+    "description": "已完成采掘，现进行封闭处理",
+    "modelId": "wf-model-002",
+    "length": 180,
+    "width": 110,
+    "coalSeam": "8#煤"
+  },
+  {
+    "id": "wf-003",
+    "code": "2301",
+    "name": "2301综掘工作面",
+    "status": "规划中",
+    "description": "下一阶段开采计划",
+    "modelId": "wf-model-003",
+    "length": 220,
+    "width": 130,
+    "coalSeam": "9#煤"
+  },
+  {
+    "id": "wf-004",
+    "code": "2101",
+    "name": "2101综采工作面",
+    "status": "已完成",
+    "description": "历史生产面，已关闭",
+    "modelId": "wf-model-004",
+    "length": 160,
+    "width": 100,
+    "coalSeam": "7#煤"
+  },
+  {
+    "id": "wf-005",
+    "code": "2302",
+    "name": "2302综掘工作面",
+    "status": "开采中",
+    "description": "掘进中，预计下季度完成",
+    "modelId": null,
+    "length": 240,
+    "width": 140,
+    "coalSeam": "9#煤"
+  }
+]

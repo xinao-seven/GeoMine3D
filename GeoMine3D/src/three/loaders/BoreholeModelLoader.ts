@@ -1,0 +1,36 @@
+import * as THREE from 'three'
+import type { BoreholeItem } from '@/types'
+
+/**
+ * 用几何体在前端生成简化钻孔柱体表示。
+ * 坐标系：1 unit = 1 meter，钻孔范围约 5km × 5km。
+ */
+export class BoreholeModelLoader {
+  createBoreholeObject(borehole: BoreholeItem, position?: { x: number; z: number }): THREE.Group {
+    const group = new THREE.Group()
+    group.name = `borehole_${borehole.id}`
+    group.userData = { id: borehole.id, name: borehole.name, type: 'borehole', boreholeData: borehole }
+
+    const depth = Math.max(borehole.totalDepth, 100)
+    const radius = 30
+    const geometry = new THREE.CylinderGeometry(radius, radius, depth, 8)
+    const material = new THREE.MeshLambertMaterial({
+      color: 0x4488ff,
+    })
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.position.y = -depth / 2
+    group.add(mesh)
+
+    // 顶部标记球（地表位置）
+    const markerGeom = new THREE.SphereGeometry(50, 8, 8)
+    const markerMat = new THREE.MeshLambertMaterial({ color: 0x00c8ff })
+    const marker = new THREE.Mesh(markerGeom, markerMat)
+    group.add(marker)
+
+    if (position) {
+      group.position.set(position.x, 0, position.z)
+    }
+
+    return group
+  }
+}
