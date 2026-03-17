@@ -25,7 +25,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, onActivated, onDeactivated, watch } from 'vue'
 import * as THREE from 'three'
 import { SceneManager } from '@/three/core/SceneManager'
 import { CameraManager } from '@/three/core/CameraManager'
@@ -65,6 +65,7 @@ let selectionManager: SelectionManager
 let clipTool: ClipTool
 let animFrameId: number
 let resizeObserver: ResizeObserver
+let isAnimating = false
 
 async function initScene() {
     if (!canvasRef.value || !containerRef.value) return
@@ -109,13 +110,26 @@ async function initScene() {
     })
     resizeObserver.observe(containerRef.value)
 
-    animate()
+    startAnimate()
 }
 
 function animate() {
+    if (!isAnimating) return
     animFrameId = requestAnimationFrame(animate)
     controlsManager.update()
     rendererManager.render(sceneManager.scene, cameraManager.camera)
+}
+
+function startAnimate() {
+    if (isAnimating) return
+    isAnimating = true
+    animate()
+}
+
+function stopAnimate() {
+    if (!isAnimating) return
+    isAnimating = false
+    cancelAnimationFrame(animFrameId)
 }
 
 async function loadModelByType(type: 'stratum' | 'borehole' | 'workingface') {
@@ -135,7 +149,7 @@ async function loadModelByType(type: 'stratum' | 'borehole' | 'workingface') {
         if (type === 'borehole') {
             await loadBoreholeModels()
         }
-
+        sceneManager.removeGrid() // 模型加载后移除辅助网格
         sceneStore.setModelStatus(type, { loaded: true, loading: false })
         fitCameraToLoadedModels()
     } catch (err) {
@@ -321,8 +335,20 @@ onMounted(() => {
     initScene()
 })
 
+onActivated(() => {
+    startAnimate()
+    if (!containerRef.value) return
+    const { width, height } = containerRef.value.getBoundingClientRect()
+    rendererManager?.resize(width, height)
+    cameraManager?.updateAspect(width, height)
+})
+
+onDeactivated(() => {
+    stopAnimate()
+})
+
 onUnmounted(() => {
-    cancelAnimationFrame(animFrameId)
+    stopAnimate()
     resizeObserver?.disconnect()
     selectionManager?.dispose()
     controlsManager?.dispose()

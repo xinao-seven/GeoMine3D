@@ -26,6 +26,13 @@ export interface LayerFrequencyStats {
   values: number[]
 }
 
+export interface BoreholeXYRawStats {
+  items: Array<{ id: string; name: string; x: number; y: number; z: number }>
+  labels: string[]
+  xValues: number[]
+  yValues: number[]
+}
+
 export interface DashboardSummary {
   modelCount: number
   boreholeCount: number

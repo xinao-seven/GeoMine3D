@@ -110,6 +110,12 @@ class AnalysisLayerFrequencyView(View):
 
 
 @method_decorator(csrf_exempt, name='dispatch')
+class AnalysisBoreholeXYRawView(View):
+    def get(self, request):
+        return success(analysis_service.get_borehole_xy_positions_raw())
+
+
+@method_decorator(csrf_exempt, name='dispatch')
 class DashboardSummaryView(View):
     def get(self, request):
         return success(analysis_service.get_dashboard_summary())

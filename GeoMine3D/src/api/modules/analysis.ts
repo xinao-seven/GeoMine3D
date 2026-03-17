@@ -5,6 +5,7 @@ import type {
   WorkingFaceStatusStats,
   BoreholeCountStats,
   LayerFrequencyStats,
+  BoreholeXYRawStats,
   DashboardSummary,
 } from '@/types'
 
@@ -26,6 +27,10 @@ export function getBoreholeCountStats(): Promise<BoreholeCountStats> {
 
 export function getLayerFrequencyStats(): Promise<LayerFrequencyStats> {
   return request.get('/analysis/layer-frequency')
+}
+
+export function getBoreholeXYRawStats(): Promise<BoreholeXYRawStats> {
+  return request.get('/analysis/borehole-xy-raw')
 }
 
 export function getDashboardSummary(): Promise<DashboardSummary> {

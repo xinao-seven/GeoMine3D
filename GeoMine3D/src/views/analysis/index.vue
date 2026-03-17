@@ -4,28 +4,33 @@
             <!-- 地层厚度分布 -->
             <div class="chart-card">
                 <div class="chart-card-title">地层厚度分布（均值）</div>
-                <StatsChart :option="thicknessOption" :loading="loading.thickness" @item-click="onThicknessClick"
-                    style="height: 240px" />
+                <div class="chart-body">
+                    <StatsChart :option="thicknessOption" :loading="loading.thickness" @item-click="onThicknessClick" />
+                </div>
             </div>
 
             <!-- 钻孔总深度分布 -->
             <div class="chart-card">
                 <div class="chart-card-title">钻孔总深度分布</div>
-                <StatsChart :option="depthOption" :loading="loading.depth" @item-click="onDepthClick"
-                    style="height: 240px" />
+                <div class="chart-body">
+                    <StatsChart :option="depthOption" :loading="loading.depth" @item-click="onDepthClick" />
+                </div>
             </div>
 
-            <!-- 工作面状态统计 -->
+            <!-- 钻孔位置散点图 -->
             <div class="chart-card">
-                <div class="chart-card-title">工作面状态统计</div>
-                <StatsChart :option="wfStatusOption" :loading="loading.wfStatus" @item-click="onWfStatusClick"
-                    style="height: 240px" />
+                <div class="chart-card-title">钻孔位置散点图（原始 X-Y）</div>
+                <div class="chart-body">
+                    <StatsChart :option="boreholeLocationOption" :loading="loading.boreholeLocation" @item-click="onBoreholeLocationClick" />
+                </div>
             </div>
 
             <!-- 地层频次统计 -->
             <div class="chart-card">
                 <div class="chart-card-title">地层出现频次</div>
-                <StatsChart :option="layerFreqOption" :loading="loading.layerFreq" style="height: 240px" />
+                <div class="chart-body">
+                    <StatsChart :option="layerFreqOption" :loading="loading.layerFreq" />
+                </div>
             </div>
         </div>
     </PageContainer>
@@ -46,11 +51,11 @@ const router = useRouter()
 const analysisStore = useAnalysisStore()
 const sceneStore = useSceneStore()
 
-const loading = ref({ thickness: false, depth: false, wfStatus: false, layerFreq: false })
+const loading = ref({ thickness: false, depth: false, boreholeLocation: false, layerFreq: false })
 
 const thicknessOption = ref<ChartOption>({})
 const depthOption = ref<ChartOption>({})
-const wfStatusOption = ref<ChartOption>({})
+const boreholeLocationOption = ref<ChartOption>({})
 const layerFreqOption = ref<ChartOption>({})
 
 const BASE_CHART_STYLE = {
@@ -92,25 +97,106 @@ async function loadDepth() {
     }
 }
 
-async function loadWfStatus() {
-    loading.value.wfStatus = true
+async function loadBoreholeLocation() {
+    loading.value.boreholeLocation = true
     try {
-        const data = await analysisApi.getWorkingFaceStats()
-        wfStatusOption.value = {
+        const data = await analysisApi.getBoreholeXYRawStats()
+        const points = data.items.map(item => ({
+            name: item.name,
+            id: item.id,
+            value: [item.x, item.y, item.z],
+        }))
+
+        const xValues = points.map(p => p.value[0])
+        const yValues = points.map(p => p.value[1])
+        const xMin = Math.min(...xValues)
+        const xMax = Math.max(...xValues)
+        const yMin = Math.min(...yValues)
+        const yMax = Math.max(...yValues)
+        const xSpan = xMax - xMin
+        const ySpan = yMax - yMin
+        const xPadding = xSpan > 0 ? xSpan * 0.08 : 10
+        const yPadding = ySpan > 0 ? ySpan * 0.08 : 10
+
+        boreholeLocationOption.value = {
             ...BASE_CHART_STYLE,
-            tooltip: { trigger: 'item', backgroundColor: '#0d1f3c', borderColor: '#1e3a5f', textStyle: { color: '#e8f4ff' } },
-            legend: { orient: 'vertical', right: '5%', textStyle: { color: '#8ab4d4' } },
-            series: [{
-                type: 'pie',
-                radius: ['40%', '70%'],
-                center: ['40%', '50%'],
-                data: data.items.map(i => ({ name: i.status, value: i.count })),
-                itemStyle: { borderColor: '#0a1628', borderWidth: 2 },
-                label: { color: '#e8f4ff' },
-            }],
+            tooltip: {
+                trigger: 'item',
+                backgroundColor: '#0d1f3c',
+                borderColor: '#1e3a5f',
+                textStyle: { color: '#e8f4ff' },
+                formatter: (params: any) => {
+                    const [x, y, z] = params.value
+                    return `${params.name}<br/>X: ${x.toFixed(2)}<br/>Y: ${y.toFixed(2)}<br/>Z(高程): ${z.toFixed(2)}`
+                },
+            },
+            xAxis: {
+                type: 'value',
+                name: 'X (m)',
+                min: xMin - xPadding,
+                max: xMax + xPadding,
+                nameTextStyle: { color: '#8ab4d4' },
+                axisLabel: {
+                    color: '#8ab4d4',
+                    formatter: (value: number) => Number(value).toExponential(2),
+                },
+                axisLine: { lineStyle: { color: '#1e3a5f' } },
+                splitLine: { lineStyle: { color: 'rgba(30,58,95,0.5)' } },
+            },
+            yAxis: {
+                type: 'value',
+                name: 'Y (m)',
+                min: yMin - yPadding,
+                max: yMax + yPadding,
+                nameTextStyle: { color: '#8ab4d4' },
+                axisLabel: {
+                    color: '#8ab4d4',
+                    formatter: (value: number) => Number(value).toExponential(2),
+                },
+                axisLine: { lineStyle: { color: '#1e3a5f' } },
+                splitLine: { lineStyle: { color: 'rgba(30,58,95,0.5)' } },
+            },
+            grid: { left: 60, right: 20, top: 30, bottom: 70 },
+            dataZoom: [
+                {
+                    type: 'inside',
+                    xAxisIndex: 0,
+                    yAxisIndex: 0,
+                    filterMode: 'none',
+                },
+                {
+                    type: 'slider',
+                    xAxisIndex: 0,
+                    filterMode: 'none',
+                    height: 14,
+                    bottom: 18,
+                    borderColor: '#1e3a5f',
+                    fillerColor: 'rgba(0, 200, 255, 0.2)',
+                    textStyle: { color: '#8ab4d4' },
+                },
+                {
+                    type: 'slider',
+                    yAxisIndex: 0,
+                    filterMode: 'none',
+                    width: 14,
+                    right: 4,
+                    borderColor: '#1e3a5f',
+                    fillerColor: 'rgba(0, 200, 255, 0.2)',
+                    textStyle: { color: '#8ab4d4' },
+                },
+            ],
+            series: [
+                {
+                    type: 'scatter',
+                    data: points,
+                    symbolSize: 10,
+                    itemStyle: { color: '#ee6666' },
+                    emphasis: { itemStyle: { color: '#ff9f43' } },
+                },
+            ],
         }
     } finally {
-        loading.value.wfStatus = false
+        loading.value.boreholeLocation = false
     }
 }
 
@@ -144,14 +230,18 @@ function onDepthClick(params: any) {
     router.push('/borehole-management')
 }
 
-function onWfStatusClick(params: any) {
-    ElMessage.info(`工作面状态: ${params.name}，共 ${params.value} 个`)
+function onBoreholeLocationClick(params: any) {
+    if (!params?.data?.id) return
+    analysisStore.setActiveLinkItem({ type: 'borehole', value: params.name })
+    sceneStore.locateTo({ type: 'borehole', id: String(params.data.id), name: params.name })
+    router.push('/dashboard')
+    ElMessage.success(`已定位到钻孔: ${params.name}`)
 }
 
 onMounted(() => {
     loadThickness()
     loadDepth()
-    loadWfStatus()
+    loadBoreholeLocation()
     loadLayerFreq()
 })
 </script>
@@ -172,6 +262,7 @@ onMounted(() => {
     padding: 12px 16px;
     display: flex;
     flex-direction: column;
+    min-height: 0;
 }
 
 .chart-card-title {
@@ -180,5 +271,14 @@ onMounted(() => {
     color: var(--color-text-secondary);
     margin-bottom: 8px;
     flex-shrink: 0;
+}
+
+.chart-body {
+    flex: 1;
+    min-height: 0;
+}
+
+.chart-body :deep(.stats-chart) {
+    height: 100%;
 }
 </style>

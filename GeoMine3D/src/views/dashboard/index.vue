@@ -40,6 +40,10 @@ import SearchPanel from '@/components/panels/SearchPanel.vue'
 import BoreholeChart from '@/components/charts/BoreholeChart.vue'
 import { useSceneStore, useBoreholeStore } from '@/stores'
 
+defineOptions({
+    name: 'DashboardView',
+})
+
 const sceneStore = useSceneStore()
 const boreholeStore = useBoreholeStore()
 const { selectedObject } = storeToRefs(sceneStore)

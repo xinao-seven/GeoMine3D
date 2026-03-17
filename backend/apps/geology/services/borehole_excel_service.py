@@ -275,8 +275,27 @@ def get_layer_frequency():
     freq = {}
     for b in boreholes:
         for l in b['layers']:
+            thickness = l.get('thickness', 0)
+            if thickness <= 0:
+                continue
             freq[l['layerName']] = freq.get(l['layerName'], 0) + 1
     return [
         {'layerName': k, 'count': v}
         for k, v in sorted(freq.items(), key=lambda x: -x[1])
+    ]
+
+
+def get_borehole_raw_locations():
+    """返回钻孔原始坐标（不归一化），用于统计分析中的 XY 位置图。"""
+    raw_locations = _load_location_index()
+    # 直接返回位置表中的全部点，避免因名称匹配失败导致散点缺失。
+    return [
+        {
+            'id': str(idx + 1),
+            'name': name,
+            'x': raw['x'],
+            'y': raw['y'],
+            'z': raw['z'],
+        }
+        for idx, (name, raw) in enumerate(raw_locations.items())
     ]

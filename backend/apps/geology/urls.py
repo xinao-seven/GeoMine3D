@@ -24,6 +24,7 @@ urlpatterns = [
     path('analysis/workingface-status', views.AnalysisWorkingFaceStatusView.as_view()),
     path('analysis/borehole-count', views.AnalysisBoreholeCountView.as_view()),
     path('analysis/layer-frequency', views.AnalysisLayerFrequencyView.as_view()),
+    path('analysis/borehole-xy-raw', views.AnalysisBoreholeXYRawView.as_view()),
 
     # Dashboard 聚合
     path('dashboard/summary', views.DashboardSummaryView.as_view()),

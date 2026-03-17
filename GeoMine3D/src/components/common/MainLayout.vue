@@ -53,7 +53,11 @@
 
       <!-- 页面内容 -->
       <main class="content">
-        <RouterView />
+        <RouterView v-slot="{ Component, route }">
+          <KeepAlive include="DashboardView">
+            <component :is="Component" :key="route.name" />
+          </KeepAlive>
+        </RouterView>
       </main>
     </div>
   </div>

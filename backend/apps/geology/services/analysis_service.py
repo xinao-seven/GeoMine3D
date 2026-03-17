@@ -51,6 +51,17 @@ def get_layer_frequency_stats():
     }
 
 
+def get_borehole_xy_positions_raw():
+    from .borehole_excel_service import get_borehole_raw_locations
+    items = get_borehole_raw_locations()
+    return {
+        'items': items,
+        'labels': [i['name'] for i in items],
+        'xValues': [i['x'] for i in items],
+        'yValues': [i['y'] for i in items],
+    }
+
+
 def get_dashboard_summary():
     from .borehole_excel_service import get_borehole_list
     models = get_model_list()
