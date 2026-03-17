@@ -106,6 +106,7 @@ async function loadBoreholeChart() {
   display: flex;
   gap: 8px;
   font-size: 13px;
+  justify-content: space-between;
 }
 
 .prop-key {
@@ -116,7 +117,7 @@ async function loadBoreholeChart() {
 
 .prop-value {
   color: var(--color-text-primary);
-  flex: 1;
+  
   word-break: break-all;
 }
 

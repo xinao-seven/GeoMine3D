@@ -44,10 +44,11 @@ import { modelApi, boreholeApi } from '@/api'
 import { useSceneStore, useBoreholeStore } from '@/stores'
 import { storeToRefs } from 'pinia'
 import type { ModelItem, BoreholeItem } from '@/types'
+import type { ModelLoadRequest } from '@/stores/sceneStore'
 
 const sceneStore = useSceneStore()
 const boreholeStore = useBoreholeStore()
-const { layerVisible, opacity, locateTarget, loadRequestTick, showEdges } = storeToRefs(sceneStore)
+const { layerVisible, opacity, locateTarget, loadRequest, showEdges } = storeToRefs(sceneStore)
 
 const containerRef = ref<HTMLDivElement>()
 const canvasRef = ref<HTMLCanvasElement>()
@@ -132,88 +133,91 @@ function stopAnimate() {
     cancelAnimationFrame(animFrameId)
 }
 
-async function loadModelByType(type: 'stratum' | 'borehole' | 'workingface') {
-    const status = sceneStore.modelStatus[type]
-    if (status.loaded || status.loading) return
-
-    sceneStore.setModelStatus(type, { loading: true })
+async function loadModelByRequest(req: ModelLoadRequest) {
     try {
-        if (type === 'stratum') {
-            await loadStratumModels()
+        if (req.type === 'stratum') {
+            const model = req.model || await findModelById('stratum', req.id)
+            if (!model) throw new Error(`未找到地层模型: ${req.id}`)
+            await loadStratumModel(model)
         }
 
-        if (type === 'workingface') {
-            await loadWorkingFaceModels()
+        if (req.type === 'workingface') {
+            const model = req.model || await findModelById('workingface', req.id)
+            if (!model) throw new Error(`未找到工作面模型: ${req.id}`)
+            await loadWorkingFaceModel(model)
         }
 
-        if (type === 'borehole') {
-            await loadBoreholeModels()
+        if (req.type === 'borehole') {
+            let borehole = req.borehole
+            let index = req.index ?? 0
+            if (!borehole) {
+                const boreholes = await boreholeApi.getBoreholeList()
+                const foundIndex = boreholes.findIndex((item) => item.id === req.id)
+                if (foundIndex === -1) throw new Error(`未找到钻孔: ${req.id}`)
+                borehole = boreholes[foundIndex]
+                index = foundIndex
+                boreholeStore.list = boreholes
+            }
+            await loadBoreholeModel(borehole, index)
         }
+
         sceneManager.removeGrid() // 模型加载后移除辅助网格
-        sceneStore.setModelStatus(type, { loaded: true, loading: false })
+        sceneStore.setModelLoadStatus(req.type, req.id, { loaded: true, loading: false })
         fitCameraToLoadedModels()
     } catch (err) {
-        sceneStore.setModelStatus(type, { loading: false })
-        console.error(`[SceneCanvas] ${type} 模型加载失败`, err)
+        sceneStore.setModelLoadStatus(req.type, req.id, { loading: false })
+        console.error(`[SceneCanvas] ${req.type} 模型加载失败`, err)
     }
 }
 
-async function loadStratumModels() {
-    const stratumModels = await modelApi.getModelList({ type: 'stratum' })
+async function findModelById(type: 'stratum' | 'workingface', id: string) {
+    const modelList = await modelApi.getModelList({ type })
+    return modelList.find((item) => item.id === id)
+}
+
+async function loadStratumModel(m: ModelItem) {
     const stratumLoader = new StratumModelLoader()
-    for (const m of stratumModels) {
-        try {
-            const obj = await stratumLoader.load(m)
-            modelManager.addModel({ id: m.id, name: m.name, type: 'stratum', object: obj })
-        } catch {
-            // .glb 文件不存在时跳过，用占位几何体代替
-            addPlaceholderStratum(m)
-        }
+    try {
+        const obj = await stratumLoader.load(m)
+        modelManager.addModel({ id: m.id, name: m.name, type: 'stratum', object: obj })
+    } catch {
+        // .glb 文件不存在时跳过，用占位几何体代替
+        addPlaceholderStratum(m)
     }
 
     layerManager.setLayerEdgesVisible('stratum', showEdges.value)
 }
 
-async function loadWorkingFaceModels() {
-    const workingfaceModels = await modelApi.getModelList({ type: 'workingface' })
+async function loadWorkingFaceModel(m: ModelItem) {
     const wfLoader = new WorkingFaceModelLoader()
-    for (const m of workingfaceModels) {
-        try {
-            const obj = await wfLoader.load(m)
-            modelManager.addModel({ id: m.id, name: m.name, type: 'workingface', object: obj })
-        } catch {
-            addPlaceholderWorkingFace(m)
-        }
+    try {
+        const obj = await wfLoader.load(m)
+        modelManager.addModel({ id: m.id, name: m.name, type: 'workingface', object: obj })
+    } catch {
+        addPlaceholderWorkingFace(m)
     }
 }
 
-async function loadBoreholeModels() {
-    const boreholes = await boreholeApi.getBoreholeList()
+async function loadBoreholeModel(b: BoreholeItem, index: number) {
     const bhLoader = new BoreholeModelLoader()
 
-    boreholes.forEach((b, i) => {
-        let pos: { x: number; z: number }
-        if (b.location) {
-            pos = { x: b.location.x, z: b.location.z }
-        } else {
-            // 无位置数据：均匀网格排列
-            const cols = Math.ceil(Math.sqrt(boreholes.length))
-            const spacing = 500
-            pos = {
-                x: (i % cols) * spacing - (cols * spacing) / 2,
-                z: Math.floor(i / cols) * spacing - (cols * spacing) / 2,
-            }
+    let pos: { x: number; z: number }
+    if (b.location) {
+        pos = { x: b.location.x, z: b.location.z }
+    } else {
+        const spacing = 500
+        const cols = 10
+        pos = {
+            x: (index % cols) * spacing - (cols * spacing) / 2,
+            z: Math.floor(index / cols) * spacing - (cols * spacing) / 2,
         }
+    }
 
-        const obj = bhLoader.createBoreholeObject(b, pos)
-        if (b.location) {
-            obj.position.y = b.location.y
-        }
-        modelManager.addModel({ id: b.id, name: b.name, type: 'borehole', object: obj })
-    })
-
-    // 存入钻孔 Store，供图表/详情使用
-    boreholeStore.list = boreholes
+    const obj = bhLoader.createBoreholeObject(b, pos)
+    if (b.location) {
+        obj.position.y = b.location.y
+    }
+    modelManager.addModel({ id: b.id, name: b.name, type: 'borehole', object: obj })
 }
 
 function fitCameraToLoadedModels() {
@@ -313,21 +317,9 @@ watch(locateTarget, (target) => {
     }
 })
 
-watch(() => loadRequestTick.value.stratum, (tick) => {
-    if (tick > 0) {
-        loadModelByType('stratum')
-    }
-})
-
-watch(() => loadRequestTick.value.borehole, (tick) => {
-    if (tick > 0) {
-        loadModelByType('borehole')
-    }
-})
-
-watch(() => loadRequestTick.value.workingface, (tick) => {
-    if (tick > 0) {
-        loadModelByType('workingface')
+watch(loadRequest, (req) => {
+    if (req) {
+        loadModelByRequest(req)
     }
 })
 

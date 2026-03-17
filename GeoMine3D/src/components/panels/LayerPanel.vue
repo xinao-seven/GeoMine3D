@@ -12,37 +12,62 @@
                 <el-switch v-model="layer.visible" @change="onVisibleChange(layer.type, $event as boolean)"
                     size="small" />
                 <span class="layer-name">{{ layer.label }}</span>
-                <el-button class="load-btn" size="small" :loading="modelStatus[layer.type].loading"
-                    :disabled="modelStatus[layer.type].loaded || modelStatus[layer.type].loading"
-                    @click="onLoadClick(layer.type)">
-                    {{ modelStatus[layer.type].loaded ? '已加载' : '加载' }}
-                </el-button>
             </div>
             <div class="layer-opacity" v-if="layer.type === 'stratum'">
                 <span class="opacity-label">透明度</span>
                 <el-slider v-model="layer.opacity" :min="0" :max="100" :step="5" size="small"
                     @change="onOpacityChange(layer.type, $event as number)" />
             </div>
+
+            <div class="model-list" v-loading="optionLoading[layer.type]">
+                <div class="model-row" v-for="(item, idx) in optionsByType[layer.type]" :key="item.id">
+                    <span class="model-name" :title="item.name">{{ item.name }}</span>
+                    <el-button class="load-btn" size="small"
+                        :loading="sceneStore.getModelLoadStatus(layer.type, item.id).loading"
+                        :disabled="sceneStore.getModelLoadStatus(layer.type, item.id).loaded || sceneStore.getModelLoadStatus(layer.type, item.id).loading"
+                        @click="onLoadClick(layer.type, item, idx)">
+                        {{ sceneStore.getModelLoadStatus(layer.type, item.id).loaded ? '已导入' : '导入' }}
+                    </el-button>
+                </div>
+                <div class="model-empty" v-if="!optionLoading[layer.type] && optionsByType[layer.type].length === 0">
+                    暂无可导入模型
+                </div>
+            </div>
         </div>
     </div>
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue'
+import { reactive, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSceneStore } from '@/stores'
+import { modelApi, boreholeApi } from '@/api'
+import type { ModelItem, BoreholeItem } from '@/types'
 
 const sceneStore = useSceneStore()
-const { modelStatus, showEdges } = storeToRefs(sceneStore)
+const { showEdges } = storeToRefs(sceneStore)
 const edgeVisible = showEdges
 
 type ModelType = 'stratum' | 'borehole' | 'workingface'
+type ModelOption = Pick<ModelItem, 'id' | 'name'> | Pick<BoreholeItem, 'id' | 'name'>
 
 const layers = reactive<Array<{ type: ModelType; label: string; visible: boolean; opacity: number }>>([
     { type: 'stratum', label: '地层模型', visible: true, opacity: 100 },
     { type: 'borehole', label: '钻孔', visible: true, opacity: 100 },
     { type: 'workingface', label: '工作面', visible: true, opacity: 100 },
 ])
+
+const optionLoading = reactive<Record<ModelType, boolean>>({
+    stratum: false,
+    borehole: false,
+    workingface: false,
+})
+
+const optionsByType = reactive<Record<ModelType, ModelOption[]>>({
+    stratum: [],
+    borehole: [],
+    workingface: [],
+})
 
 function onVisibleChange(type: string, visible: boolean) {
     sceneStore.setLayerVisible(type as any, visible)
@@ -52,13 +77,53 @@ function onOpacityChange(type: string, value: number) {
     sceneStore.setOpacity(type as any, value / 100)
 }
 
-function onLoadClick(type: ModelType) {
-    sceneStore.requestLoadModel(type)
+function onLoadClick(type: ModelType, item: ModelOption, index: number) {
+    if (type === 'borehole') {
+        sceneStore.requestLoadModel({
+            type,
+            id: item.id,
+            name: item.name,
+            borehole: item as BoreholeItem,
+            index,
+        })
+        return
+    }
+
+    sceneStore.requestLoadModel({
+        type,
+        id: item.id,
+        name: item.name,
+        model: item as ModelItem,
+    })
 }
 
 function onEdgeVisibleChange(visible: boolean) {
     sceneStore.setShowEdges(visible)
 }
+
+async function loadOptions() {
+    optionLoading.stratum = true
+    optionLoading.workingface = true
+    optionLoading.borehole = true
+    try {
+        const [stratum, workingface, borehole] = await Promise.all([
+            modelApi.getModelList({ type: 'stratum' }),
+            modelApi.getModelList({ type: 'workingface' }),
+            boreholeApi.getBoreholeList(),
+        ])
+        optionsByType.stratum = stratum
+        optionsByType.workingface = workingface
+        optionsByType.borehole = borehole
+    } finally {
+        optionLoading.stratum = false
+        optionLoading.workingface = false
+        optionLoading.borehole = false
+    }
+}
+
+onMounted(() => {
+    loadOptions()
+})
 </script>
 
 <style scoped>
@@ -92,6 +157,9 @@ function onEdgeVisibleChange(visible: boolean) {
 
 .layer-item {
     margin-bottom: 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    padding: 8px;
 }
 
 .layer-header {
@@ -109,6 +177,36 @@ function onEdgeVisibleChange(visible: boolean) {
 
 .load-btn {
     margin-left: auto;
+}
+
+.model-list {
+    margin-top: 6px;
+    max-height: 132px;
+    overflow-y: auto;
+    border-top: 1px dashed var(--color-border);
+    padding-top: 6px;
+}
+
+.model-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+}
+
+.model-name {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.model-empty {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    padding: 6px 0;
 }
 
 .layer-opacity {

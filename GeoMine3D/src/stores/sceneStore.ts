@@ -1,8 +1,18 @@
 import { defineStore } from 'pinia'
 import { ref, reactive } from 'vue'
-import type { SceneObject, LayerState, OpacityState } from '@/types'
+import type { SceneObject, LayerState, OpacityState, ModelItem, BoreholeItem } from '@/types'
 
 type ModelType = 'stratum' | 'borehole' | 'workingface'
+
+export interface ModelLoadRequest {
+  requestId: number
+  type: ModelType
+  id: string
+  name: string
+  model?: ModelItem
+  borehole?: BoreholeItem
+  index?: number
+}
 
 export const useSceneStore = defineStore('scene', () => {
   const selectedObject = ref<SceneObject | null>(null)
@@ -22,19 +32,8 @@ export const useSceneStore = defineStore('scene', () => {
 
   const showEdges = ref(false)
 
-  // 各类型模型加载状态（供 LayerPanel 按钮使用）
-  const modelStatus = reactive<Record<ModelType, { loaded: boolean; loading: boolean }>>({
-    stratum:     { loaded: false, loading: false },
-    borehole:    { loaded: false, loading: false },
-    workingface: { loaded: false, loading: false },
-  })
-
-  // 每次点击加载按钮时递增，对应类型由 SceneCanvas 监听并执行加载
-  const loadRequestTick = reactive<Record<ModelType, number>>({
-    stratum: 0,
-    borehole: 0,
-    workingface: 0,
-  })
+  const modelLoadStatus = reactive<Record<string, { loaded: boolean; loading: boolean }>>({})
+  const loadRequest = ref<ModelLoadRequest | null>(null)
 
   // 定位目标（用于从其他页面跳转到 dashboard 时定位）
   const locateTarget = ref<{ type: string; id: string; name: string } | null>(null)
@@ -59,13 +58,29 @@ export const useSceneStore = defineStore('scene', () => {
     showEdges.value = visible
   }
 
-  function setModelStatus(type: ModelType, status: Partial<{ loaded: boolean; loading: boolean }>) {
-    Object.assign(modelStatus[type], status)
+  function getModelKey(type: ModelType, id: string) {
+    return `${type}:${id}`
   }
 
-  function requestLoadModel(type: ModelType) {
-    if (modelStatus[type].loaded || modelStatus[type].loading) return
-    loadRequestTick[type] += 1
+  function getModelLoadStatus(type: ModelType, id: string) {
+    const key = getModelKey(type, id)
+    return modelLoadStatus[key] || { loaded: false, loading: false }
+  }
+
+  function setModelLoadStatus(type: ModelType, id: string, status: Partial<{ loaded: boolean; loading: boolean }>) {
+    const key = getModelKey(type, id)
+    const current = modelLoadStatus[key] || { loaded: false, loading: false }
+    modelLoadStatus[key] = { ...current, ...status }
+  }
+
+  function requestLoadModel(payload: Omit<ModelLoadRequest, 'requestId'>) {
+    const status = getModelLoadStatus(payload.type, payload.id)
+    if (status.loaded || status.loading) return
+    setModelLoadStatus(payload.type, payload.id, { loading: true })
+    loadRequest.value = {
+      ...payload,
+      requestId: Date.now(),
+    }
   }
 
   function locateTo(target: { type: string; id: string; name: string }) {
@@ -78,15 +93,17 @@ export const useSceneStore = defineStore('scene', () => {
     layerVisible,
     opacity,
     showEdges,
-    modelStatus,
-    loadRequestTick,
+    modelLoadStatus,
+    loadRequest,
     locateTarget,
     selectObject,
     setHighlight,
     setLayerVisible,
     setOpacity,
     setShowEdges,
-    setModelStatus,
+    getModelKey,
+    getModelLoadStatus,
+    setModelLoadStatus,
     requestLoadModel,
     locateTo,
   }

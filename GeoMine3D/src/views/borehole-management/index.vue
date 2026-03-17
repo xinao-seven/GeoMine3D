@@ -9,7 +9,7 @@
 
         <div class="management-layout">
             <div class="list-panel">
-                <el-table :data="list" v-loading="loading" height="100%" highlight-current-row
+                <el-table class="main-table" :data="list" v-loading="loading" height="100%" highlight-current-row
                 @current-change="handleRowSelect"
                 :row-style="{ background: 'var(--color-bg-card)', color: 'var(--color-text-primary)' }"
                 :header-cell-style="{ background: 'var(--color-bg-panel)', color: 'var(--color-text-secondary)' }">
@@ -33,7 +33,7 @@
                 <div class="detail-meta">总深度: {{ currentDetail.totalDepth.toFixed(1) }}m · {{ currentDetail.layerCount
                     }} 层
                 </div>
-                <el-table :data="currentDetail.layers" size="small"
+                <el-table class="detail-table" :data="currentDetail.layers" size="small"
                     :row-style="{ background: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)' }"
                     :header-cell-style="{ background: 'var(--color-bg-panel)', color: 'var(--color-text-secondary)' }">
                     <el-table-column prop="layerName" label="地层" min-width="80" />
@@ -131,5 +131,38 @@ onMounted(fetchData)
     font-size: 12px;
     color: var(--color-text-secondary);
     margin-bottom: 12px;
+}
+
+.main-table {
+    --el-table-bg-color: var(--color-bg-card);
+    --el-table-border-color: var(--color-border);
+    --el-table-tr-bg-color: var(--color-bg-card);
+    --el-table-row-hover-bg-color: rgba(0, 200, 255, 0.12);
+    --el-table-current-row-bg-color: rgba(0, 200, 255, 0.2);
+}
+
+.detail-table {
+    --el-table-bg-color: var(--color-bg-secondary);
+    --el-table-border-color: var(--color-border);
+    --el-table-tr-bg-color: var(--color-bg-secondary);
+    --el-table-row-hover-bg-color: rgba(0, 200, 255, 0.08);
+    --el-table-current-row-bg-color: rgba(0, 200, 255, 0.14);
+}
+
+.main-table :deep(.el-table__body tr:hover > td.el-table__cell),
+.detail-table :deep(.el-table__body tr:hover > td.el-table__cell) {
+    background-color: rgba(0, 200, 255, 0.12) !important;
+}
+
+.main-table :deep(.el-table__body tr.current-row > td.el-table__cell),
+.detail-table :deep(.el-table__body tr.current-row > td.el-table__cell) {
+    background-color: rgba(0, 200, 255, 0.2) !important;
+    box-shadow: inset 0 0 0 1px rgba(0, 200, 255, 0.25);
+}
+
+.main-table :deep(.el-table__fixed-right-patch),
+.main-table :deep(.el-table__fixed),
+.main-table :deep(.el-table__fixed-right) {
+    background-color: var(--color-bg-card);
 }
 </style>
