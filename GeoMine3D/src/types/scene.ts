@@ -18,3 +18,13 @@ export interface OpacityState {
   borehole: number
   workingface: number
 }
+
+export interface StratumLayerControl {
+  key: string
+  modelId: string
+  modelName: string
+  layerName: string
+  visible: boolean
+  opacity: number
+  color: string
+}

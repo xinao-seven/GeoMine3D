@@ -45,7 +45,9 @@ export class HighlightManager {
           })
           if (src?.map) {
             mat.map = src.map
-            mat.map.colorSpace = THREE.SRGBColorSpace
+            if (mat.map) {
+              mat.map.colorSpace = THREE.SRGBColorSpace
+            }
           }
           return mat
         }

@@ -61,19 +61,21 @@ export class StratumModelLoader {
                             : mesh.material
                         const layerColor = this.generateLayerColor(index)
 
-                        const basicMaterial = new THREE.MeshBasicMaterial({
+                        const lambertMaterial = new THREE.MeshLambertMaterial({
                             color: layerColor,
                             transparent: true,
-                            opacity: 1.0,
+                            opacity: 0.95,
                             side: THREE.DoubleSide,
+                            emissive: 0x0d121f,
+                            emissiveIntensity: 0.08,
                         })
 
                         if ((originalMaterial as any)?.map) {
-                            basicMaterial.map = (originalMaterial as any).map
-                            if (basicMaterial.map) basicMaterial.map.colorSpace = THREE.SRGBColorSpace
+                            lambertMaterial.map = (originalMaterial as any).map
+                            if (lambertMaterial.map) lambertMaterial.map.colorSpace = THREE.SRGBColorSpace
                         }
 
-                        mesh.material = basicMaterial
+                        mesh.material = lambertMaterial
 
                         const edges = new THREE.EdgesGeometry(mesh.geometry)
                         const edgesMaterial = new THREE.LineBasicMaterial({

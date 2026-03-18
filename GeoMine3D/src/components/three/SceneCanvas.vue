@@ -43,12 +43,13 @@ import { ClipTool } from '@/three/tools/ClipTool'
 import { modelApi, boreholeApi } from '@/api'
 import { useSceneStore, useBoreholeStore } from '@/stores'
 import { storeToRefs } from 'pinia'
-import type { ModelItem, BoreholeItem } from '@/types'
+import type { ModelItem, BoreholeItem, StratumLayerControl } from '@/types'
 import type { ModelLoadRequest } from '@/stores/sceneStore'
 
 const sceneStore = useSceneStore()
 const boreholeStore = useBoreholeStore()
-const { layerVisible, opacity, locateTarget, loadRequest, showEdges } = storeToRefs(sceneStore)
+const { layerVisible, opacity, locateTarget, loadRequest, showEdges, stratumLayers } = storeToRefs(sceneStore)
+const BOREHOLE_VERTICAL_SCALE = 10
 
 const containerRef = ref<HTMLDivElement>()
 const canvasRef = ref<HTMLCanvasElement>()
@@ -118,6 +119,7 @@ function animate() {
     if (!isAnimating) return
     animFrameId = requestAnimationFrame(animate)
     controlsManager.update()
+    lightManager.updateFromCamera(cameraManager.camera)
     rendererManager.render(sceneManager.scene, cameraManager.camera)
 }
 
@@ -135,39 +137,127 @@ function stopAnimate() {
 
 async function loadModelByRequest(req: ModelLoadRequest) {
     try {
+        let preferImmediateFocus = false
+        let focusType: 'stratum' | 'borehole' | 'workingface' | null = null
+
         if (req.type === 'stratum') {
             const model = req.model || await findModelById('stratum', req.id)
             if (!model) throw new Error(`未找到地层模型: ${req.id}`)
             await loadStratumModel(model)
+            focusType = 'stratum'
         }
 
         if (req.type === 'workingface') {
             const model = req.model || await findModelById('workingface', req.id)
             if (!model) throw new Error(`未找到工作面模型: ${req.id}`)
             await loadWorkingFaceModel(model)
+            focusType = 'workingface'
         }
 
         if (req.type === 'borehole') {
-            let borehole = req.borehole
-            let index = req.index ?? 0
-            if (!borehole) {
-                const boreholes = await boreholeApi.getBoreholeList()
-                const foundIndex = boreholes.findIndex((item) => item.id === req.id)
-                if (foundIndex === -1) throw new Error(`未找到钻孔: ${req.id}`)
-                borehole = boreholes[foundIndex]
-                index = foundIndex
+            if (req.id === '__all__') {
+                const boreholes = req.boreholeList && req.boreholeList.length
+                    ? req.boreholeList
+                    : await boreholeApi.getBoreholeList()
                 boreholeStore.list = boreholes
+                await loadAllBoreholeModels(boreholes)
+                sceneStore.setModelLoadStatus('borehole', '__all__', { loaded: true, loading: false })
+                focusType = 'borehole'
+                preferImmediateFocus = true
+                focusByBoreholeData(boreholes)
+            } else {
+                let borehole = req.borehole
+                let index = req.index ?? 0
+                if (!borehole) {
+                    const boreholes = await boreholeApi.getBoreholeList()
+                    const foundIndex = boreholes.findIndex((item) => item.id === req.id)
+                    if (foundIndex === -1) throw new Error(`未找到钻孔: ${req.id}`)
+                    borehole = boreholes[foundIndex]
+                    index = foundIndex
+                    boreholeStore.list = boreholes
+                }
+                await loadBoreholeModel(borehole, index)
+                focusType = 'borehole'
+                preferImmediateFocus = true
+                focusByBoreholeData([borehole], index)
             }
-            await loadBoreholeModel(borehole, index)
         }
 
         sceneManager.removeGrid() // 模型加载后移除辅助网格
         sceneStore.setModelLoadStatus(req.type, req.id, { loaded: true, loading: false })
-        fitCameraToLoadedModels()
+        if (focusType) {
+            fitCameraToType(focusType, preferImmediateFocus)
+        } else {
+            fitCameraToLoadedModels()
+        }
     } catch (err) {
         sceneStore.setModelLoadStatus(req.type, req.id, { loading: false })
         console.error(`[SceneCanvas] ${req.type} 模型加载失败`, err)
     }
+}
+
+function fitCameraToType(type: 'stratum' | 'borehole' | 'workingface', immediate = false) {
+    const models = modelManager.getModelsByType(type)
+    if (!models.length) return
+
+    const box = new THREE.Box3()
+    models.forEach((m) => box.expandByObject(m.object))
+
+    const fitResult = cameraManager.fitToBox(box)
+    if (!fitResult) return
+
+    cameraManager.camera.near = fitResult.near
+    cameraManager.camera.far = fitResult.far
+    cameraManager.camera.updateProjectionMatrix()
+    controlsManager.setDistanceLimits(fitResult.fitDistance * 0.1, fitResult.fitDistance * 8)
+
+    if (immediate) {
+        cameraManager.camera.position.copy(fitResult.position)
+        controlsManager.controls.target.copy(fitResult.center)
+        controlsManager.controls.update()
+        return
+    }
+
+    const startTarget = controlsManager.controls.target.clone()
+    cameraManager.animateTo(
+        fitResult.position,
+        fitResult.center,
+        startTarget,
+        (lookAt) => {
+            controlsManager.controls.target.copy(lookAt)
+            controlsManager.controls.update()
+        }
+    )
+}
+
+function focusByBoreholeData(boreholes: BoreholeItem[], startIndex = 0) {
+    if (!boreholes.length) return
+
+    const points = boreholes.map((b, i) => {
+        if (b.location) {
+            return new THREE.Vector3(b.location.x, b.location.z * BOREHOLE_VERTICAL_SCALE, b.location.y)
+        }
+        const spacing = 500
+        const cols = 10
+        return new THREE.Vector3(
+            ((startIndex + i) % cols) * spacing - (cols * spacing) / 2,
+            0,
+            Math.floor((startIndex + i) / cols) * spacing - (cols * spacing) / 2
+        )
+    })
+
+    const box = new THREE.Box3().setFromPoints(points)
+    const fitResult = cameraManager.fitToBox(box)
+    if (!fitResult) return
+
+    cameraManager.camera.near = Math.max(fitResult.near, 1)
+    cameraManager.camera.far = Math.max(fitResult.far, fitResult.near + 10000)
+    cameraManager.camera.updateProjectionMatrix()
+    controlsManager.setDistanceLimits(fitResult.fitDistance * 0.05, fitResult.fitDistance * 12)
+
+    cameraManager.camera.position.copy(fitResult.position)
+    controlsManager.controls.target.copy(fitResult.center)
+    controlsManager.controls.update()
 }
 
 async function findModelById(type: 'stratum' | 'workingface', id: string) {
@@ -180,6 +270,7 @@ async function loadStratumModel(m: ModelItem) {
     try {
         const obj = await stratumLoader.load(m)
         modelManager.addModel({ id: m.id, name: m.name, type: 'stratum', object: obj })
+        registerStratumLayersFromObject(obj, m.id, m.name)
     } catch {
         // .glb 文件不存在时跳过，用占位几何体代替
         addPlaceholderStratum(m)
@@ -203,7 +294,7 @@ async function loadBoreholeModel(b: BoreholeItem, index: number) {
 
     let pos: { x: number; z: number }
     if (b.location) {
-        pos = { x: b.location.x, z: b.location.z }
+        pos = { x: b.location.x, z: b.location.y }
     } else {
         const spacing = 500
         const cols = 10
@@ -213,11 +304,23 @@ async function loadBoreholeModel(b: BoreholeItem, index: number) {
         }
     }
 
-    const obj = bhLoader.createBoreholeObject(b, pos)
+    const obj = bhLoader.createBoreholeObject(b, pos, BOREHOLE_VERTICAL_SCALE)
     if (b.location) {
-        obj.position.y = b.location.y
+        obj.position.y = b.location.z * BOREHOLE_VERTICAL_SCALE
     }
     modelManager.addModel({ id: b.id, name: b.name, type: 'borehole', object: obj })
+}
+
+async function loadAllBoreholeModels(boreholes: BoreholeItem[]) {
+    for (let i = 0; i < boreholes.length; i += 1) {
+        const b = boreholes[i]
+        if (modelManager.getModel(b.id)) {
+            sceneStore.setModelLoadStatus('borehole', b.id, { loaded: true, loading: false })
+            continue
+        }
+        await loadBoreholeModel(b, i)
+        sceneStore.setModelLoadStatus('borehole', b.id, { loaded: true, loading: false })
+    }
 }
 
 function fitCameraToLoadedModels() {
@@ -256,8 +359,74 @@ function addPlaceholderStratum(model: ModelItem) {
     const mesh = new THREE.Mesh(geom, mat)
     mesh.position.y = Object.keys(colors).indexOf(model.id) * -25
     mesh.name = `stratum_${model.id}`
-    mesh.userData = { id: model.id, name: model.name, type: 'stratum', modelData: model }
+    mesh.userData = {
+        id: `${model.id}::0`,
+        name: `${model.name}_layer_1`,
+        type: 'stratum',
+        modelData: model,
+        modelId: model.id,
+        layerName: `${model.name}_layer_1`,
+    }
     modelManager.addModel({ id: model.id, name: model.name, type: 'stratum', object: mesh })
+    registerStratumLayersFromObject(mesh, model.id, model.name)
+}
+
+function toHexColor(color?: THREE.Color) {
+    if (!color) return '#5a8a9a'
+    return `#${color.getHexString()}`
+}
+
+function registerStratumLayersFromObject(object: THREE.Object3D, modelId: string, modelName: string) {
+    const controls: StratumLayerControl[] = []
+    object.traverse((child) => {
+        if (!(child as THREE.Mesh).isMesh) return
+        const mesh = child as THREE.Mesh
+        const key = String(mesh.userData?.id || `${modelId}::${mesh.uuid}`)
+        const layerName = String(mesh.userData?.layerName || mesh.name || `${modelName}_layer`)
+        const material = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material
+        const color = material && (material as any).color ? toHexColor((material as any).color) : '#5a8a9a'
+        const opacity = typeof (material as any)?.opacity === 'number' ? (material as any).opacity : 1
+        controls.push({
+            key,
+            modelId,
+            modelName,
+            layerName,
+            visible: mesh.visible,
+            opacity,
+            color,
+        })
+    })
+
+    if (controls.length) {
+        sceneStore.registerStratumLayers(controls)
+    }
+}
+
+function applyStratumLayerControl(control: StratumLayerControl) {
+    const model = modelManager.getModel(control.modelId)
+    if (!model) return
+    model.object.traverse((child) => {
+        if (!(child as THREE.Mesh).isMesh) return
+        const mesh = child as THREE.Mesh
+        const key = String(mesh.userData?.id || '')
+        if (key !== control.key) return
+
+        mesh.visible = control.visible
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+        for (const mat of mats as any[]) {
+            if (mat.color) {
+                mat.color.set(control.color)
+            }
+            mat.transparent = control.opacity < 1
+            mat.opacity = control.opacity
+            mat.needsUpdate = true
+        }
+
+        const edgeLines = (mesh as any).userData?.edgeLines
+        if (edgeLines) {
+            edgeLines.visible = showEdges.value && control.visible
+        }
+    })
 }
 
 function addPlaceholderWorkingFace(model: ModelItem) {
@@ -303,6 +472,12 @@ watch(opacity, (val) => {
 watch(showEdges, (visible) => {
     layerManager.setLayerEdgesVisible('stratum', visible)
 })
+
+watch(stratumLayers, (layers) => {
+    for (const layer of layers) {
+        applyStratumLayerControl(layer)
+    }
+}, { deep: true })
 
 // 监听定位目标
 watch(locateTarget, (target) => {

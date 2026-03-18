@@ -6,12 +6,16 @@ import type { BoreholeItem } from '@/types'
  * 坐标系：1 unit = 1 meter，钻孔范围约 5km × 5km。
  */
 export class BoreholeModelLoader {
-  createBoreholeObject(borehole: BoreholeItem, position?: { x: number; z: number }): THREE.Group {
+  createBoreholeObject(
+    borehole: BoreholeItem,
+    position?: { x: number; z: number },
+    verticalScale = 1
+  ): THREE.Group {
     const group = new THREE.Group()
     group.name = `borehole_${borehole.id}`
     group.userData = { id: borehole.id, name: borehole.name, type: 'borehole', boreholeData: borehole }
 
-    const depth = Math.max(borehole.totalDepth, 100)
+    const depth = Math.max(borehole.totalDepth, 100) * verticalScale
     const radius = 30
     const geometry = new THREE.CylinderGeometry(radius, radius, depth, 8)
     const material = new THREE.MeshLambertMaterial({

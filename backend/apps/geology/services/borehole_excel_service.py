@@ -4,19 +4,16 @@ borehole_excel_service.py
 钻孔数据服务层。
 
 数据来源：
-  - data/boreholes/ 目录下的 .xlsx 文件（地层数据）
-  - data/location/钻孔位置.xlsx（钻孔坐标数据，列：name / y / x / z）
+    - data/boreholes/ 目录下的 .xlsx 文件（地层数据）
+    - data/location/钻孔位置.xlsx（钻孔坐标数据，列：name / y / x / z）
 
 地层列名映射（_FIELD_MAP）：
-  - 深度：每层的底边深度（bottom depth of layer）
-  - 厚度：本层厚度（bottomDepth - topDepth）
+    - 深度：每层的底边深度（bottom depth of layer）
+    - 厚度：本层厚度（bottomDepth - topDepth）
 
-坐标系说明：
-  - 原始坐标为高斯-克吕格投影（x ≈ 3.74e7, y ≈ 4.3e6, z = 海拔高程）
-  - 归一化后以全体钻孔中心为原点，映射到 Three.js 坐标系：
-      three_x = x_geo - cx  （东向，对应 Three.js X 轴）
-      three_y = z_geo - cz  （高程，对应 Three.js Y 轴，向上为正）
-      three_z = y_geo - cy  （北向，对应 Three.js Z 轴）
+坐标说明：
+    - 对外接口返回原始坐标（x/y/z）
+    - 前端渲染时再映射到 Three.js 轴
 """
 import pandas as pd
 from pathlib import Path
@@ -33,6 +30,13 @@ _FIELD_MAP = {
     'depth':         '深度',      # 每层底边深度
     'thickness':     '厚度',      # 本层厚度
 }
+
+
+def _normalize_name(name: str) -> str:
+    """标准化名称用于位置表匹配，尽量容忍空格/符号差异。"""
+    if not name:
+        return ''
+    return ''.join(ch for ch in str(name).strip().upper() if ch.isalnum())
 
 
 # ---------------------------------------------------------------------------
@@ -76,31 +80,14 @@ def _load_location_index():
     return index
 
 
-def _normalize_locations(loc_index):
-    """
-    以全体钻孔坐标中心为原点进行归一化，返回 {name: {x, y, z}} Three.js 坐标字典。
-    映射规则：
-      three_x = geo_x - cx
-      three_y = geo_z - cz   （高程 → Three.js Y 轴）
-      three_z = geo_y - cy   （北向 → Three.js Z 轴）
-    """
-    if not loc_index:
-        return {}
-    xs = [v['x'] for v in loc_index.values()]
-    ys = [v['y'] for v in loc_index.values()]
-    zs = [v['z'] for v in loc_index.values()]
-    cx = sum(xs) / len(xs)
-    cy = sum(ys) / len(ys)
-    cz = sum(zs) / len(zs)
-
-    return {
-        name: {
-            'x': round(geo['x'] - cx, 3),
-            'y': round(geo['z'] - cz, 3),   # 高程偏移 → Three.js Y
-            'z': round(geo['y'] - cy, 3),   # 北向偏移  → Three.js Z
-        }
-        for name, geo in loc_index.items()
-    }
+def _build_location_match_index(loc_index):
+    """为位置匹配建立名称索引：精确名与标准化名。"""
+    normalized_index = {}
+    for name, geo in loc_index.items():
+        normalized = _normalize_name(name)
+        if normalized and normalized not in normalized_index:
+            normalized_index[normalized] = geo
+    return normalized_index
 
 
 # ---------------------------------------------------------------------------
@@ -185,9 +172,9 @@ def _load_excel():
         data = _parse_single_excel(f)
         merged.update(data)
 
-    # 位置数据（归一化后的 Three.js 坐标）
+    # 位置数据（原始坐标）
     loc_raw = _load_location_index()
-    loc_normalized = _normalize_locations(loc_raw)
+    loc_normalized_index = _build_location_match_index(loc_raw)
 
     result = []
     for idx, (name, data) in enumerate(merged.items()):
@@ -200,8 +187,17 @@ def _load_excel():
             'layerCount': len(layers),
             'layers':     layers,
         }
-        if name in loc_normalized:
-            bh['location'] = loc_normalized[name]
+        # 优先精确匹配，失败后走标准化名称匹配
+        raw_loc = loc_raw.get(name)
+        if not raw_loc:
+            raw_loc = loc_normalized_index.get(_normalize_name(name))
+
+        if raw_loc:
+            bh['location'] = {
+                'x': round(raw_loc['x'], 3),
+                'y': round(raw_loc['y'], 3),
+                'z': round(raw_loc['z'], 3),
+            }
         result.append(bh)
     return result
 
@@ -225,7 +221,7 @@ def get_borehole_list(keyword=None, min_depth=None, max_depth=None):
             'name':       b['name'],
             'totalDepth': b['totalDepth'],
             'layerCount': b['layerCount'],
-            'location':   b.get('location'),   # 归一化三维坐标，可为 None
+            'location':   b.get('location'),   # 原始坐标，可为 None
         }
         for b in boreholes
     ]

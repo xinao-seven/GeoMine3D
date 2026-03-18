@@ -18,16 +18,20 @@ export class WorkingFaceModelLoader {
   private loader = createLoader()
 
   private createMatteMaterial(sourceMat: any): THREE.Material {
-    const matte = new THREE.MeshLambertMaterial({
+    const matte = new THREE.MeshPhongMaterial({
       color: sourceMat?.color ? sourceMat.color.clone() : new THREE.Color(0xf5a623),
       transparent: !!sourceMat?.transparent,
       opacity: typeof sourceMat?.opacity === 'number' ? sourceMat.opacity : 1,
       side: sourceMat?.side ?? THREE.FrontSide,
+      shininess: 10,
+      specular: new THREE.Color(0x1a1a1a),
     })
 
     if (sourceMat?.map) {
       matte.map = sourceMat.map
-      matte.map.colorSpace = THREE.SRGBColorSpace
+      if (matte.map) {
+        matte.map.colorSpace = THREE.SRGBColorSpace
+      }
     }
 
     return matte

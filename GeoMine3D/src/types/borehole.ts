@@ -6,9 +6,9 @@ export interface BoreholeLayer {
 }
 
 export interface BoreholeLocation {
-  x: number  // Three.js X（东向偏移，米）
-  y: number  // Three.js Y（高程偏移，米）
-  z: number  // Three.js Z（北向偏移，米）
+  x: number  // 原始 X（东向）
+  y: number  // 原始 Y（北向）
+  z: number  // 原始 Z（高程）
 }
 
 export interface BoreholeItem {

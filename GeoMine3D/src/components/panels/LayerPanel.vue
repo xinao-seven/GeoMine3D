@@ -19,19 +19,50 @@
                     @change="onOpacityChange(layer.type, $event as number)" />
             </div>
 
+            <div class="stratum-controls" v-if="layer.type === 'stratum' && stratumLayers.length">
+                <div class="stratum-title">地层单元控制</div>
+                <div class="stratum-item" v-for="item in stratumLayers" :key="item.key">
+                    <div class="stratum-item-head">
+                        <el-switch :model-value="item.visible"
+                            @change="onStratumVisibleChange(item, $event as boolean)" size="small" />
+                        <span class="stratum-name" :title="`${item.modelName} / ${item.layerName}`">{{ item.layerName }}</span>
+                        <el-color-picker :model-value="item.color" size="small" @change="onStratumColorChange(item, $event)" />
+                    </div>
+                    <div class="stratum-item-opacity">
+                        <span class="stratum-opacity-label">透明度</span>
+                        <el-slider :model-value="Math.round(item.opacity * 100)" :min="0" :max="100" :step="5"
+                            size="small" @input="onStratumOpacityChange(item, $event as number)"
+                            @change="onStratumOpacityChange(item, $event as number)" />
+                    </div>
+                </div>
+            </div>
+
             <div class="model-list" v-loading="optionLoading[layer.type]">
-                <div class="model-row" v-for="(item, idx) in optionsByType[layer.type]" :key="item.id">
-                    <span class="model-name" :title="item.name">{{ item.name }}</span>
-                    <el-button class="load-btn" size="small"
-                        :loading="sceneStore.getModelLoadStatus(layer.type, item.id).loading"
-                        :disabled="sceneStore.getModelLoadStatus(layer.type, item.id).loaded || sceneStore.getModelLoadStatus(layer.type, item.id).loading"
-                        @click="onLoadClick(layer.type, item, idx)">
-                        {{ sceneStore.getModelLoadStatus(layer.type, item.id).loaded ? '已导入' : '导入' }}
-                    </el-button>
-                </div>
-                <div class="model-empty" v-if="!optionLoading[layer.type] && optionsByType[layer.type].length === 0">
-                    暂无可导入模型
-                </div>
+                <template v-if="layer.type === 'borehole'">
+                    <div class="model-row">
+                        <span class="model-name">共 {{ optionsByType.borehole.length }} 个钻孔</span>
+                        <el-button class="load-btn" size="small"
+                            :loading="sceneStore.getModelLoadStatus('borehole', BOREHOLE_ALL_ID).loading"
+                            :disabled="sceneStore.getModelLoadStatus('borehole', BOREHOLE_ALL_ID).loaded || sceneStore.getModelLoadStatus('borehole', BOREHOLE_ALL_ID).loading || optionsByType.borehole.length === 0"
+                            @click="onLoadAllBoreholes()">
+                            {{ sceneStore.getModelLoadStatus('borehole', BOREHOLE_ALL_ID).loaded ? '已全部导入' : '全部导入' }}
+                        </el-button>
+                    </div>
+                </template>
+                <template v-else>
+                    <div class="model-row" v-for="(item, idx) in optionsByType[layer.type]" :key="item.id">
+                        <span class="model-name" :title="item.name">{{ item.name }}</span>
+                        <el-button class="load-btn" size="small"
+                            :loading="sceneStore.getModelLoadStatus(layer.type, item.id).loading"
+                            :disabled="sceneStore.getModelLoadStatus(layer.type, item.id).loaded || sceneStore.getModelLoadStatus(layer.type, item.id).loading"
+                            @click="onLoadClick(layer.type, item)">
+                            {{ sceneStore.getModelLoadStatus(layer.type, item.id).loaded ? '已导入' : '导入' }}
+                        </el-button>
+                    </div>
+                    <div class="model-empty" v-if="!optionLoading[layer.type] && optionsByType[layer.type].length === 0">
+                        暂无可导入模型
+                    </div>
+                </template>
             </div>
         </div>
     </div>
@@ -42,14 +73,15 @@ import { reactive, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useSceneStore } from '@/stores'
 import { modelApi, boreholeApi } from '@/api'
-import type { ModelItem, BoreholeItem } from '@/types'
+import type { ModelItem, BoreholeItem, StratumLayerControl } from '@/types'
 
 const sceneStore = useSceneStore()
-const { showEdges } = storeToRefs(sceneStore)
+const { showEdges, stratumLayers } = storeToRefs(sceneStore)
 const edgeVisible = showEdges
 
 type ModelType = 'stratum' | 'borehole' | 'workingface'
 type ModelOption = Pick<ModelItem, 'id' | 'name'> | Pick<BoreholeItem, 'id' | 'name'>
+const BOREHOLE_ALL_ID = '__all__'
 
 const layers = reactive<Array<{ type: ModelType; label: string; visible: boolean; opacity: number }>>([
     { type: 'stratum', label: '地层模型', visible: true, opacity: 100 },
@@ -77,18 +109,7 @@ function onOpacityChange(type: string, value: number) {
     sceneStore.setOpacity(type as any, value / 100)
 }
 
-function onLoadClick(type: ModelType, item: ModelOption, index: number) {
-    if (type === 'borehole') {
-        sceneStore.requestLoadModel({
-            type,
-            id: item.id,
-            name: item.name,
-            borehole: item as BoreholeItem,
-            index,
-        })
-        return
-    }
-
+function onLoadClick(type: ModelType, item: ModelOption) {
     sceneStore.requestLoadModel({
         type,
         id: item.id,
@@ -97,8 +118,30 @@ function onLoadClick(type: ModelType, item: ModelOption, index: number) {
     })
 }
 
+function onLoadAllBoreholes() {
+    sceneStore.requestLoadModel({
+        type: 'borehole',
+        id: BOREHOLE_ALL_ID,
+        name: '全部钻孔',
+        boreholeList: optionsByType.borehole as BoreholeItem[],
+    })
+}
+
 function onEdgeVisibleChange(visible: boolean) {
     sceneStore.setShowEdges(visible)
+}
+
+function onStratumVisibleChange(layer: StratumLayerControl, visible: boolean) {
+    sceneStore.updateStratumLayer(layer.key, { visible })
+}
+
+function onStratumColorChange(layer: StratumLayerControl, color: string | null) {
+    if (!color) return
+    sceneStore.updateStratumLayer(layer.key, { color })
+}
+
+function onStratumOpacityChange(layer: StratumLayerControl, value: number) {
+    sceneStore.updateStratumLayer(layer.key, { opacity: value / 100 })
 }
 
 async function loadOptions() {
@@ -221,6 +264,54 @@ onMounted(() => {
     color: var(--color-text-secondary);
     flex-shrink: 0;
     width: 36px;
+}
+
+.stratum-controls {
+    margin-top: 8px;
+    border-top: 1px dashed var(--color-border);
+    padding-top: 8px;
+}
+
+.stratum-title {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    margin-bottom: 6px;
+}
+
+.stratum-item {
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    padding: 6px;
+    margin-bottom: 6px;
+}
+
+.stratum-item-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.stratum-name {
+    font-size: 12px;
+    color: var(--color-text-primary);
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.stratum-item-opacity {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+.stratum-opacity-label {
+    font-size: 11px;
+    color: var(--color-text-secondary);
+    width: 40px;
+    flex-shrink: 0;
 }
 
 :deep(.el-slider) {
