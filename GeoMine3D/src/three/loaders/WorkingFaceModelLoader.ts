@@ -25,7 +25,9 @@ export class WorkingFaceModelLoader {
       side: sourceMat?.side ?? THREE.FrontSide,
       shininess: 10,
       specular: new THREE.Color(0x1a1a1a),
+      clipShadows: true,
     })
+    matte.clippingPlanes = []
 
     if (sourceMat?.map) {
       matte.map = sourceMat.map

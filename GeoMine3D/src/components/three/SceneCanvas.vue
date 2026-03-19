@@ -3,23 +3,95 @@
         <canvas ref="canvasRef" class="canvas" />
 
         <div class="tools-bar">
-            <el-tooltip content="重置视角" placement="left">
-                <el-button size="small" circle @click="resetCamera"><el-icon>
-                        <RefreshRight />
-                    </el-icon></el-button>
-            </el-tooltip>
-            <el-tooltip :content="clipEnabled ? '关闭剖切' : '开启剖切'" placement="left">
-                <el-button size="small" circle :type="clipEnabled ? 'primary' : ''" @click="toggleClip">
-                    <el-icon>
-                        <Scissor />
-                    </el-icon>
+            <div class="tools-group">
+                <el-tooltip content="重置视角" placement="bottom">
+                    <el-button class="tool-btn" @click="resetCamera">
+                        <el-icon>
+                            <RefreshRight />
+                        </el-icon>
+                        <span>重置</span>
+                    </el-button>
+                </el-tooltip>
+            </div>
+
+            <div class="tools-divider" />
+
+            <div class="tools-group">
+                <el-tooltip :content="toolState.clipEnabled ? '关闭剖切' : '开启剖切'" placement="bottom">
+                    <el-button class="tool-btn" :class="{ active: toolState.clipEnabled }" @click="toggleClipTool">
+                        <el-icon>
+                            <Scissor />
+                        </el-icon>
+                        <span>剖切</span>
+                    </el-button>
+                </el-tooltip>
+
+                <div v-if="toolState.clipEnabled" class="clip-control">
+                    <div class="clip-axis-row">
+                        <el-button
+                            class="axis-btn"
+                            :class="{ active: toolState.clipAxis === 'x' }"
+                            @click="setClipAxis('x')"
+                        >X</el-button>
+                        <el-button
+                            class="axis-btn"
+                            :class="{ active: toolState.clipAxis === 'y' }"
+                            @click="setClipAxis('y')"
+                        >Y</el-button>
+                        <el-button
+                            class="axis-btn"
+                            :class="{ active: toolState.clipAxis === 'z' }"
+                            @click="setClipAxis('z')"
+                        >Z</el-button>
+                    </div>
+                    <span class="clip-label">位置 {{ toolState.clipHeight.toFixed(2) }}</span>
+                    <el-slider
+                        :model-value="toolState.clipHeight"
+                        :min="clipRange.min"
+                        :max="clipRange.max"
+                        :step="clipStep"
+                        size="small"
+                        @update:model-value="onClipHeightChange"
+                    />
+                    <div class="clip-flags">
+                        <el-switch
+                            :model-value="toolState.clipKeepLower"
+                            inline-prompt
+                            active-text="留低"
+                            inactive-text="留高"
+                            @update:model-value="setClipKeepLower"
+                        />
+                        <el-switch
+                            :model-value="toolState.clipHelperVisible"
+                            inline-prompt
+                            active-text="辅助面"
+                            inactive-text="隐藏"
+                            @update:model-value="setClipHelperVisible"
+                        />
+                    </div>
+                </div>
+            </div>
+
+            <div class="tools-divider" />
+
+            <div class="tools-group">
+                <el-tooltip :content="toolState.measureEnabled ? '关闭测量' : '开启测量'" placement="bottom">
+                    <el-button class="tool-btn" :class="{ active: toolState.measureEnabled }" @click="toggleMeasureTool">
+                        <el-icon>
+                            <Aim />
+                        </el-icon>
+                        <span>测量</span>
+                    </el-button>
+                </el-tooltip>
+
+                <el-button class="tool-btn ghost" :disabled="!measurements.length" @click="clearMeasurements">
+                    清空
                 </el-button>
-            </el-tooltip>
-            <el-tooltip content="测量（占位）" placement="left">
-                <el-button size="small" circle disabled><el-icon>
-                        <Aim />
-                    </el-icon></el-button>
-            </el-tooltip>
+            </div>
+        </div>
+
+        <div v-if="lastMeasurementDistance !== null" class="measure-chip">
+            最近测量 {{ lastMeasurementDistance.toFixed(2) }} m
         </div>
     </div>
 </template>
@@ -40,6 +112,7 @@ import { StratumModelLoader } from '@/three/loaders/StratumModelLoader'
 import { BoreholeModelLoader } from '@/three/loaders/BoreholeModelLoader'
 import { WorkingFaceModelLoader } from '@/three/loaders/WorkingFaceModelLoader'
 import { ClipTool } from '@/three/tools/ClipTool'
+import { MeasureTool } from '@/three/tools/MeasureTool'
 import { modelApi, boreholeApi } from '@/api'
 import { useSceneStore, useBoreholeStore } from '@/stores'
 import { storeToRefs } from 'pinia'
@@ -48,12 +121,23 @@ import type { ModelLoadRequest } from '@/stores/sceneStore'
 
 const sceneStore = useSceneStore()
 const boreholeStore = useBoreholeStore()
-const { layerVisible, opacity, locateTarget, loadRequest, showEdges, stratumLayers } = storeToRefs(sceneStore)
+const {
+    layerVisible,
+    opacity,
+    locateTarget,
+    loadRequest,
+    showEdges,
+    stratumLayers,
+    toolState,
+    measurements,
+    lastMeasurementDistance,
+} = storeToRefs(sceneStore)
 const BOREHOLE_VERTICAL_SCALE = 10
 
 const containerRef = ref<HTMLDivElement>()
 const canvasRef = ref<HTMLCanvasElement>()
-const clipEnabled = ref(false)
+const clipRange = ref({ min: -1000, max: 1000 })
+const clipStep = ref(1)
 
 let sceneManager: SceneManager
 let cameraManager: CameraManager
@@ -65,6 +149,7 @@ let layerManager: LayerManager
 let highlightManager: HighlightManager
 let selectionManager: SelectionManager
 let clipTool: ClipTool
+let measureTool: MeasureTool
 let animFrameId: number
 let resizeObserver: ResizeObserver
 let isAnimating = false
@@ -83,7 +168,25 @@ async function initScene() {
     modelManager = new ModelManager(sceneManager)
     layerManager = new LayerManager(modelManager)
     highlightManager = new HighlightManager()
-    clipTool = new ClipTool(rendererManager.renderer)
+    clipTool = new ClipTool(
+        rendererManager.renderer,
+        sceneManager.scene,
+        {
+            onPositionChange: (position) => {
+                sceneStore.setClipHeight(position)
+            },
+            onRangeChange: (min, max) => {
+                clipRange.value = { min, max }
+                const span = Math.max(1, max - min)
+                clipStep.value = Math.max(0.1, Number((span / 200).toFixed(2)))
+            },
+        }
+    )
+    measureTool = new MeasureTool(sceneManager.scene, cameraManager.camera, canvasRef.value)
+
+    if (toolState.value.clipHeight !== 0) {
+        clipTool.setHeight(toolState.value.clipHeight)
+    }
 
     selectionManager = new SelectionManager(
         cameraManager.camera,
@@ -112,6 +215,7 @@ async function initScene() {
     })
     resizeObserver.observe(containerRef.value)
 
+    syncToolRuntimeState()
     startAnimate()
 }
 
@@ -189,6 +293,10 @@ async function loadModelByRequest(req: ModelLoadRequest) {
             fitCameraToType(focusType, preferImmediateFocus)
         } else {
             fitCameraToLoadedModels()
+        }
+
+        if (toolState.value.clipEnabled) {
+            syncToolRuntimeState()
         }
     } catch (err) {
         sceneStore.setModelLoadStatus(req.type, req.id, { loading: false })
@@ -355,7 +463,8 @@ function addPlaceholderStratum(model: ModelItem) {
     const colors: Record<string, number> = { 'strata-001': 0x4a7a8a, 'strata-002': 0x6d9e73 }
     const color = colors[model.id] ?? 0x5a8a9a
     const geom = new THREE.BoxGeometry(400, 20, 300)
-    const mat = new THREE.MeshLambertMaterial({ color, transparent: true, opacity: 0.7 })
+    const mat = new THREE.MeshLambertMaterial({ color, transparent: true, opacity: 0.7, clipShadows: true })
+    mat.clippingPlanes = []
     const mesh = new THREE.Mesh(geom, mat)
     mesh.position.y = Object.keys(colors).indexOf(model.id) * -25
     mesh.name = `stratum_${model.id}`
@@ -431,7 +540,8 @@ function applyStratumLayerControl(control: StratumLayerControl) {
 
 function addPlaceholderWorkingFace(model: ModelItem) {
     const geom = new THREE.BoxGeometry(200, 15, 120)
-    const mat = new THREE.MeshLambertMaterial({ color: 0xf5a623, transparent: true, opacity: 0.8 })
+    const mat = new THREE.MeshLambertMaterial({ color: 0xf5a623, transparent: true, opacity: 0.8, clipShadows: true })
+    mat.clippingPlanes = []
     const mesh = new THREE.Mesh(geom, mat)
     mesh.position.set(Math.random() * 100 - 50, -80, Math.random() * 100 - 50)
     mesh.name = `workingface_${model.id}`
@@ -445,14 +555,63 @@ function resetCamera() {
     controlsManager.controls.update()
 }
 
-function toggleClip() {
-    if (clipEnabled.value) {
-        clipTool.disable()
-        clipEnabled.value = false
+function syncToolRuntimeState() {
+    if (!clipTool || !measureTool || !selectionManager) return
+
+    if (toolState.value.clipEnabled) {
+        clipTool.enable({
+            axis: toolState.value.clipAxis,
+            position: toolState.value.clipHeight,
+            keepLower: toolState.value.clipKeepLower,
+            showHelper: toolState.value.clipHelperVisible,
+        })
     } else {
-        clipTool.enable()
-        clipEnabled.value = true
+        clipTool.disable()
     }
+
+    if (toolState.value.measureEnabled) {
+        selectionManager.setEnabled(false)
+        measureTool.enable((result) => {
+            sceneStore.addMeasurement({
+                id: result.id,
+                distance: result.distance,
+                start: { x: result.start.x, y: result.start.y, z: result.start.z },
+                end: { x: result.end.x, y: result.end.y, z: result.end.z },
+            })
+        })
+    } else {
+        measureTool.disable()
+        selectionManager.setEnabled(true)
+    }
+}
+
+function toggleClipTool() {
+    sceneStore.activateTool(toolState.value.clipEnabled ? null : 'clip')
+}
+
+function toggleMeasureTool() {
+    sceneStore.activateTool(toolState.value.measureEnabled ? null : 'measure')
+}
+
+function onClipHeightChange(value: number | undefined) {
+    sceneStore.setClipHeight(typeof value === 'number' ? value : 0)
+}
+
+function setClipAxis(axis: 'x' | 'y' | 'z') {
+    sceneStore.setClipAxis(axis)
+}
+
+function setClipKeepLower(value: boolean | string | number) {
+    sceneStore.setClipKeepLower(Boolean(value))
+}
+
+function setClipHelperVisible(value: boolean | string | number) {
+    sceneStore.setClipHelperVisible(Boolean(value))
+}
+
+function clearMeasurements() {
+    sceneStore.clearMeasurements()
+    measureTool?.clear()
 }
 
 // 监听图层显隐
@@ -478,6 +637,27 @@ watch(stratumLayers, (layers) => {
         applyStratumLayerControl(layer)
     }
 }, { deep: true })
+
+watch(() => toolState.value.clipHeight, (height) => {
+    if (clipTool && Math.abs(clipTool.getHeight() - height) > 1e-6) {
+        clipTool.setHeight(height)
+    }
+})
+
+watch(
+    () => ({
+        clipEnabled: toolState.value.clipEnabled,
+        measureEnabled: toolState.value.measureEnabled,
+        clipHeight: toolState.value.clipHeight,
+        clipAxis: toolState.value.clipAxis,
+        clipKeepLower: toolState.value.clipKeepLower,
+        clipHelperVisible: toolState.value.clipHelperVisible,
+    }),
+    () => {
+        syncToolRuntimeState()
+    },
+    { deep: true }
+)
 
 // 监听定位目标
 watch(locateTarget, (target) => {
@@ -515,8 +695,11 @@ onDeactivated(() => {
 })
 
 onUnmounted(() => {
+    sceneStore.activateTool(null)
     stopAnimate()
     resizeObserver?.disconnect()
+    clipTool?.dispose()
+    measureTool?.dispose()
     selectionManager?.dispose()
     controlsManager?.dispose()
     rendererManager?.dispose()
@@ -545,7 +728,131 @@ onUnmounted(() => {
     top: 12px;
     right: 12px;
     display: flex;
-    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    border: 1px solid rgba(0, 200, 255, 0.28);
+    border-radius: 12px;
+    background: linear-gradient(135deg, rgba(10, 22, 40, 0.92), rgba(15, 36, 71, 0.8));
+    backdrop-filter: blur(8px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+}
+
+.tools-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.tools-divider {
+    width: 1px;
+    height: 28px;
+    background: rgba(138, 180, 212, 0.35);
+}
+
+.tool-btn {
+    min-width: 72px;
+    height: 34px;
+    border: 1px solid rgba(138, 180, 212, 0.35);
+    color: var(--color-text-primary);
+    background: rgba(19, 45, 85, 0.45);
+}
+
+.tool-btn span {
+    margin-left: 6px;
+    font-size: 12px;
+}
+
+.tool-btn.active {
+    border-color: rgba(0, 200, 255, 0.8);
+    color: #dff8ff;
+    background: linear-gradient(135deg, rgba(0, 200, 255, 0.25), rgba(16, 54, 102, 0.8));
+}
+
+.tool-btn.ghost {
+    min-width: 60px;
+}
+
+.clip-control {
+    width: 180px;
+    padding: 0 2px;
+}
+
+.clip-axis-row {
+    display: flex;
     gap: 6px;
+    margin-bottom: 6px;
+}
+
+.axis-btn {
+    min-width: 34px;
+    height: 24px;
+    border: 1px solid rgba(138, 180, 212, 0.35);
+    color: var(--color-text-secondary);
+    background: rgba(19, 45, 85, 0.35);
+    padding: 0;
+}
+
+.axis-btn.active {
+    color: #dff8ff;
+    border-color: rgba(0, 200, 255, 0.8);
+    background: rgba(0, 200, 255, 0.2);
+}
+
+.clip-label {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--color-text-secondary);
+    font-size: 12px;
+}
+
+.clip-flags {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 8px;
+}
+
+.measure-chip {
+    position: absolute;
+    top: 64px;
+    right: 12px;
+    padding: 6px 10px;
+    border: 1px solid rgba(0, 200, 255, 0.35);
+    border-radius: 10px;
+    background: rgba(15, 36, 71, 0.85);
+    color: #dff8ff;
+    font-size: 12px;
+    backdrop-filter: blur(6px);
+}
+
+@media (max-width: 900px) {
+    .tools-bar {
+        top: auto;
+        bottom: 12px;
+        right: 12px;
+        left: 12px;
+        flex-wrap: wrap;
+        justify-content: space-between;
+    }
+
+    .tools-group {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .tools-divider {
+        display: none;
+    }
+
+    .clip-control {
+        width: calc(100% - 90px);
+    }
+
+    .measure-chip {
+        top: auto;
+        bottom: 122px;
+        right: 12px;
+    }
 }
 </style>

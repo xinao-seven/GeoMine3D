@@ -68,7 +68,9 @@ export class StratumModelLoader {
                             side: THREE.DoubleSide,
                             emissive: 0x0d121f,
                             emissiveIntensity: 0.08,
+                            clipShadows: true,
                         })
+                        lambertMaterial.clippingPlanes = []
 
                         if ((originalMaterial as any)?.map) {
                             lambertMaterial.map = (originalMaterial as any).map

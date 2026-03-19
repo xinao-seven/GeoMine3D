@@ -1,6 +1,15 @@
 import { defineStore } from 'pinia'
 import { ref, reactive } from 'vue'
-import type { SceneObject, LayerState, OpacityState, ModelItem, BoreholeItem, StratumLayerControl } from '@/types'
+import type {
+    SceneObject,
+    LayerState,
+    OpacityState,
+    ModelItem,
+    BoreholeItem,
+    StratumLayerControl,
+    ToolState,
+    MeasurementRecord,
+} from '@/types'
 
 type ModelType = 'stratum' | 'borehole' | 'workingface'
 
@@ -32,6 +41,17 @@ export const useSceneStore = defineStore('scene', () => {
     })
 
     const showEdges = ref(false)
+    const toolState = reactive<ToolState>({
+        clipEnabled: false,
+        clipHeight: 0,
+        clipAxis: 'y',
+        clipKeepLower: true,
+        clipHelperVisible: true,
+        measureEnabled: false,
+        annotationEnabled: false,
+    })
+    const measurements = ref<MeasurementRecord[]>([])
+    const lastMeasurementDistance = ref<number | null>(null)
 
     const modelLoadStatus = reactive<Record<string, { loaded: boolean; loading: boolean }>>({})
     const loadRequest = ref<ModelLoadRequest | null>(null)
@@ -58,6 +78,38 @@ export const useSceneStore = defineStore('scene', () => {
 
     function setShowEdges(visible: boolean) {
         showEdges.value = visible
+    }
+
+    function activateTool(tool: 'clip' | 'measure' | 'annotation' | null) {
+        toolState.clipEnabled = tool === 'clip'
+        toolState.measureEnabled = tool === 'measure'
+        toolState.annotationEnabled = tool === 'annotation'
+    }
+
+    function setClipHeight(height: number) {
+        toolState.clipHeight = height
+    }
+
+    function setClipAxis(axis: 'x' | 'y' | 'z') {
+        toolState.clipAxis = axis
+    }
+
+    function setClipKeepLower(keepLower: boolean) {
+        toolState.clipKeepLower = keepLower
+    }
+
+    function setClipHelperVisible(visible: boolean) {
+        toolState.clipHelperVisible = visible
+    }
+
+    function addMeasurement(record: MeasurementRecord) {
+        measurements.value.push(record)
+        lastMeasurementDistance.value = record.distance
+    }
+
+    function clearMeasurements() {
+        measurements.value = []
+        lastMeasurementDistance.value = null
     }
 
     function getModelKey(type: ModelType, id: string) {
@@ -112,6 +164,9 @@ export const useSceneStore = defineStore('scene', () => {
         layerVisible,
         opacity,
         showEdges,
+        toolState,
+        measurements,
+        lastMeasurementDistance,
         modelLoadStatus,
         loadRequest,
         stratumLayers,
@@ -121,6 +176,13 @@ export const useSceneStore = defineStore('scene', () => {
         setLayerVisible,
         setOpacity,
         setShowEdges,
+        activateTool,
+        setClipHeight,
+        setClipAxis,
+        setClipKeepLower,
+        setClipHelperVisible,
+        addMeasurement,
+        clearMeasurements,
         getModelKey,
         getModelLoadStatus,
         setModelLoadStatus,

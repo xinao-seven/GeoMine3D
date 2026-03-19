@@ -11,6 +11,7 @@ export class SelectionManager {
   private domElement: HTMLElement
   private highlightManager: HighlightManager
   private onSelect: SelectionCallback
+  private enabled = true
 
   constructor(
     camera: THREE.Camera,
@@ -28,6 +29,8 @@ export class SelectionManager {
   }
 
   private _onClick = (event: MouseEvent) => {
+    if (!this.enabled) return
+
     const rect = this.domElement.getBoundingClientRect()
     this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
     this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
@@ -59,6 +62,14 @@ export class SelectionManager {
 
     this.highlightManager.select(null)
     this.onSelect(null)
+  }
+
+  setEnabled(enabled: boolean) {
+    this.enabled = enabled
+    if (!enabled) {
+      this.highlightManager.select(null)
+      this.onSelect(null)
+    }
   }
 
   dispose() {

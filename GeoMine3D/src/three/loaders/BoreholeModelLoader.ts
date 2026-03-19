@@ -20,7 +20,9 @@ export class BoreholeModelLoader {
     const geometry = new THREE.CylinderGeometry(radius, radius, depth, 8)
     const material = new THREE.MeshLambertMaterial({
       color: 0x4488ff,
+      clipShadows: true,
     })
+    material.clippingPlanes = []
     const mesh = new THREE.Mesh(geometry, material)
     mesh.position.y = -depth / 2
     group.add(mesh)
@@ -28,6 +30,7 @@ export class BoreholeModelLoader {
     // 顶部标记球（地表位置）
     const markerGeom = new THREE.SphereGeometry(50, 8, 8)
     const markerMat = new THREE.MeshLambertMaterial({ color: 0x00c8ff })
+    markerMat.clippingPlanes = []
     const marker = new THREE.Mesh(markerGeom, markerMat)
     group.add(marker)
 

@@ -28,3 +28,20 @@ export interface StratumLayerControl {
   opacity: number
   color: string
 }
+
+export interface ToolState {
+  clipEnabled: boolean
+  clipHeight: number
+  clipAxis: 'x' | 'y' | 'z'
+  clipKeepLower: boolean
+  clipHelperVisible: boolean
+  measureEnabled: boolean
+  annotationEnabled: boolean
+}
+
+export interface MeasurementRecord {
+  id: string
+  distance: number
+  start: { x: number; y: number; z: number }
+  end: { x: number; y: number; z: number }
+}
