@@ -25,22 +25,28 @@ export interface ModelLoadRequest {
 }
 
 export const useSceneStore = defineStore('scene', () => {
+    // 当前在三维场景中被选中的对象（用于属性面板展示）
     const selectedObject = ref<SceneObject | null>(null)
+    // 当前高亮对象 id（用于跨组件高亮联动）
     const highlightedId = ref<string | null>(null)
 
+    // 三类图层的显示开关状态
     const layerVisible = reactive<LayerState>({
         stratum: true,
         borehole: true,
         workingface: true,
     })
 
+    // 三类图层的透明度状态（0~1）
     const opacity = reactive<OpacityState>({
         stratum: 1.0,
         borehole: 1.0,
         workingface: 1.0,
     })
 
+    // 地层边缘线显示开关
     const showEdges = ref(false)
+    // 工具运行状态（剖切/测量/标注）
     const toolState = reactive<ToolState>({
         clipEnabled: false,
         clipHeight: 0,
@@ -50,11 +56,16 @@ export const useSceneStore = defineStore('scene', () => {
         measureEnabled: false,
         annotationEnabled: false,
     })
+    // 测量结果列表（历史记录）
     const measurements = ref<MeasurementRecord[]>([])
+    // 最近一次测量距离（用于快捷展示）
     const lastMeasurementDistance = ref<number | null>(null)
 
+    // 模型加载状态表，key 为 type:id
     const modelLoadStatus = reactive<Record<string, { loaded: boolean; loading: boolean }>>({})
+    // 待处理模型加载请求（由 SceneCanvas 监听并消费）
     const loadRequest = ref<ModelLoadRequest | null>(null)
+    // 地层单元控制项（显隐/颜色/透明度）
     const stratumLayers = ref<StratumLayerControl[]>([])
 
     // 定位目标（用于从其他页面跳转到 dashboard 时定位）

@@ -172,9 +172,11 @@ async function initScene() {
         rendererManager.renderer,
         sceneManager.scene,
         {
+            //滑块位置的回调
             onPositionChange: (position) => {
                 sceneStore.setClipHeight(position)
             },
+            //滑块范围回调
             onRangeChange: (min, max) => {
                 clipRange.value = { min, max }
                 const span = Math.max(1, max - min)
