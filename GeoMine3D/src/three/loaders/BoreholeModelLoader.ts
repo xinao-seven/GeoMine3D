@@ -8,7 +8,7 @@ import type { BoreholeItem } from '@/types'
 export class BoreholeModelLoader {
   createBoreholeObject(
     borehole: BoreholeItem,
-    position?: { x: number; z: number },
+    position?: { x: number; y: number; z: number },
     verticalScale = 1
   ): THREE.Group {
     const group = new THREE.Group()
@@ -24,7 +24,9 @@ export class BoreholeModelLoader {
     })
     material.clippingPlanes = []
     const mesh = new THREE.Mesh(geometry, material)
-    mesh.position.y = -depth / 2
+    // CylinderGeometry默认沿Y轴，旋转到Z轴以匹配原始地质坐标的竖直方向
+    mesh.rotation.x = Math.PI / 2
+    mesh.position.z = -depth / 2
     group.add(mesh)
 
     // 顶部标记球（地表位置）
@@ -35,7 +37,7 @@ export class BoreholeModelLoader {
     group.add(marker)
 
     if (position) {
-      group.position.set(position.x, 0, position.z)
+      group.position.set(position.x, position.y, position.z)
     }
 
     return group

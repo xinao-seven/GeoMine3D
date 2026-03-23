@@ -65,13 +65,14 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 import { useProjectStore } from '@/stores'
 
 const route = useRoute()
 const router = useRouter()
 const projectStore = useProjectStore()
-const { summary } = projectStore
+const { summary } = storeToRefs(projectStore)
 
 const currentTime = ref('')
 let timer: ReturnType<typeof setInterval>
@@ -99,7 +100,11 @@ function updateTime() {
 }
 
 onMounted(() => {
-  projectStore.fetchSummary()
+  if (!summary.value && !projectStore.loading) {
+    projectStore.fetchSummary().catch(() => {
+      // 请求错误由 request 拦截器统一处理提示
+    })
+  }
   updateTime()
   timer = setInterval(updateTime, 1000)
 })

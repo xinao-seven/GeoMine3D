@@ -132,7 +132,7 @@ const {
     measurements,
     lastMeasurementDistance,
 } = storeToRefs(sceneStore)
-const BOREHOLE_VERTICAL_SCALE = 10
+const BOREHOLE_VERTICAL_SCALE = 20
 
 const containerRef = ref<HTMLDivElement>()
 const canvasRef = ref<HTMLCanvasElement>()
@@ -345,15 +345,21 @@ function focusByBoreholeData(boreholes: BoreholeItem[], startIndex = 0) {
 
     const points = boreholes.map((b, i) => {
         if (b.location) {
-            return new THREE.Vector3(b.location.x, b.location.z * BOREHOLE_VERTICAL_SCALE, b.location.y)
+            const localPoint = new THREE.Vector3(
+                b.location.x,
+                b.location.y,
+                b.location.z * BOREHOLE_VERTICAL_SCALE
+            )
+            return sceneManager.geoRoot.localToWorld(localPoint)
         }
         const spacing = 500
         const cols = 10
-        return new THREE.Vector3(
+        const localPoint = new THREE.Vector3(
             ((startIndex + i) % cols) * spacing - (cols * spacing) / 2,
-            0,
-            Math.floor((startIndex + i) / cols) * spacing - (cols * spacing) / 2
+            Math.floor((startIndex + i) / cols) * spacing - (cols * spacing) / 2,
+            0
         )
+        return sceneManager.geoRoot.localToWorld(localPoint)
     })
 
     const box = new THREE.Box3().setFromPoints(points)
@@ -402,22 +408,24 @@ async function loadWorkingFaceModel(m: ModelItem) {
 async function loadBoreholeModel(b: BoreholeItem, index: number) {
     const bhLoader = new BoreholeModelLoader()
 
-    let pos: { x: number; z: number }
+    let pos: { x: number; y: number; z: number }
     if (b.location) {
-        pos = { x: b.location.x, z: b.location.y }
+        pos = {
+            x: b.location.x,
+            y: b.location.y,
+            z: b.location.z * BOREHOLE_VERTICAL_SCALE,
+        }
     } else {
         const spacing = 500
         const cols = 10
         pos = {
             x: (index % cols) * spacing - (cols * spacing) / 2,
-            z: Math.floor(index / cols) * spacing - (cols * spacing) / 2,
+            y: Math.floor(index / cols) * spacing - (cols * spacing) / 2,
+            z: 0,
         }
     }
 
     const obj = bhLoader.createBoreholeObject(b, pos, BOREHOLE_VERTICAL_SCALE)
-    if (b.location) {
-        obj.position.y = b.location.z * BOREHOLE_VERTICAL_SCALE
-    }
     modelManager.addModel({ id: b.id, name: b.name, type: 'borehole', object: obj })
 }
 
@@ -468,7 +476,7 @@ function addPlaceholderStratum(model: ModelItem) {
     const mat = new THREE.MeshLambertMaterial({ color, transparent: true, opacity: 0.7, clipShadows: true })
     mat.clippingPlanes = []
     const mesh = new THREE.Mesh(geom, mat)
-    mesh.position.y = Object.keys(colors).indexOf(model.id) * -25
+    mesh.position.z = Object.keys(colors).indexOf(model.id) * -25
     mesh.name = `stratum_${model.id}`
     mesh.userData = {
         id: `${model.id}::0`,
@@ -545,7 +553,7 @@ function addPlaceholderWorkingFace(model: ModelItem) {
     const mat = new THREE.MeshLambertMaterial({ color: 0xf5a623, transparent: true, opacity: 0.8, clipShadows: true })
     mat.clippingPlanes = []
     const mesh = new THREE.Mesh(geom, mat)
-    mesh.position.set(Math.random() * 100 - 50, -80, Math.random() * 100 - 50)
+    mesh.position.set(Math.random() * 100 - 50, Math.random() * 100 - 50, -80)
     mesh.name = `workingface_${model.id}`
     mesh.userData = { id: model.id, name: model.name, type: 'workingface', modelData: model }
     modelManager.addModel({ id: model.id, name: model.name, type: 'workingface', object: mesh })
