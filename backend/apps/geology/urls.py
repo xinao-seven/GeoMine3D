@@ -12,11 +12,17 @@ urlpatterns = [
     # so that "search" is not captured as a borehole id.
     path('boreholes', views.BoreholeListView.as_view(), name='borehole-list'),
     path('boreholes/search', views.BoreholeSearchView.as_view(), name='borehole-search'),
+    path('boreholes/wgs84', views.BoreholeWGS84View.as_view(), name='borehole-wgs84'),
     path('boreholes/<str:borehole_id>', views.BoreholeDetailView.as_view(), name='borehole-detail'),
 
     # 工作面接口
     path('workingfaces', views.WorkingFaceListView.as_view(), name='workingface-list'),
     path('workingfaces/<str:wf_id>', views.WorkingFaceDetailView.as_view(), name='workingface-detail'),
+
+    # 空间边界接口
+    path('boundaries/mine-area', views.BoundaryMineAreaView.as_view(), name='boundary-mine-area'),
+    path('boundaries/working-faces', views.BoundaryWorkingFacesView.as_view(), name='boundary-working-faces'),
+    path('system/projection', views.ProjectionMetadataView.as_view(), name='system-projection'),
 
     # 统计分析接口
     path('analysis/thickness-distribution', views.AnalysisThicknessView.as_view()),

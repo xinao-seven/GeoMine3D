@@ -16,6 +16,12 @@ const routes = [
         meta: { title: '三维分析', icon: 'DataBoard' },
       },
       {
+        path: 'cesium-view',
+        name: 'CesiumView',
+        component: () => import('@/views/cesium/index.vue'),
+        meta: { title: 'Cesium场景', icon: 'Location' },
+      },
+      {
         path: 'model-management',
         name: 'ModelManagement',
         component: () => import('@/views/model-management/index.vue'),

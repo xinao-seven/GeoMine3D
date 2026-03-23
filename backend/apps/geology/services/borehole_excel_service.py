@@ -18,10 +18,14 @@ borehole_excel_service.py
 import pandas as pd
 from pathlib import Path
 from django.conf import settings
+from pyproj import CRS, Transformer
 
 _BASE_DIR        = Path(settings.BASE_DIR)
 _BOREHOLES_DIR   = _BASE_DIR / 'data' / 'boreholes'
 _LOCATION_FILE   = _BASE_DIR / 'data' / 'location' / '钻孔位置.xlsx'
+_MINE_AREA_PRJ   = _BASE_DIR / 'data' / 'shp' / '锦界矿边界.prj'
+_DEFAULT_SOURCE_CRS = 'EPSG:2421'
+_TARGET_CRS = 'EPSG:4326'
 
 # 地层数据字段映射（中文列名 → 内部字段名）
 _FIELD_MAP = {
@@ -30,6 +34,43 @@ _FIELD_MAP = {
     'depth':         '深度',      # 每层底边深度
     'thickness':     '厚度',      # 本层厚度
 }
+
+
+def _build_borehole_transformer() -> Transformer:
+    source_crs = CRS.from_string(_DEFAULT_SOURCE_CRS)
+    if _MINE_AREA_PRJ.exists():
+        try:
+            prj_text = _MINE_AREA_PRJ.read_text(encoding='utf-8', errors='ignore').strip()
+            if prj_text:
+                source_crs = CRS.from_wkt(prj_text)
+        except Exception:
+            pass
+    return Transformer.from_crs(source_crs, CRS.from_epsg(4326), always_xy=True)
+
+
+_WGS84_TRANSFORMER = _build_borehole_transformer()
+
+
+def _is_lonlat(lon: float, lat: float) -> bool:
+    return -180 <= lon <= 180 and -90 <= lat <= 90
+
+
+def _convert_point_to_wgs84(x: float, y: float) -> tuple[float, float] | None:
+    # Already geographic coordinates.
+    if _is_lonlat(x, y):
+        return x, y
+
+    # Try normal axis order first.
+    lon, lat = _WGS84_TRANSFORMER.transform(x, y)
+    if _is_lonlat(lon, lat):
+        return lon, lat
+
+    # Fallback for mis-labeled columns where x/y are swapped in source file.
+    lon2, lat2 = _WGS84_TRANSFORMER.transform(y, x)
+    if _is_lonlat(lon2, lat2):
+        return lon2, lat2
+
+    return None
 
 
 def _normalize_name(name: str) -> str:
@@ -295,3 +336,34 @@ def get_borehole_raw_locations():
         }
         for idx, (name, raw) in enumerate(raw_locations.items())
     ]
+
+
+def get_borehole_wgs84_locations():
+    """返回转换为 WGS84 的钻孔点位，供 Cesium 页面使用。"""
+    items = get_borehole_raw_locations()
+    result = []
+    for item in items:
+        try:
+            x = float(item['x'])
+            y = float(item['y'])
+            z = float(item['z'])
+
+            converted = _convert_point_to_wgs84(x, y)
+            if not converted:
+                continue
+            lon, lat = converted
+        except Exception:
+            continue
+        result.append({
+            'id': item['id'],
+            'name': item['name'],
+            'longitude': round(lon, 8),
+            'latitude': round(lat, 8),
+            'altitude': round(z, 3),
+            'source': {
+                'x': item['x'],
+                'y': item['y'],
+                'z': item['z'],
+            },
+        })
+    return result
