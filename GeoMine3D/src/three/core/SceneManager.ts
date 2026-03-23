@@ -7,6 +7,7 @@ export class SceneManager {
     readonly geoRoot: THREE.Group
     // 网格辅助线用于提供尺度与方向参照
     private grid: THREE.GridHelper
+    private geoRootRotationXEnabled = true
 
     constructor() {
         this.scene = new THREE.Scene()
@@ -38,6 +39,16 @@ export class SceneManager {
 
     removeObject(obj: THREE.Object3D) {
         this.geoRoot.remove(obj)
+    }
+
+    setGeoRootRotationXEnabled(enabled: boolean) {
+        this.geoRootRotationXEnabled = enabled
+        this.geoRoot.rotation.x = enabled ? GEO_ROOT_ROTATION_X : 0
+        this.geoRoot.updateMatrixWorld(true)
+    }
+
+    isGeoRootRotationXEnabled() {
+        return this.geoRootRotationXEnabled
     }
 
     getObjectByName(name: string): THREE.Object3D | undefined {

@@ -74,6 +74,17 @@
 
             <div class="tools-divider" />
 
+            <div class="tools-group axis-toggle-group">
+                <span class="axis-toggle-label">旋转X</span>
+                <el-switch
+                    :model-value="rotateXAxisEnabled"
+                    inline-prompt
+                    active-text="开"
+                    inactive-text="关"
+                    @update:model-value="onRotateXAxisToggle"
+                />
+            </div>
+
             <div class="tools-group">
                 <el-tooltip :content="toolState.measureEnabled ? '关闭测量' : '开启测量'" placement="bottom">
                     <el-button class="tool-btn" :class="{ active: toolState.measureEnabled }" @click="toggleMeasureTool">
@@ -93,6 +104,7 @@
         <div v-if="lastMeasurementDistance !== null" class="measure-chip">
             最近测量 {{ lastMeasurementDistance.toFixed(2) }} m
         </div>
+
     </div>
 </template>
 
@@ -138,6 +150,17 @@ const containerRef = ref<HTMLDivElement>()
 const canvasRef = ref<HTMLCanvasElement>()
 const clipRange = ref({ min: -1000, max: 1000 })
 const clipStep = ref(1)
+const rotateXAxisEnabled = ref(true)
+
+const AXIS_GIZMO_SIZE = 110
+const AXIS_GIZMO_PADDING = 12
+
+let axisGizmoScene: THREE.Scene
+let axisGizmoCamera: THREE.PerspectiveCamera
+let axisGizmoRoot: THREE.Group
+let axisGizmoResources: Array<THREE.Material | THREE.Texture> = []
+const axisGizmoCameraInvQuat = new THREE.Quaternion()
+const axisGizmoGeoRootQuat = new THREE.Quaternion()
 
 let sceneManager: SceneManager
 let cameraManager: CameraManager
@@ -217,8 +240,105 @@ async function initScene() {
     })
     resizeObserver.observe(containerRef.value)
 
+    rotateXAxisEnabled.value = sceneManager.isGeoRootRotationXEnabled()
+    initAxisGizmo()
+
     syncToolRuntimeState()
     startAnimate()
+}
+
+function createAxisLabelSprite(text: string, color: string) {
+    const canvas = document.createElement('canvas')
+    canvas.width = 128
+    canvas.height = 128
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    ctx.font = 'bold 72px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillStyle = color
+    ctx.fillText(text, canvas.width / 2, canvas.height / 2)
+
+    const texture = new THREE.CanvasTexture(canvas)
+    texture.needsUpdate = true
+    const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false })
+    const sprite = new THREE.Sprite(material)
+    sprite.scale.set(12, 12, 12)
+
+    axisGizmoResources.push(texture, material)
+    return sprite
+}
+
+function initAxisGizmo() {
+    axisGizmoScene = new THREE.Scene()
+    axisGizmoCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 200)
+    axisGizmoCamera.position.set(0, 0, 80)
+    axisGizmoCamera.lookAt(0, 0, 0)
+
+    const ambient = new THREE.AmbientLight(0xffffff, 0.9)
+    const dir = new THREE.DirectionalLight(0xffffff, 0.6)
+    dir.position.set(20, 30, 40)
+    axisGizmoScene.add(ambient, dir)
+
+    axisGizmoRoot = new THREE.Group()
+    axisGizmoScene.add(axisGizmoRoot)
+
+    const axes = new THREE.AxesHelper(24)
+    axisGizmoRoot.add(axes)
+
+    const xLabel = createAxisLabelSprite('X', '#ff5e5e')
+    const yLabel = createAxisLabelSprite('Y', '#52d273')
+    const zLabel = createAxisLabelSprite('Z', '#4e90ff')
+
+    if (xLabel) {
+        xLabel.position.set(30, 0, 0)
+        axisGizmoRoot.add(xLabel)
+    }
+    if (yLabel) {
+        yLabel.position.set(0, 30, 0)
+        axisGizmoRoot.add(yLabel)
+    }
+    if (zLabel) {
+        zLabel.position.set(0, 0, 30)
+        axisGizmoRoot.add(zLabel)
+    }
+}
+
+function renderAxisGizmo() {
+    if (!axisGizmoRoot) return
+
+    // 轴向指示器显示“geoRoot 轴系相对当前相机”的方向，需同时考虑相机姿态与 geoRoot 旋转。
+    axisGizmoCameraInvQuat.copy(cameraManager.camera.quaternion).invert()
+    sceneManager.geoRoot.getWorldQuaternion(axisGizmoGeoRootQuat)
+    axisGizmoRoot.quaternion.copy(axisGizmoCameraInvQuat).multiply(axisGizmoGeoRootQuat)
+
+    const renderer = rendererManager.renderer
+    const rendererSize = renderer.getSize(new THREE.Vector2())
+    const size = Math.min(AXIS_GIZMO_SIZE, Math.floor(Math.min(rendererSize.x, rendererSize.y) * 0.26))
+    const viewportX = AXIS_GIZMO_PADDING
+    const viewportY = AXIS_GIZMO_PADDING
+
+    const prevAutoClear = renderer.autoClear
+    renderer.autoClear = false
+    renderer.clearDepth()
+
+    renderer.setScissorTest(true)
+    renderer.setViewport(viewportX, viewportY, size, size)
+    renderer.setScissor(viewportX, viewportY, size, size)
+    renderer.render(axisGizmoScene, axisGizmoCamera)
+    renderer.setScissorTest(false)
+
+    renderer.setViewport(0, 0, rendererSize.x, rendererSize.y)
+    renderer.autoClear = prevAutoClear
+}
+
+function disposeAxisGizmo() {
+    for (const item of axisGizmoResources) {
+        item.dispose()
+    }
+    axisGizmoResources = []
 }
 
 function animate() {
@@ -227,6 +347,7 @@ function animate() {
     controlsManager.update()
     lightManager.updateFromCamera(cameraManager.camera)
     rendererManager.render(sceneManager.scene, cameraManager.camera)
+    renderAxisGizmo()
 }
 
 function startAnimate() {
@@ -624,6 +745,16 @@ function clearMeasurements() {
     measureTool?.clear()
 }
 
+function onRotateXAxisToggle(value: boolean | string | number) {
+    const enabled = Boolean(value)
+    rotateXAxisEnabled.value = enabled
+    sceneManager?.setGeoRootRotationXEnabled(enabled)
+
+    if (modelManager?.getAllModels().length) {
+        fitCameraToLoadedModels()
+    }
+}
+
 // 监听图层显隐
 watch(layerVisible, (val) => {
     layerManager.setLayerVisible('stratum', val.stratum)
@@ -714,6 +845,7 @@ onUnmounted(() => {
     controlsManager?.dispose()
     rendererManager?.dispose()
     highlightManager?.dispose()
+    disposeAxisGizmo()
     modelManager?.clear()
     sceneManager?.dispose()
 })
@@ -781,6 +913,15 @@ onUnmounted(() => {
 
 .tool-btn.ghost {
     min-width: 60px;
+}
+
+.axis-toggle-group {
+    gap: 6px;
+}
+
+.axis-toggle-label {
+    color: var(--color-text-secondary);
+    font-size: 12px;
 }
 
 .clip-control {
