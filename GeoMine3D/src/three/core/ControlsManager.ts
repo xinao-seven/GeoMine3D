@@ -17,7 +17,7 @@ export class ControlsManager {
         // 缩放最远距离，限制用户拉得过远导致模型过小
         this.controls.maxDistance = 200000
         // 俯仰上限略高于水平线，避免翻转到地下造成方向迷失
-        this.controls.maxPolarAngle = Math.PI / 2 + 0.1
+        this.controls.maxPolarAngle = Math.PI  + 0.1
     }
 
     update() {
