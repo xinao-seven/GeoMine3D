@@ -36,15 +36,18 @@ import {
     LabelStyle,
     Math as CesiumMath,
     Matrix4,
+    Matrix3,
     Model,
     ShadowMode,
     Transforms,
     Viewer,
+    Axis
 } from 'cesium'
 import 'cesium/Build/Cesium/Widgets/widgets.css'
 import { cesiumApi, modelApi } from '@/api'
 import type { ModelItem } from '@/types'
 import type { BoreholeWGS84Point, BoundaryFeature, BoundaryFeatureCollection } from '@/types/cesium'
+
 
 defineOptions({
     name: 'CesiumView',
@@ -60,6 +63,9 @@ const projectionText = ref('')
 
 let mineCenter: { lon: number; lat: number; alt: number } | null = null
 let currentStratumModel: Model | null = null
+const DEFAULT_MODEL_ROTATION_X_DEG = 0
+const DEFAULT_MODEL_ROTATION_Y_DEG = 0
+const DEFAULT_MODEL_ROTATION_Z_DEG = 0
 
 const hasSelectedModel = computed(() => Boolean(selectedModelId.value))
 
@@ -78,7 +84,8 @@ function createViewer() {
         shouldAnimate: true,
     })
     viewer.scene.globe.depthTestAgainstTerrain = false
-    viewer.scene.globe.enableLighting = true
+    viewer.scene.globe.enableLighting = false
+    viewer.scene.fog.enabled = false
     viewerRef.value = viewer
 }
 
@@ -282,6 +289,17 @@ function optimizeStratumModelMaterial(model: Model) {
     model.imageBasedLighting.imageBasedLightingFactor = new Cartesian2(0.72, 0.68)
 }
 
+function tuneCameraFrustumByModelSphere(viewer: Viewer, sphere: BoundingSphere) {
+    const frustum = viewer.camera.frustum as { near?: number; far?: number }
+    if (typeof frustum.near !== 'number' || typeof frustum.far !== 'number') {
+        return
+    }
+
+    const radius = Math.max(1, sphere.radius)
+    frustum.near = Math.max(0.5, radius / 4000)
+    frustum.far = Math.max(2_000_000, radius * 120)
+}
+
 function recenterModelToAnchor(model: Model, anchor: Cartesian3) {
     const currentCenter = model.boundingSphere?.center
     if (!currentCenter) return
@@ -294,6 +312,30 @@ function recenterModelToAnchor(model: Model, anchor: Cartesian3) {
 
     const translation = Matrix4.fromTranslation(delta)
     model.modelMatrix = Matrix4.multiply(translation, model.modelMatrix, new Matrix4())
+}
+
+function applyDefaultModelOrientation(model: Model, anchor: Cartesian3, anchorFrame: Matrix4) {
+    const anchorFrameInverse = Matrix4.inverse(anchorFrame, new Matrix4())
+    const localOffset = Matrix4.multiply(anchorFrameInverse, model.modelMatrix, new Matrix4())
+
+    const rotationXMatrix = Matrix4.fromRotationTranslation(
+        Matrix3.fromRotationX(CesiumMath.toRadians(DEFAULT_MODEL_ROTATION_X_DEG)),
+    )
+    const rotationYMatrix = Matrix4.fromRotationTranslation(
+        Matrix3.fromRotationY(CesiumMath.toRadians(DEFAULT_MODEL_ROTATION_Y_DEG)),
+    )
+    const rotationZMatrix = Matrix4.fromRotationTranslation(
+        Matrix3.fromRotationZ(CesiumMath.toRadians(DEFAULT_MODEL_ROTATION_Z_DEG)),
+    )
+
+    const localRotation = Matrix4.clone(Matrix4.IDENTITY, new Matrix4())
+    Matrix4.multiply(localRotation, rotationZMatrix, localRotation)
+    Matrix4.multiply(localRotation, rotationYMatrix, localRotation)
+    Matrix4.multiply(localRotation, rotationXMatrix, localRotation)
+
+    const rotatedLocal = Matrix4.multiply(localRotation, localOffset, new Matrix4())
+    model.modelMatrix = Matrix4.multiply(anchorFrame, rotatedLocal, new Matrix4())
+    recenterModelToAnchor(model, anchor)
 }
 
 function waitForModelReady(model: Model, timeoutMs = 20000): Promise<void> {
@@ -358,13 +400,16 @@ async function loadStratumModel() {
         const anchor = mineCenter ?? { lon: 109.0, lat: 38.0, alt: 0 }
         const origin = Cartesian3.fromDegrees(anchor.lon, anchor.lat, anchor.alt)
         const modelMatrix = Transforms.eastNorthUpToFixedFrame(origin)
+        const anchorFrame = Matrix4.clone(modelMatrix, new Matrix4())
 
         const model = await Model.fromGltfAsync({
+            upAxis:Axis.X,
             url: modelInfo.fileUrl,
             modelMatrix,
             scale: 1,
-            minimumPixelSize: 48,
-            maximumScale: 6000,
+            minimumPixelSize: 0,
+            backFaceCulling: false,
+            cull: false,
             allowPicking: true,
             incrementallyLoadTextures: true,
         })
@@ -374,11 +419,13 @@ async function loadStratumModel() {
 
         await waitForModelReady(model)
         recenterModelToAnchor(model, origin)
+        applyDefaultModelOrientation(model, origin, anchorFrame)
         optimizeStratumModelMaterial(model)
 
         const now = JulianDate.now()
         const sphere = model.boundingSphere
         if (sphere && sphere.radius > 0) {
+            tuneCameraFrustumByModelSphere(viewer, sphere)
             viewer.camera.flyToBoundingSphere(sphere, {
                 offset: new HeadingPitchRange(0, CesiumMath.toRadians(-35), sphere.radius * 2.2),
                 duration: 1.6,
