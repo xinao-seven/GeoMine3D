@@ -1,5 +1,10 @@
 import request from '../request'
-import type { BoundaryFeatureCollection, BoreholeWGS84Response, ProjectionMetadata } from '@/types'
+import type {
+  BoundaryFeatureCollection,
+  BoreholeWGS84Response,
+  CesiumTiffLayerResponse,
+  ProjectionMetadata,
+} from '@/types'
 
 export function getMineAreaBoundary(): Promise<BoundaryFeatureCollection> {
   return request.get('/boundaries/mine-area')
@@ -15,4 +20,8 @@ export function getProjectionMetadata(): Promise<ProjectionMetadata> {
 
 export function getBoreholeWGS84Points(): Promise<BoreholeWGS84Response> {
   return request.get('/boreholes/wgs84')
+}
+
+export function getTiffLayers(): Promise<CesiumTiffLayerResponse> {
+  return request.get('/cesium/tiff-layers')
 }

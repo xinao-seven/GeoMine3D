@@ -8,6 +8,7 @@ from .services import (
     workingface_service,
     analysis_service,
     boundary_service,
+    geotiff_service,
 )
 
 
@@ -120,6 +121,16 @@ class BoundaryWorkingFacesView(View):
 class ProjectionMetadataView(View):
     def get(self, request):
         return success(boundary_service.get_projection_metadata())
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class CesiumTiffLayersView(View):
+    def get(self, request):
+        try:
+            data = geotiff_service.get_geotiff_layers()
+        except Exception as ex:
+            return error(f'Failed to load TIFF layers: {ex}', code=500, status=500)
+        return success(data)
 
 
 @method_decorator(csrf_exempt, name='dispatch')

@@ -4,3 +4,4 @@ django-cors-headers==4.3.0
 openpyxl==3.1.2
 pyproj==3.6.1
 pyshp==2.3.1
+Pillow==11.0.0

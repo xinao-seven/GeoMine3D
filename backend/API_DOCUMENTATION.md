@@ -265,6 +265,44 @@
   "targetCrs": "EPSG:4326",
   "sourceShpDir": ".../backend/data/shp"
 }
+
+### 6.4 获取 Cesium TIFF 图层列表
+
+- 路径：`GET /api/cesium/tiff-layers`
+
+返回 `data` 示例：
+
+```json
+{
+  "sourceCrs": "EPSG:xxxx",
+  "targetCrs": "EPSG:4326",
+  "items": [
+    {
+      "id": "20260211",
+      "name": "20260211",
+      "fileName": "20260211.tif",
+      "tifUrl": "/data/tif/20260211.tif",
+      "previewUrl": "/static/tif-previews/20260211.png",
+      "tfwUrl": "/data/tif/20260211.tfw",
+      "auxXmlUrl": "/data/tif/20260211.tif.aux.xml",
+      "ovrUrl": "/data/tif/20260211.tif.ovr",
+      "width": 1000,
+      "height": 1000,
+      "bounds": {
+        "west": 109.123,
+        "east": 109.456,
+        "south": 38.123,
+        "north": 38.456
+      }
+    }
+  ],
+  "skipped": []
+}
+```
+
+说明：
+- 后端会校验每个 `.tif` 是否存在 `.tfw`、`.tif.aux.xml`、`.tif.ovr` 三个伴随文件。
+- 为兼容浏览器渲染，后端会把 TIFF 转成 PNG 预览图并返回 `previewUrl`，前端 Cesium 叠加使用该地址。
 ```
 
 ## 7. 统计分析接口

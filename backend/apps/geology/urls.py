@@ -23,6 +23,7 @@ urlpatterns = [
     path('boundaries/mine-area', views.BoundaryMineAreaView.as_view(), name='boundary-mine-area'),
     path('boundaries/working-faces', views.BoundaryWorkingFacesView.as_view(), name='boundary-working-faces'),
     path('system/projection', views.ProjectionMetadataView.as_view(), name='system-projection'),
+    path('cesium/tiff-layers', views.CesiumTiffLayersView.as_view(), name='cesium-tiff-layers'),
 
     # 统计分析接口
     path('analysis/thickness-distribution', views.AnalysisThicknessView.as_view()),

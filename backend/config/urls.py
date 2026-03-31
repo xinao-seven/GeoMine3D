@@ -5,6 +5,7 @@ import os
 
 urlpatterns = [
     path('api/', include('apps.geology.urls')),
+    path('data/<path:path>', serve, {'document_root': str(settings.DATA_DIR)}),
 ]
 
 # Serve static files from all STATICFILES_DIRS in development

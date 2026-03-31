@@ -12,6 +12,13 @@
                 <el-button type="primary" :loading="loadingModel" @click="loadStratumModel">
                     加载地层模型
                 </el-button>
+                <el-select v-model="selectedTiffId" placeholder="选择 TIFF 影像" style="width: 220px" filterable clearable>
+                    <el-option v-for="item in tiffLayers" :key="item.id" :label="item.name" :value="item.id" />
+                </el-select>
+                <el-button type="warning" :loading="loadingTiff" @click="loadSelectedTiffLayer">
+                    导入TIFF
+                </el-button>
+                <el-button :disabled="!currentTiffLayerName" @click="removeTiffLayer">移除TIFF</el-button>
                 <el-button :loading="loadingBaseData" @click="reloadBaseLayers">重新加载边界与钻孔</el-button>
             </div>
         </div>
@@ -32,13 +39,15 @@ import {
     GeoJsonDataSource,
     HeadingPitchRange,
     HeightReference,
+    ImageryLayer,
     JulianDate,
     LabelStyle,
     Math as CesiumMath,
     Matrix4,
-    Matrix3,
     Model,
+    Rectangle,
     ShadowMode,
+    SingleTileImageryProvider,
     Transforms,
     Viewer,
     Axis
@@ -46,7 +55,13 @@ import {
 import 'cesium/Build/Cesium/Widgets/widgets.css'
 import { cesiumApi, modelApi } from '@/api'
 import type { ModelItem } from '@/types'
-import type { BoreholeWGS84Point, BoundaryFeature, BoundaryFeatureCollection } from '@/types/cesium'
+import type {
+    BoreholeWGS84Point,
+    BoundaryFeature,
+    BoundaryFeatureCollection,
+    CesiumTiffLayerItem,
+    CesiumTiffLayerResponse,
+} from '@/types/cesium'
 
 
 defineOptions({
@@ -57,15 +72,17 @@ const containerRef = ref<HTMLDivElement>()
 const viewerRef = ref<Viewer | null>(null)
 const loadingBaseData = ref(false)
 const loadingModel = ref(false)
+const loadingTiff = ref(false)
 const stratumModels = ref<ModelItem[]>([])
 const selectedModelId = ref('')
+const tiffLayers = ref<CesiumTiffLayerItem[]>([])
+const selectedTiffId = ref('')
+const currentTiffLayerName = ref('')
 const projectionText = ref('')
 
 let mineCenter: { lon: number; lat: number; alt: number } | null = null
 let currentStratumModel: Model | null = null
-const DEFAULT_MODEL_ROTATION_X_DEG = 0
-const DEFAULT_MODEL_ROTATION_Y_DEG = 0
-const DEFAULT_MODEL_ROTATION_Z_DEG = 0
+let currentTiffImageryLayer: ImageryLayer | null = null
 
 const hasSelectedModel = computed(() => Boolean(selectedModelId.value))
 
@@ -193,6 +210,88 @@ function isFeatureCollectionLike(value: any): value is BoundaryFeatureCollection
     return Boolean(value && value.type === 'FeatureCollection' && Array.isArray(value.features))
 }
 
+function normalizeDataUrl(url: string) {
+    if (!url) return url
+    if (/^https?:\/\//i.test(url)) return url
+    return url.startsWith('/') ? url : `/${url}`
+}
+
+function removeTiffLayer() {
+    const viewer = viewerRef.value
+    if (!viewer || !currentTiffImageryLayer) return
+    viewer.imageryLayers.remove(currentTiffImageryLayer, true)
+    currentTiffImageryLayer = null
+    currentTiffLayerName.value = ''
+    ElMessage.success('TIFF 图层已移除')
+}
+
+async function loadSelectedTiffLayer() {
+    const viewer = viewerRef.value
+    if (!viewer) return
+    if (!selectedTiffId.value) {
+        ElMessage.warning('请先选择 TIFF 影像')
+        return
+    }
+
+    const selected = tiffLayers.value.find((item) => item.id === selectedTiffId.value)
+    if (!selected) {
+        ElMessage.error('未找到对应 TIFF 图层')
+        return
+    }
+
+    loadingTiff.value = true
+    try {
+        if (currentTiffImageryLayer) {
+            viewer.imageryLayers.remove(currentTiffImageryLayer, true)
+            currentTiffImageryLayer = null
+        }
+
+        const rectangle = Rectangle.fromDegrees(
+            selected.bounds.west,
+            selected.bounds.south,
+            selected.bounds.east,
+            selected.bounds.north,
+        )
+
+        const imageryProvider = await SingleTileImageryProvider.fromUrl(normalizeDataUrl(selected.previewUrl), {
+            rectangle,
+        })
+        currentTiffImageryLayer = viewer.imageryLayers.addImageryProvider(imageryProvider)
+        currentTiffImageryLayer.alpha = 0.82
+        currentTiffLayerName.value = selected.name
+
+        viewer.camera.flyTo({
+            destination: rectangle,
+            duration: 1.2,
+        })
+
+        ElMessage.success(`TIFF 已导入: ${selected.name}`)
+    } catch (err: any) {
+        ElMessage.error(err?.message || 'TIFF 导入失败')
+    } finally {
+        loadingTiff.value = false
+    }
+}
+
+async function loadTiffLayerList() {
+    let response: CesiumTiffLayerResponse
+    try {
+        response = await cesiumApi.getTiffLayers()
+    } catch {
+        ElMessage.warning('TIFF 列表加载失败，可稍后重试')
+        return
+    }
+
+    tiffLayers.value = response.items || []
+    if (!selectedTiffId.value && tiffLayers.value.length > 0) {
+        selectedTiffId.value = tiffLayers.value[0].id
+    }
+
+    if (response.skipped?.length) {
+        ElMessage.warning(`发现 ${response.skipped.length} 个 TIFF 数据文件不完整，已自动跳过`)
+    }
+}
+
 async function reloadBaseLayers() {
     const viewer = viewerRef.value
     if (!viewer) return
@@ -314,30 +413,6 @@ function recenterModelToAnchor(model: Model, anchor: Cartesian3) {
     model.modelMatrix = Matrix4.multiply(translation, model.modelMatrix, new Matrix4())
 }
 
-function applyDefaultModelOrientation(model: Model, anchor: Cartesian3, anchorFrame: Matrix4) {
-    const anchorFrameInverse = Matrix4.inverse(anchorFrame, new Matrix4())
-    const localOffset = Matrix4.multiply(anchorFrameInverse, model.modelMatrix, new Matrix4())
-
-    const rotationXMatrix = Matrix4.fromRotationTranslation(
-        Matrix3.fromRotationX(CesiumMath.toRadians(DEFAULT_MODEL_ROTATION_X_DEG)),
-    )
-    const rotationYMatrix = Matrix4.fromRotationTranslation(
-        Matrix3.fromRotationY(CesiumMath.toRadians(DEFAULT_MODEL_ROTATION_Y_DEG)),
-    )
-    const rotationZMatrix = Matrix4.fromRotationTranslation(
-        Matrix3.fromRotationZ(CesiumMath.toRadians(DEFAULT_MODEL_ROTATION_Z_DEG)),
-    )
-
-    const localRotation = Matrix4.clone(Matrix4.IDENTITY, new Matrix4())
-    Matrix4.multiply(localRotation, rotationZMatrix, localRotation)
-    Matrix4.multiply(localRotation, rotationYMatrix, localRotation)
-    Matrix4.multiply(localRotation, rotationXMatrix, localRotation)
-
-    const rotatedLocal = Matrix4.multiply(localRotation, localOffset, new Matrix4())
-    model.modelMatrix = Matrix4.multiply(anchorFrame, rotatedLocal, new Matrix4())
-    recenterModelToAnchor(model, anchor)
-}
-
 function waitForModelReady(model: Model, timeoutMs = 20000): Promise<void> {
     if (model.ready) {
         return Promise.resolve()
@@ -400,10 +475,9 @@ async function loadStratumModel() {
         const anchor = mineCenter ?? { lon: 109.0, lat: 38.0, alt: 0 }
         const origin = Cartesian3.fromDegrees(anchor.lon, anchor.lat, anchor.alt)
         const modelMatrix = Transforms.eastNorthUpToFixedFrame(origin)
-        const anchorFrame = Matrix4.clone(modelMatrix, new Matrix4())
 
         const model = await Model.fromGltfAsync({
-            upAxis:Axis.X,
+            upAxis: Axis.X,
             url: modelInfo.fileUrl,
             modelMatrix,
             scale: 1,
@@ -419,7 +493,6 @@ async function loadStratumModel() {
 
         await waitForModelReady(model)
         recenterModelToAnchor(model, origin)
-        applyDefaultModelOrientation(model, origin, anchorFrame)
         optimizeStratumModelMaterial(model)
 
         const now = JulianDate.now()
@@ -461,6 +534,7 @@ async function loadStratumList() {
 
 onMounted(async () => {
     createViewer()
+    await loadTiffLayerList()
     await loadStratumList().catch(() => {
         ElMessage.warning('地层模型列表加载失败，可稍后重试')
     })
@@ -469,6 +543,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
     currentStratumModel = null
+    currentTiffImageryLayer = null
     if (viewerRef.value) {
         viewerRef.value.destroy()
         viewerRef.value = null

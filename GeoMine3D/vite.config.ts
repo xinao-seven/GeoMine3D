@@ -24,6 +24,10 @@ export default defineConfig({
         target: 'http://10.4.61.70:8000',
         changeOrigin: true,
       },
+      '/data': {
+        target: 'http://10.4.61.70:8000',
+        changeOrigin: true,
+      },
     },
   },
 })
