@@ -30,14 +30,17 @@ export class RendererManager {
     this.renderer.localClippingEnabled = false
   }
 
+  // 更新渲染器输出尺寸。
   resize(width: number, height: number) {
     this.renderer.setSize(width, height)
   }
 
+  // 执行单帧渲染。
   render(scene: THREE.Scene, camera: THREE.Camera) {
     this.renderer.render(scene, camera)
   }
 
+  // 释放 WebGL 渲染资源。
   dispose() {
     this.renderer.dispose()
   }

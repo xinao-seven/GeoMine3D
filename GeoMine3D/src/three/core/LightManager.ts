@@ -30,6 +30,7 @@ export class LightManager {
         this.headLight.target = this.headLightTarget
     }
 
+    // 根据当前相机姿态更新头灯位置与方向。
     updateFromCamera(camera: THREE.PerspectiveCamera) {
         // 光源与相机同位，形成“看向哪里亮哪里”的照明效果
         this.headLight.position.copy(camera.position)

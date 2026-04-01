@@ -6,6 +6,7 @@ import type { ModelItem } from '@/types'
 // DRACO 解码器路径（CDN，支持 Draco 压缩的 GLB 文件）
 const DRACO_DECODER_PATH = 'https://www.gstatic.com/draco/versioned/decoders/1.5.7/'
 
+// 创建带 DRACO 支持的 GLTF 加载器。
 function createLoader(): GLTFLoader {
     const loader = new GLTFLoader()
     const dracoLoader = new DRACOLoader()
@@ -18,6 +19,7 @@ function createLoader(): GLTFLoader {
 export class StratumModelLoader {
     private loader = createLoader()
 
+    // 为地层分层按索引生成稳定颜色。
     private generateLayerColor(index: number): number {
         const colors = [
             0x8b4513,
@@ -34,6 +36,7 @@ export class StratumModelLoader {
         return colors[index % colors.length]
     }
 
+    // 加载地层模型并为每个网格注入渲染样式与业务元数据。
     async load(model: ModelItem): Promise<THREE.Group> {
         return new Promise((resolve, reject) => {
             this.loader.load(
@@ -100,9 +103,10 @@ export class StratumModelLoader {
                             layerName,
                             edgeLines,
                         }
-
+                        // mesh.scale.z = 2
                         meshIndex += 1
                     })
+                    
                     resolve(group)
                 },
                 undefined,

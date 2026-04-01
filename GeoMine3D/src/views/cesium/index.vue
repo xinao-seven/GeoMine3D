@@ -86,6 +86,7 @@ let currentTiffImageryLayer: ImageryLayer | null = null
 
 const hasSelectedModel = computed(() => Boolean(selectedModelId.value))
 
+// 创建 Cesium Viewer，并关闭非必要控件以突出业务图层。
 function createViewer() {
     if (!containerRef.value) return
     const viewer = new Viewer(containerRef.value, {
@@ -106,6 +107,7 @@ function createViewer() {
     viewerRef.value = viewer
 }
 
+// 计算 GeoJSON FeatureCollection 的经纬度包围盒中心点。
 function calcGeoJSONCenter(collection: BoundaryFeatureCollection) {
     let lonMin = Infinity
     let lonMax = -Infinity
@@ -133,6 +135,7 @@ function calcGeoJSONCenter(collection: BoundaryFeatureCollection) {
     }
 }
 
+// 加载边界类 GeoJSON 图层并应用统一样式。
 async function loadBoundaryLayer(
     name: string,
     collection: BoundaryFeatureCollection,
@@ -153,6 +156,7 @@ async function loadBoundaryLayer(
     viewer.dataSources.add(dataSource)
 }
 
+// 加载钻孔点并校验经纬度与高程有效性。
 async function loadBoreholes() {
     const viewer = viewerRef.value
     if (!viewer) return
@@ -206,16 +210,19 @@ async function loadBoreholes() {
     }
 }
 
+// 类型守卫：判断数据是否符合 FeatureCollection 基本结构。
 function isFeatureCollectionLike(value: any): value is BoundaryFeatureCollection {
     return Boolean(value && value.type === 'FeatureCollection' && Array.isArray(value.features))
 }
 
+// 统一处理资源地址，补全相对路径前缀。
 function normalizeDataUrl(url: string) {
     if (!url) return url
     if (/^https?:\/\//i.test(url)) return url
     return url.startsWith('/') ? url : `/${url}`
 }
 
+// 从场景中移除当前 TIFF 影像图层。
 function removeTiffLayer() {
     const viewer = viewerRef.value
     if (!viewer || !currentTiffImageryLayer) return
@@ -225,6 +232,7 @@ function removeTiffLayer() {
     ElMessage.success('TIFF 图层已移除')
 }
 
+// 根据当前选择加载 TIFF 影像，并飞行到其覆盖范围。
 async function loadSelectedTiffLayer() {
     const viewer = viewerRef.value
     if (!viewer) return
@@ -273,6 +281,7 @@ async function loadSelectedTiffLayer() {
     }
 }
 
+// 拉取 TIFF 图层列表并处理默认选中项。
 async function loadTiffLayerList() {
     let response: CesiumTiffLayerResponse
     try {
@@ -292,6 +301,7 @@ async function loadTiffLayerList() {
     }
 }
 
+// 重载 Cesium 基础图层：投影信息、矿区边界、工作面边界和钻孔点。
 async function reloadBaseLayers() {
     const viewer = viewerRef.value
     if (!viewer) return
@@ -378,6 +388,7 @@ async function reloadBaseLayers() {
     }
 }
 
+// 统一地层模型的渲染风格，优化可读性与层次感。
 function optimizeStratumModelMaterial(model: Model) {
     model.color = Color.fromCssColorString('#c5cdb6').withAlpha(1.0)
     model.colorBlendMode = ColorBlendMode.MIX
@@ -388,6 +399,7 @@ function optimizeStratumModelMaterial(model: Model) {
     model.imageBasedLighting.imageBasedLightingFactor = new Cartesian2(0.72, 0.68)
 }
 
+// 按模型包围球尺度动态调整相机近远裁剪面。
 function tuneCameraFrustumByModelSphere(viewer: Viewer, sphere: BoundingSphere) {
     const frustum = viewer.camera.frustum as { near?: number; far?: number }
     if (typeof frustum.near !== 'number' || typeof frustum.far !== 'number') {
@@ -399,6 +411,7 @@ function tuneCameraFrustumByModelSphere(viewer: Viewer, sphere: BoundingSphere) 
     frustum.far = Math.max(2_000_000, radius * 120)
 }
 
+// 将模型平移到锚点位置，修正导入后中心偏移。
 function recenterModelToAnchor(model: Model, anchor: Cartesian3) {
     const currentCenter = model.boundingSphere?.center
     if (!currentCenter) return
@@ -413,6 +426,7 @@ function recenterModelToAnchor(model: Model, anchor: Cartesian3) {
     model.modelMatrix = Matrix4.multiply(translation, model.modelMatrix, new Matrix4())
 }
 
+// 等待 Cesium 模型就绪，结合 readyEvent 与轮询避免漏判。
 function waitForModelReady(model: Model, timeoutMs = 20000): Promise<void> {
     if (model.ready) {
         return Promise.resolve()
@@ -451,6 +465,7 @@ function waitForModelReady(model: Model, timeoutMs = 20000): Promise<void> {
     })
 }
 
+// 加载当前选中的地层模型并执行视角与材质初始化。
 async function loadStratumModel() {
     const viewer = viewerRef.value
     if (!viewer) return
@@ -525,6 +540,7 @@ async function loadStratumModel() {
     }
 }
 
+// 拉取地层模型列表并设置默认模型。
 async function loadStratumList() {
     stratumModels.value = await modelApi.getModelList({ type: 'stratum' })
     if (stratumModels.value.length > 0) {

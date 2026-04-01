@@ -7,6 +7,7 @@ export class LayerManager {
     this.modelManager = modelManager
   }
 
+  // 统一切换指定类型图层可见性。
   setLayerVisible(type: string, visible: boolean) {
     const models = this.modelManager.getModelsByType(type)
     for (const model of models) {
@@ -14,6 +15,7 @@ export class LayerManager {
     }
   }
 
+  // 批量调整指定类型图层透明度。
   setLayerOpacity(type: string, opacity: number) {
     const models = this.modelManager.getModelsByType(type)
     for (const model of models) {
@@ -32,6 +34,7 @@ export class LayerManager {
     }
   }
 
+  // 控制地层边线辅助对象显隐。
   setLayerEdgesVisible(type: string, visible: boolean) {
     const models = this.modelManager.getModelsByType(type)
     for (const model of models) {

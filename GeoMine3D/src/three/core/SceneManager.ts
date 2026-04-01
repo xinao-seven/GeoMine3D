@@ -29,32 +29,40 @@ export class SceneManager {
         this.grid.name = '__grid__'
         this.scene.add(this.grid)
     }
+
+    // 移除场景网格辅助线。
     removeGrid() {
         this.scene.remove(this.grid)
     }
 
+    // 将对象添加到地学根节点，统一受坐标映射控制。
     addObject(obj: THREE.Object3D) {
         this.geoRoot.add(obj)
     }
 
+    // 从地学根节点移除对象。
     removeObject(obj: THREE.Object3D) {
         this.geoRoot.remove(obj)
     }
 
+    // 开关地学根节点的 X 轴旋转映射。
     setGeoRootRotationXEnabled(enabled: boolean) {
         this.geoRootRotationXEnabled = enabled
         this.geoRoot.rotation.x = enabled ? GEO_ROOT_ROTATION_X : 0
         this.geoRoot.updateMatrixWorld(true)
     }
 
+    // 获取当前是否启用坐标映射旋转。
     isGeoRootRotationXEnabled() {
         return this.geoRootRotationXEnabled
     }
 
+    // 按名称查询场景对象。
     getObjectByName(name: string): THREE.Object3D | undefined {
         return this.scene.getObjectByName(name)
     }
 
+    // 释放场景资源。
     dispose() {
         this.scene.clear()
         this.grid.dispose()

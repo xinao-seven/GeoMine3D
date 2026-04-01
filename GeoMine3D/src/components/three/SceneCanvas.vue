@@ -177,6 +177,7 @@ let animFrameId: number
 let resizeObserver: ResizeObserver
 let isAnimating = false
 
+// 初始化 three 场景、管理器、工具与交互绑定。
 async function initScene() {
     if (!canvasRef.value || !containerRef.value) return
 
@@ -247,6 +248,7 @@ async function initScene() {
     startAnimate()
 }
 
+// 创建轴向字母精灵，用于左下角坐标轴指示器。
 function createAxisLabelSprite(text: string, color: string) {
     const canvas = document.createElement('canvas')
     canvas.width = 128
@@ -271,6 +273,7 @@ function createAxisLabelSprite(text: string, color: string) {
     return sprite
 }
 
+// 初始化轴向指示器场景。
 function initAxisGizmo() {
     axisGizmoScene = new THREE.Scene()
     axisGizmoCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 200)
@@ -306,6 +309,7 @@ function initAxisGizmo() {
     }
 }
 
+// 渲染轴向指示器到主画布左下角视口。
 function renderAxisGizmo() {
     if (!axisGizmoRoot) return
 
@@ -334,6 +338,7 @@ function renderAxisGizmo() {
     renderer.autoClear = prevAutoClear
 }
 
+// 释放轴向指示器资源。
 function disposeAxisGizmo() {
     for (const item of axisGizmoResources) {
         item.dispose()
@@ -341,6 +346,7 @@ function disposeAxisGizmo() {
     axisGizmoResources = []
 }
 
+// 动画主循环：更新控制器、灯光与渲染。
 function animate() {
     if (!isAnimating) return
     animFrameId = requestAnimationFrame(animate)
@@ -350,18 +356,21 @@ function animate() {
     renderAxisGizmo()
 }
 
+// 启动动画循环。
 function startAnimate() {
     if (isAnimating) return
     isAnimating = true
     animate()
 }
 
+// 停止动画循环。
 function stopAnimate() {
     if (!isAnimating) return
     isAnimating = false
     cancelAnimationFrame(animFrameId)
 }
 
+// 按请求类型加载对应模型并更新相机与状态。
 async function loadModelByRequest(req: ModelLoadRequest) {
     try {
         let preferImmediateFocus = false
@@ -427,6 +436,7 @@ async function loadModelByRequest(req: ModelLoadRequest) {
     }
 }
 
+// 按模型类型聚焦相机。
 function fitCameraToType(type: 'stratum' | 'borehole' | 'workingface', immediate = false) {
     const models = modelManager.getModelsByType(type)
     if (!models.length) return
@@ -461,6 +471,7 @@ function fitCameraToType(type: 'stratum' | 'borehole' | 'workingface', immediate
     )
 }
 
+// 基于钻孔数据构建包围盒并快速聚焦。
 function focusByBoreholeData(boreholes: BoreholeItem[], startIndex = 0) {
     if (!boreholes.length) return
 
@@ -497,11 +508,13 @@ function focusByBoreholeData(boreholes: BoreholeItem[], startIndex = 0) {
     controlsManager.controls.update()
 }
 
+// 通过 id 从后端模型列表中查找模型。
 async function findModelById(type: 'stratum' | 'workingface', id: string) {
     const modelList = await modelApi.getModelList({ type })
     return modelList.find((item) => item.id === id)
 }
 
+// 加载地层模型，失败时回退到占位体。
 async function loadStratumModel(m: ModelItem) {
     const stratumLoader = new StratumModelLoader()
     try {
@@ -516,6 +529,7 @@ async function loadStratumModel(m: ModelItem) {
     layerManager.setLayerEdgesVisible('stratum', showEdges.value)
 }
 
+// 加载工作面模型，失败时回退到占位体。
 async function loadWorkingFaceModel(m: ModelItem) {
     const wfLoader = new WorkingFaceModelLoader()
     try {
@@ -526,6 +540,7 @@ async function loadWorkingFaceModel(m: ModelItem) {
     }
 }
 
+// 加载单个钻孔模型并计算其摆放位置。
 async function loadBoreholeModel(b: BoreholeItem, index: number) {
     const bhLoader = new BoreholeModelLoader()
 
@@ -550,6 +565,7 @@ async function loadBoreholeModel(b: BoreholeItem, index: number) {
     modelManager.addModel({ id: b.id, name: b.name, type: 'borehole', object: obj })
 }
 
+// 批量加载钻孔模型并同步加载状态。
 async function loadAllBoreholeModels(boreholes: BoreholeItem[]) {
     for (let i = 0; i < boreholes.length; i += 1) {
         const b = boreholes[i]
@@ -562,6 +578,7 @@ async function loadAllBoreholeModels(boreholes: BoreholeItem[]) {
     }
 }
 
+// 按当前已加载全部模型自适应相机视角。
 function fitCameraToLoadedModels() {
     const models = modelManager.getAllModels()
     if (!models.length) return
@@ -590,6 +607,7 @@ function fitCameraToLoadedModels() {
     )
 }
 
+// 构建地层占位模型（用于文件缺失时兜底显示）。
 function addPlaceholderStratum(model: ModelItem) {
     const colors: Record<string, number> = { 'strata-001': 0x4a7a8a, 'strata-002': 0x6d9e73 }
     const color = colors[model.id] ?? 0x5a8a9a
@@ -611,11 +629,13 @@ function addPlaceholderStratum(model: ModelItem) {
     registerStratumLayersFromObject(mesh, model.id, model.name)
 }
 
+// 将 three 颜色对象转为十六进制字符串。
 function toHexColor(color?: THREE.Color) {
     if (!color) return '#5a8a9a'
     return `#${color.getHexString()}`
 }
 
+// 从地层对象中提取分层控制数据并注册到 store。
 function registerStratumLayersFromObject(object: THREE.Object3D, modelId: string, modelName: string) {
     const controls: StratumLayerControl[] = []
     object.traverse((child) => {
@@ -642,6 +662,7 @@ function registerStratumLayersFromObject(object: THREE.Object3D, modelId: string
     }
 }
 
+// 将分层可见性、颜色和透明度控制应用到对应网格。
 function applyStratumLayerControl(control: StratumLayerControl) {
     const model = modelManager.getModel(control.modelId)
     if (!model) return
@@ -669,6 +690,7 @@ function applyStratumLayerControl(control: StratumLayerControl) {
     })
 }
 
+// 构建工作面占位模型（用于加载失败回退）。
 function addPlaceholderWorkingFace(model: ModelItem) {
     const geom = new THREE.BoxGeometry(200, 15, 120)
     const mat = new THREE.MeshLambertMaterial({ color: 0xf5a623, transparent: true, opacity: 0.8, clipShadows: true })
@@ -680,12 +702,14 @@ function addPlaceholderWorkingFace(model: ModelItem) {
     modelManager.addModel({ id: model.id, name: model.name, type: 'workingface', object: mesh })
 }
 
+// 重置相机到默认观察位姿。
 function resetCamera() {
     cameraManager.resetPosition()
     controlsManager.controls.target.set(0, 0, 0)
     controlsManager.controls.update()
 }
 
+// 将 store 中工具状态同步到运行时实例。
 function syncToolRuntimeState() {
     if (!clipTool || !measureTool || !selectionManager) return
 
@@ -716,35 +740,43 @@ function syncToolRuntimeState() {
     }
 }
 
+// 开关剖切工具。
 function toggleClipTool() {
     sceneStore.activateTool(toolState.value.clipEnabled ? null : 'clip')
 }
 
+// 开关测量工具。
 function toggleMeasureTool() {
     sceneStore.activateTool(toolState.value.measureEnabled ? null : 'measure')
 }
 
+// 响应剖切滑块数值变化。
 function onClipHeightChange(value: number | undefined) {
     sceneStore.setClipHeight(typeof value === 'number' ? value : 0)
 }
 
+// 设置剖切轴。
 function setClipAxis(axis: 'x' | 'y' | 'z') {
     sceneStore.setClipAxis(axis)
 }
 
+// 设置剖切保留方向（低侧/高侧）。
 function setClipKeepLower(value: boolean | string | number) {
     sceneStore.setClipKeepLower(Boolean(value))
 }
 
+// 设置剖切辅助面显示状态。
 function setClipHelperVisible(value: boolean | string | number) {
     sceneStore.setClipHelperVisible(Boolean(value))
 }
 
+// 清空测量结果与场景测量图元。
 function clearMeasurements() {
     sceneStore.clearMeasurements()
     measureTool?.clear()
 }
 
+// 切换 geoRoot 的 X 轴旋转映射并重置观察。
 function onRotateXAxisToggle(value: boolean | string | number) {
     const enabled = Boolean(value)
     rotateXAxisEnabled.value = enabled

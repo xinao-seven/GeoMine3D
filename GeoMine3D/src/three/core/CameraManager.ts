@@ -10,6 +10,7 @@ export class CameraManager {
         this.resetPosition()
     }
 
+    // 重置相机到项目预设初始位置。
     resetPosition() {
         const { x, y, z } = CAMERA_INITIAL_POSITION
         // 初始位姿采用俯视全场，便于进入页面后快速建立空间方位感
@@ -17,12 +18,14 @@ export class CameraManager {
         this.camera.lookAt(0, 0, 0)
     }
 
+    // 根据画布尺寸更新相机宽高比。
     updateAspect(width: number, height: number) {
         // 只更新宽高比并重建投影矩阵，避免画面拉伸
         this.camera.aspect = width / height
         this.camera.updateProjectionMatrix()
     }
 
+    // 相机飞行到目标点附近并保持朝向目标。
     flyTo(target: THREE.Vector3, distance = 2000) {
         // 沿当前“相机->目标”反方向回退固定距离，保证飞行后仍朝向目标
         const dir = this.camera.position.clone().sub(target).normalize()
@@ -30,6 +33,7 @@ export class CameraManager {
         this.camera.lookAt(target)
     }
 
+    // 基于包围盒计算“完整看见目标”所需相机参数。
     fitToBox(box: THREE.Box3) {
         if (box.isEmpty()) return null
 
@@ -51,6 +55,7 @@ export class CameraManager {
         return { center, size, maxDim, fitDistance, position, near, far }
     }
 
+    // 执行平滑相机动画，并在每帧回调当前观察点。
     animateTo(
         targetPosition: THREE.Vector3,
         targetLookAt: THREE.Vector3,

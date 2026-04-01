@@ -11,6 +11,7 @@ export interface RawGeoPoint {
 	z: number
 }
 
+// 将原始地学坐标映射到 Three.js 显示坐标。
 export function mapRawGeoToThreeDisplay(point: RawGeoPoint): THREE.Vector3 {
 	return new THREE.Vector3(point.x, point.z, -point.y)
 }

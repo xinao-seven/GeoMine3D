@@ -6,6 +6,7 @@ export class HighlightManager {
   private selectedObject: THREE.Object3D | null = null
   private originalMaterials = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>()
 
+  // 设置临时高亮对象，不影响已选中对象的状态优先级。
   highlight(object: THREE.Object3D | null) {
     // 清除之前的高亮
     if (this.highlightedObject && this.highlightedObject !== this.selectedObject) {
@@ -17,6 +18,7 @@ export class HighlightManager {
     }
   }
 
+  // 设置当前选中对象并应用选中材质。
   select(object: THREE.Object3D | null) {
     if (this.selectedObject) {
       this._restoreMaterials(this.selectedObject)
@@ -27,6 +29,7 @@ export class HighlightManager {
     }
   }
 
+  // 递归替换网格材质为高亮/选中色。
   private _applyColor(object: THREE.Object3D, color: number, isSelected: boolean) {
     object.traverse((child) => {
       if ((child as any).isMesh) {
@@ -61,6 +64,7 @@ export class HighlightManager {
     })
   }
 
+  // 恢复对象原始材质。
   private _restoreMaterials(object: THREE.Object3D) {
     object.traverse((child) => {
       if ((child as any).isMesh) {
@@ -74,6 +78,7 @@ export class HighlightManager {
     })
   }
 
+  // 清理高亮管理器内部缓存。
   dispose() {
     this.originalMaterials.clear()
   }

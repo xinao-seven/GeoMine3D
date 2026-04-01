@@ -64,6 +64,7 @@ export class ClipTool {
         this.helperPlane.add(this.helperFrame)
     }
 
+    // 启用剖切并初始化剖切面、范围与辅助面状态。
     enable(options: ClipEnableOptions = {}) {
         this.axis = options.axis ?? this.axis
         this.keepLower = options.keepLower ?? this.keepLower
@@ -86,6 +87,7 @@ export class ClipTool {
         this.callbacks.onRangeChange?.(this.minPosition, this.maxPosition)
     }
 
+    // 关闭剖切并移除渲染器裁剪配置。
     disable() {
         this.renderer.clippingPlanes = []
         this.renderer.localClippingEnabled = false
@@ -94,6 +96,7 @@ export class ClipTool {
         this.setHelperVisible(false)
     }
 
+    // 切换剖切轴并重算范围与辅助面姿态。
     setAxis(axis: ClipAxis) {
         this.axis = axis
         this.updateBoundsFromScene()
@@ -105,21 +108,25 @@ export class ClipTool {
         if (this.enabled) this.renderer.clippingPlanes = [this.clipPlane]
     }
 
+    // 设置保留剖切面低侧或高侧。
     setKeepLower(keepLower: boolean) {
         this.keepLower = keepLower
         this.updateClipPlane()
         if (this.enabled) this.renderer.clippingPlanes = [this.clipPlane]
     }
 
+    // 控制辅助剖切面的显示开关。
     setShowHelper(showHelper: boolean) {
         this.showHelper = showHelper
         this.setHelperVisible(this.enabled && this.showHelper)
     }
 
+    // 兼容旧调用：按“高度”设置剖切位置。
     setHeight(value: number) {
         this.setPosition(value)
     }
 
+    // 设置剖切平面位置。
     setPosition(value: number) {
         this.position = this.clamp(value)
         this.updateClipPlane()
@@ -128,30 +135,37 @@ export class ClipTool {
         this.callbacks.onPositionChange?.(this.position)
     }
 
+    // 获取当前剖切高度（位置）。
     getHeight() {
         return this.position
     }
 
+    // 获取当前剖切位置。
     getPosition() {
         return this.position
     }
 
+    // 获取当前剖切轴。
     getAxis() {
         return this.axis
     }
 
+    // 获取当前是否保留低侧。
     getKeepLower() {
         return this.keepLower
     }
 
+    // 获取当前可滑动范围。
     getRange() {
         return { min: this.minPosition, max: this.maxPosition }
     }
 
+    // 获取剖切是否启用。
     isEnabled() {
         return this.enabled
     }
 
+    // 释放剖切辅助资源。
     dispose() {
         this.disable()
         this.scene.remove(this.helperPlane)
@@ -161,6 +175,7 @@ export class ClipTool {
         ;(this.helperFrame.material as THREE.Material).dispose()
     }
 
+    // 从当前可见网格计算剖切范围与辅助面尺寸。
     private updateBoundsFromScene() {
         const box = new THREE.Box3()
         this.scene.traverse((obj) => {
@@ -186,6 +201,7 @@ export class ClipTool {
         this.resizeHelperPlane(Math.max(major * 1.2, 200))
     }
 
+    // 重建辅助剖切面的几何尺寸。
     private resizeHelperPlane(size: number) {
         const geometry = this.helperPlane.geometry
         geometry.dispose()
@@ -194,6 +210,7 @@ export class ClipTool {
         this.helperFrame.geometry = new THREE.EdgesGeometry(this.helperPlane.geometry)
     }
 
+    // 根据轴向、位置与保留方向更新剖切平面参数。
     private updateClipPlane() {
         const axisVector = this.getAxisVector(this.axis)
         const normal = this.keepLower ? axisVector : axisVector.clone().multiplyScalar(-1)
@@ -201,6 +218,7 @@ export class ClipTool {
         this.clipPlane.set(normal, constant)
     }
 
+    // 更新辅助面的朝向和坐标位置。
     private updateHelperPlane() {
         this.helperPlane.position.set(0, 0, 0)
         if (this.axis === 'x') {
@@ -217,6 +235,7 @@ export class ClipTool {
         }
     }
 
+    // 管理辅助面挂载与显隐。
     private setHelperVisible(visible: boolean) {
         if (visible && !this.helperPlane.parent) {
             this.scene.add(this.helperPlane)
@@ -224,12 +243,14 @@ export class ClipTool {
         this.helperPlane.visible = visible
     }
 
+    // 获取轴对应的法向向量。
     private getAxisVector(axis: ClipAxis) {
         if (axis === 'x') return new THREE.Vector3(1, 0, 0)
         if (axis === 'z') return new THREE.Vector3(0, 0, 1)
         return new THREE.Vector3(0, 1, 0)
     }
 
+    // 将剖切位置约束在当前范围内。
     private clamp(value: number) {
         return Math.min(this.maxPosition, Math.max(this.minPosition, value))
     }

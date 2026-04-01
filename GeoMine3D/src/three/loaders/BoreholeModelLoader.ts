@@ -6,6 +6,7 @@ import type { BoreholeItem } from '@/types'
  * 坐标系：1 unit = 1 meter，钻孔范围约 5km × 5km。
  */
 export class BoreholeModelLoader {
+  // 根据钻孔数据生成可视化对象，并可按需指定场景坐标与垂向缩放。
   createBoreholeObject(
     borehole: BoreholeItem,
     position?: { x: number; y: number; z: number },

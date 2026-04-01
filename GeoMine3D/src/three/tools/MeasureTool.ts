@@ -31,6 +31,7 @@ export class MeasureTool {
     this.scene.add(this.group)
   }
 
+  // 启用测量模式并绑定点击事件。
   enable(onMeasure?: (result: MeasureResult) => void) {
     if (this.enabled) return
     this.enabled = true
@@ -39,6 +40,7 @@ export class MeasureTool {
     this.domElement.addEventListener('click', this.onClick)
   }
 
+  // 关闭测量模式并解绑点击事件。
   disable() {
     if (!this.enabled) return
     this.enabled = false
@@ -46,26 +48,31 @@ export class MeasureTool {
     this.domElement.removeEventListener('click', this.onClick)
   }
 
+  // 清空所有测量结果与辅助图元。
   clear() {
     this.pendingPoint = null
     this.results = []
     this.group.clear()
   }
 
+  // 获取测量工具是否启用。
   isEnabled() {
     return this.enabled
   }
 
+  // 获取当前测量结果快照。
   getResults() {
     return [...this.results]
   }
 
+  // 销毁工具并从场景移除内部容器。
   dispose() {
     this.disable()
     this.clear()
     this.scene.remove(this.group)
   }
 
+  // 点击一次记录起点，再点击一次完成一条测距线。
   private onClick = (event: MouseEvent) => {
     const point = this.pickPoint(event)
     if (!point) return
@@ -82,6 +89,7 @@ export class MeasureTool {
     this.onMeasure?.(result)
   }
 
+  // 通过射线拾取获取场景中的落点。
   private pickPoint(event: MouseEvent) {
     const rect = this.domElement.getBoundingClientRect()
     this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
@@ -93,6 +101,7 @@ export class MeasureTool {
     return hit?.point.clone() || null
   }
 
+  // 根据两点创建测量线、标记和距离标签。
   private createMeasurement(start: THREE.Vector3, end: THREE.Vector3): MeasureResult {
     const distance = start.distanceTo(end)
     const id = `measure_${Date.now()}_${this.results.length + 1}`
@@ -120,6 +129,7 @@ export class MeasureTool {
     }
   }
 
+  // 添加测量点位标记。
   private addPointMarker(position: THREE.Vector3) {
     const marker = new THREE.Mesh(
       new THREE.SphereGeometry(2.5, 12, 12),
@@ -130,6 +140,7 @@ export class MeasureTool {
     this.group.add(marker)
   }
 
+  // 生成用于显示距离文本的精灵。
   private createLabelSprite(text: string) {
     const canvas = document.createElement('canvas')
     canvas.width = 256

@@ -5,6 +5,7 @@ import type { ModelItem } from '@/types'
 
 const DRACO_DECODER_PATH = 'https://www.gstatic.com/draco/versioned/decoders/1.5.7/'
 
+// 创建带 DRACO 解码能力的 GLTF 加载器。
 function createLoader(): GLTFLoader {
   const loader = new GLTFLoader()
   const dracoLoader = new DRACOLoader()
@@ -17,6 +18,7 @@ function createLoader(): GLTFLoader {
 export class WorkingFaceModelLoader {
   private loader = createLoader()
 
+  // 将来源材质转换为偏哑光的统一材质风格。
   private createMatteMaterial(sourceMat: any): THREE.Material {
     const matte = new THREE.MeshPhongMaterial({
       color: sourceMat?.color ? sourceMat.color.clone() : new THREE.Color(0xf5a623),
@@ -39,6 +41,7 @@ export class WorkingFaceModelLoader {
     return matte
   }
 
+  // 加载工作面模型并替换为统一材质表现。
   async load(model: ModelItem): Promise<THREE.Group> {
     return new Promise((resolve, reject) => {
       this.loader.load(

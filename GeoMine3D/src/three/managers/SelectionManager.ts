@@ -28,6 +28,7 @@ export class SelectionManager {
     this.domElement.addEventListener('click', this._onClick)
   }
 
+  // 基于鼠标点击执行射线拾取，并向上回溯到业务对象节点。
   private _onClick = (event: MouseEvent) => {
     if (!this.enabled) return
 
@@ -64,6 +65,7 @@ export class SelectionManager {
     this.onSelect(null)
   }
 
+  // 启停选择能力，关闭时会清空当前选中状态。
   setEnabled(enabled: boolean) {
     this.enabled = enabled
     if (!enabled) {
@@ -72,6 +74,7 @@ export class SelectionManager {
     }
   }
 
+  // 解绑事件监听。
   dispose() {
     this.domElement.removeEventListener('click', this._onClick)
   }

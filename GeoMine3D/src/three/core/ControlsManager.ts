@@ -20,17 +20,20 @@ export class ControlsManager {
         this.controls.maxPolarAngle = Math.PI  + 0.1
     }
 
+    // 每帧更新控制器状态。
     update() {
         // 启用阻尼时必须每帧调用
         this.controls.update()
     }
 
+    // 设置缩放距离上下限并做保护性修正。
     setDistanceLimits(minDistance: number, maxDistance: number) {
         // 保护性约束: 下限至少为 0.1，上限必须大于下限
         this.controls.minDistance = Math.max(0.1, minDistance)
         this.controls.maxDistance = Math.max(this.controls.minDistance + 1, maxDistance)
     }
 
+    // 释放交互控制器资源。
     dispose() {
         this.controls.dispose()
     }
