@@ -220,11 +220,38 @@ onMounted(() => {
 
 .load-btn {
     margin-left: auto;
+    min-width: 45px;
+    border: 1px solid rgba(0, 200, 255, 0.34);
+    border-radius: 6px;
+    background: linear-gradient(140deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.02));
+    color: #d9f4ff;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 6px 14px rgba(2, 18, 36, 0.25);
+    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.load-btn:hover:not(.is-disabled) {
+    transform: translateY(-1px);
+    border-color: rgba(0, 200, 255, 0.6);
+    background: linear-gradient(140deg, rgba(0, 200, 255, 0.26), rgba(255, 255, 255, 0.05));
+    color: #f2fbff;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 10px 16px rgba(0, 86, 132, 0.28);
+}
+
+.load-btn:active:not(.is-disabled) {
+    transform: translateY(0);
+}
+
+.load-btn.is-disabled,
+.load-btn.is-disabled:hover {
+    background: linear-gradient(140deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+    border-color: rgba(138, 180, 212, 0.3);
+    color: rgba(138, 180, 212, 0.8);
+    box-shadow: none;
 }
 
 .model-list {
     margin-top: 6px;
-    max-height: 132px;
+    max-height: 400px;
     overflow-y: auto;
     border-top: 1px dashed var(--color-border);
     padding-top: 6px;

@@ -14,7 +14,7 @@ export class SceneManager {
         // 设置统一背景色，提升深度对比并弱化空白区域干扰
         this.scene.background = new THREE.Color(SCENE_BACKGROUND_COLOR)
         // 参数: 尺寸 2000、分段 40、主次线颜色一致
-        this.grid = new THREE.GridHelper(2000, 40, 0x1e3a5f, 0x1e3a5f)
+        this.grid = new THREE.GridHelper(40000, 40, 0x1e3a5f, 0x1e3a5f)
         this._addGrid()
 
         // 统一地学对象根节点，在显示层做一次坐标系适配
@@ -23,7 +23,7 @@ export class SceneManager {
         this.geoRoot.rotation.x = GEO_ROOT_ROTATION_X
         this.scene.add(this.geoRoot)
     }
-
+    
     private _addGrid() {
         // 固定命名，便于外部按名称检索或排除
         this.grid.name = '__grid__'

@@ -27,9 +27,9 @@ _DIR_TYPE_MAP = {
 
 # 默认名称前缀（用于自动生成元数据时）
 _TYPE_NAME_PREFIX = {
-    'stratum': '地层模型',
-    'workingface': '工作面模型',
-    'borehole': '钻孔模型',
+    'stratum': '地层',
+    'workingface': '工作面',
+    'borehole': '钻孔',
 }
 
 
