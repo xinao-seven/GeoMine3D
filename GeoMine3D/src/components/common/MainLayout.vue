@@ -3,7 +3,7 @@
     <!-- 侧边栏 -->
     <aside class="sidebar">
       <div class="logo">
-        <img src="/favicon.svg" alt="logo" class="logo-icon" />
+        <img src="/icon.svg" alt="logo" class="logo-icon" />
         <span class="logo-text">GeoMine3D</span>
       </div>
       <el-menu
@@ -234,5 +234,11 @@ onUnmounted(() => {
 .content {
   flex: 1;
   overflow: hidden;
+}
+@media screen and (max-width: 768px) {
+  .sidebar {
+    width: 60px;
+  }
+  
 }
 </style>

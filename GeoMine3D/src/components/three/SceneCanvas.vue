@@ -1014,27 +1014,71 @@ onUnmounted(() => {
         top: auto;
         bottom: 12px;
         right: 12px;
-        left: 12px;
-        flex-wrap: wrap;
-        justify-content: space-between;
+        left: auto;
+        max-width: calc(100% - 24px);
+        padding: 6px;
+        gap: 6px;
+        flex-wrap: nowrap;
+        justify-content: flex-start;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: thin;
+        -webkit-overflow-scrolling: touch;
     }
 
     .tools-group {
-        width: 100%;
-        justify-content: space-between;
+        width: auto;
+        justify-content: flex-start;
+        flex-shrink: 0;
     }
 
     .tools-divider {
-        display: none;
+        display: block;
+        flex-shrink: 0;
+        height: 24px;
+    }
+
+    .tool-btn {
+        min-width: 58px;
+        height: 30px;
+        padding: 0 8px;
+    }
+
+    .tool-btn span {
+        margin-left: 4px;
+        font-size: 11px;
+    }
+
+    .axis-toggle-label {
+        white-space: nowrap;
+        font-size: 11px;
     }
 
     .clip-control {
-        width: calc(100% - 90px);
+        width: 156px;
+    }
+
+    .clip-label {
+        margin-bottom: 2px;
+        font-size: 11px;
+    }
+
+    .clip-flags {
+        margin-top: 6px;
+    }
+
+    .tools-bar::-webkit-scrollbar {
+        height: 4px;
+    }
+
+    .tools-bar::-webkit-scrollbar-thumb {
+        background: rgba(138, 180, 212, 0.45);
+        border-radius: 999px;
     }
 
     .measure-chip {
         top: auto;
-        bottom: 122px;
+        bottom: 56px;
         right: 12px;
     }
 }
