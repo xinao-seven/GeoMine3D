@@ -19,7 +19,7 @@
                     导入TIFF
                 </el-button>
                 <el-button :disabled="!currentTiffLayerName" @click="removeTiffLayer">移除TIFF</el-button>
-                <el-button :loading="loadingBaseData" @click="reloadBaseLayers">重新加载边界与钻孔</el-button>
+                <el-button :loading="loadingBaseData" @click="reloadBaseLayers">加载边界与钻孔</el-button>
             </div>
         </div>
 
@@ -554,7 +554,7 @@ onMounted(async () => {
     await loadStratumList().catch(() => {
         ElMessage.warning('地层模型列表加载失败，可稍后重试')
     })
-    await reloadBaseLayers()
+    // await reloadBaseLayers()
 })
 
 onUnmounted(() => {
