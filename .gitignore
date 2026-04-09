@@ -25,3 +25,6 @@ dist-ssr
 *.pyc
 __pycache__/
 
+# Interview prep notes (local only)
+WebGIS面试题与项目难点总结.md
+
