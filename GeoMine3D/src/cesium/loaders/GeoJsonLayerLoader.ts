@@ -13,10 +13,16 @@ export interface GeoJsonStyle {
 export class GeoJsonLayerLoader {
     private readonly viewer: Viewer
 
+    /**
+     * 创建 GeoJSON 图层加载器。
+     */
     constructor(viewer: Viewer) {
         this.viewer = viewer
     }
 
+    /**
+     * 加载 GeoJSON 数据并添加到 Viewer 数据源集合。
+     */
     async load(
         source: GeoJsonSource,
         name?: string,
@@ -33,6 +39,9 @@ export class GeoJsonLayerLoader {
         return dataSource
     }
 
+    /**
+     * 对已加载的 GeoJSON 实体应用统一样式。
+     */
     applyStyle(dataSource: GeoJsonDataSource, style: GeoJsonStyle = {}) {
         const {
             strokeColor = Color.fromCssColorString('#00c8ff'),
@@ -57,10 +66,16 @@ export class GeoJsonLayerLoader {
         }
     }
 
+    /**
+     * 按名称查找已加载的数据源。
+     */
     findByName(name: string): GeoJsonDataSource | undefined {
         return this.viewer.dataSources.getByName(name)[0] as GeoJsonDataSource | undefined
     }
 
+    /**
+     * 按名称移除数据源。
+     */
     removeByName(name: string, destroy = true): boolean {
         const dataSource = this.findByName(name)
         if (!dataSource) {

@@ -26,14 +26,23 @@ export interface UrlTemplateOptions {
 export class ImageryLayerLoader {
     private readonly viewer: Viewer
 
+    /**
+     * 创建影像图层加载器。
+     */
     constructor(viewer: Viewer) {
         this.viewer = viewer
     }
 
+    /**
+     * 将经纬度范围转换为 Cesium 矩形。
+     */
     static fromDegreeRectangle(bounds: DegreeRectangle): Rectangle {
         return Rectangle.fromDegrees(bounds.west, bounds.south, bounds.east, bounds.north)
     }
 
+    /**
+     * 加载单张影像并作为 ImageryLayer 添加到场景。
+     */
     async addSingleTile(
         imageUrl: string,
         bounds?: DegreeRectangle,
@@ -51,6 +60,9 @@ export class ImageryLayerLoader {
         return layer
     }
 
+    /**
+     * 基于 URL 模板加载切片影像图层。
+     */
     addUrlTemplate(url: string, options: UrlTemplateOptions = {}, alpha = 1): ImageryLayer {
         const provider = new UrlTemplateImageryProvider({
             url,
@@ -63,6 +75,9 @@ export class ImageryLayerLoader {
         return layer
     }
 
+    /**
+     * 加载 TMS 服务影像图层。
+     */
     async addTileMapService(
         baseUrl: string,
         options: TmsOptions = {},
@@ -74,10 +89,16 @@ export class ImageryLayerLoader {
         return layer
     }
 
+    /**
+     * 移除指定影像图层。
+     */
     remove(layer: ImageryLayer, destroy = true) {
         return this.viewer.imageryLayers.remove(layer, destroy)
     }
 
+    /**
+     * 清空全部影像图层。
+     */
     removeAll(destroy = true) {
         this.viewer.imageryLayers.removeAll(destroy)
     }

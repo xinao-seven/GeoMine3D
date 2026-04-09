@@ -11,15 +11,24 @@ export interface DegreeAnchor {
 export class ModelLoader {
     private readonly viewer: Viewer
 
+    /**
+     * 创建 glTF 模型加载器。
+     */
     constructor(viewer: Viewer) {
         this.viewer = viewer
     }
 
+    /**
+     * 根据经纬度锚点创建模型矩阵。
+     */
     createModelMatrix(anchor: DegreeAnchor): Matrix4 {
         const origin = Cartesian3.fromDegrees(anchor.lon, anchor.lat, anchor.alt ?? 0)
         return Transforms.eastNorthUpToFixedFrame(origin)
     }
 
+    /**
+     * 异步加载 glTF/GLB 模型，并可选择直接加入场景。
+     */
     async loadGltf(
         url: string,
         options: Partial<ModelOptions> = {},
@@ -42,6 +51,9 @@ export class ModelLoader {
         return model
     }
 
+    /**
+     * 等待模型 ready 状态，包含事件与轮询双重兜底。
+     */
     waitForReady(model: Model, timeoutMs = 20000): Promise<void> {
         if (model.ready) {
             return Promise.resolve()
@@ -83,6 +95,9 @@ export class ModelLoader {
         })
     }
 
+    /**
+     * 将模型包围球中心平移到指定锚点。
+     */
     recenterToAnchor(model: Model, anchor: Cartesian3) {
         const currentCenter = model.boundingSphere?.center
         if (!currentCenter) {
@@ -99,6 +114,9 @@ export class ModelLoader {
         model.modelMatrix = Matrix4.multiply(translation, model.modelMatrix, new Matrix4())
     }
 
+    /**
+     * 从场景中移除模型。
+     */
     remove(model: Model, destroy = true) {
         return this.viewer.scene.primitives.remove(model)
     }

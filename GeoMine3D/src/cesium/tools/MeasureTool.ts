@@ -34,19 +34,31 @@ export class MeasureTool {
 
     private onComplete?: (result: MeasureResult) => void
 
+    /**
+     * 创建空间测量工具。
+     */
     constructor(viewer: Viewer) {
         this.viewer = viewer
         this.handler = new ScreenSpaceEventHandler(viewer.scene.canvas)
     }
 
+    /**
+     * 启动距离测量模式。
+     */
     startDistance(onComplete?: (result: MeasureResult) => void) {
         this.start('distance', onComplete)
     }
 
+    /**
+     * 启动面积测量模式。
+     */
     startArea(onComplete?: (result: MeasureResult) => void) {
         this.start('area', onComplete)
     }
 
+    /**
+     * 停止当前测量交互。
+     */
     stop() {
         this.mode = null
         this.points = []
@@ -56,6 +68,9 @@ export class MeasureTool {
         this.handler.removeInputAction(ScreenSpaceEventType.MOUSE_MOVE)
     }
 
+    /**
+     * 清空测量产生的临时图元和结果。
+     */
     clear() {
         for (const entity of this.tempEntities) {
             this.viewer.entities.remove(entity)
@@ -65,16 +80,25 @@ export class MeasureTool {
         this.points = []
     }
 
+    /**
+     * 获取测量结果快照。
+     */
     getResults() {
         return [...this.results]
     }
 
+    /**
+     * 销毁测量工具并释放事件资源。
+     */
     destroy() {
         this.stop()
         this.clear()
         this.handler.destroy()
     }
 
+    /**
+     * 启动指定测量模式并注册鼠标交互。
+     */
     private start(mode: MeasureMode, onComplete?: (result: MeasureResult) => void) {
         this.stop()
         this.mode = mode
@@ -89,6 +113,9 @@ export class MeasureTool {
         }, ScreenSpaceEventType.RIGHT_CLICK)
     }
 
+    /**
+     * 处理左键采点逻辑。
+     */
     private onLeftClick(windowPosition: Cartesian2) {
         if (!this.mode) {
             return
@@ -107,6 +134,9 @@ export class MeasureTool {
         }
     }
 
+    /**
+     * 处理右键结束面积测量逻辑。
+     */
     private onRightClick() {
         if (this.mode !== 'area') {
             return
@@ -119,6 +149,9 @@ export class MeasureTool {
         this.finishArea()
     }
 
+    /**
+     * 完成距离测量并生成结果图元。
+     */
     private finishDistance() {
         const [start, end] = this.points
         const distanceMeters = this.computeDistance([start, end])
@@ -148,6 +181,9 @@ export class MeasureTool {
         this.stop()
     }
 
+    /**
+     * 完成面积测量并生成结果图元。
+     */
     private finishArea() {
         const areaSquareMeters = this.computeArea(this.points)
 
@@ -177,6 +213,9 @@ export class MeasureTool {
         this.stop()
     }
 
+    /**
+     * 添加测量点标记。
+     */
     private addPointMarker(position: Cartesian3) {
         const marker = this.viewer.entities.add({
             position,
@@ -190,6 +229,9 @@ export class MeasureTool {
         this.tempEntities.push(marker)
     }
 
+    /**
+     * 创建结果文本标签。
+     */
     private createLabel(position: Cartesian3, text: string) {
         return this.viewer.entities.add({
             position,
@@ -207,6 +249,9 @@ export class MeasureTool {
         })
     }
 
+    /**
+     * 根据屏幕坐标拾取地表或模型坐标。
+     */
     private pickPosition(windowPosition: Cartesian2): Cartesian3 | null {
         const scene = this.viewer.scene
 
@@ -220,6 +265,9 @@ export class MeasureTool {
         return this.viewer.camera.pickEllipsoid(windowPosition, scene.globe.ellipsoid) ?? null
     }
 
+    /**
+     * 计算折线总距离，包含高差修正。
+     */
     private computeDistance(positions: Cartesian3[]) {
         let totalDistance = 0
 
@@ -236,6 +284,9 @@ export class MeasureTool {
         return totalDistance
     }
 
+    /**
+     * 通过切平面投影计算多边形面积。
+     */
     private computeArea(positions: Cartesian3[]) {
         const tangentPlane = new EllipsoidTangentPlane(positions[0])
         const projected = tangentPlane.projectPointsOntoPlane(positions)
@@ -254,6 +305,9 @@ export class MeasureTool {
         return Math.abs(area) * 0.5
     }
 
+    /**
+     * 计算点集几何中心。
+     */
     private computeCenter(positions: Cartesian3[]) {
         const sum = positions.reduce((acc, point) => Cartesian3.add(acc, point, acc), new Cartesian3())
         return Cartesian3.multiplyByScalar(sum, 1 / positions.length, new Cartesian3())

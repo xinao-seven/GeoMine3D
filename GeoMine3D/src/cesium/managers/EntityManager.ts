@@ -47,10 +47,16 @@ export interface PolygonEntityOptions {
 export class EntityManager {
     private readonly viewer: Viewer
 
+    /**
+     * 创建实体管理器。
+     */
     constructor(viewer: Viewer) {
         this.viewer = viewer
     }
 
+    /**
+     * 添加点实体，可附带标签。
+     */
     addPoint(options: PointEntityOptions): Entity {
         const position = options.position instanceof Cartesian3
             ? options.position
@@ -91,6 +97,9 @@ export class EntityManager {
         return entity
     }
 
+    /**
+     * 添加公告牌实体。
+     */
     addBillboard(options: {
         id?: string
         name?: string
@@ -117,6 +126,9 @@ export class EntityManager {
         })
     }
 
+    /**
+     * 添加文本标签实体。
+     */
     addLabel(options: {
         id?: string
         name?: string
@@ -149,6 +161,9 @@ export class EntityManager {
         })
     }
 
+    /**
+     * 添加折线实体。
+     */
     addPolyline(options: PolylineEntityOptions): Entity {
         const positions = this.normalizePositions(options.positions)
         return this.viewer.entities.add({
@@ -166,6 +181,9 @@ export class EntityManager {
         })
     }
 
+    /**
+     * 添加多边形实体。
+     */
     addPolygon(options: PolygonEntityOptions): Entity {
         const positions = this.normalizePositions(options.positions)
         return this.viewer.entities.add({
@@ -185,6 +203,9 @@ export class EntityManager {
         })
     }
 
+    /**
+     * 根据实体 ID 移除对象。
+     */
     removeById(id: string) {
         const entity = this.viewer.entities.getById(id)
         if (!entity) {
@@ -193,6 +214,9 @@ export class EntityManager {
         return this.viewer.entities.remove(entity)
     }
 
+    /**
+     * 根据业务标签清理实体。
+     */
     clearByTag(tag: string) {
         const targets = this.viewer.entities.values.filter((item) => item.properties?.tag?.getValue() === tag)
         for (const entity of targets) {
@@ -200,6 +224,9 @@ export class EntityManager {
         }
     }
 
+    /**
+     * 根据业务标签控制显隐。
+     */
     setVisibleByTag(tag: string, visible: boolean) {
         const targets = this.viewer.entities.values.filter((item) => item.properties?.tag?.getValue() === tag)
         for (const entity of targets) {
@@ -207,6 +234,9 @@ export class EntityManager {
         }
     }
 
+    /**
+     * 统一将输入位置数组归一化为 Cartesian3 数组。
+     */
     private normalizePositions(positions: Cartesian3[] | DegreePosition[]) {
         if (positions.length === 0) {
             return []
