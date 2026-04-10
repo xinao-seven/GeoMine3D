@@ -1,5 +1,0 @@
-export * from './EntityManager'
-export * from './DataSourceManager'
-export * from './InteractionManager'
-export * from './LayerManager'
-export * from './PrimitiveManager'

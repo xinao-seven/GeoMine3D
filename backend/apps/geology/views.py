@@ -7,8 +7,6 @@ from .services import (
     borehole_excel_service,
     workingface_service,
     analysis_service,
-    boundary_service,
-    geotiff_service,
 )
 
 
@@ -69,13 +67,6 @@ class BoreholeSearchView(View):
 
 
 @method_decorator(csrf_exempt, name='dispatch')
-class BoreholeWGS84View(View):
-    def get(self, request):
-        data = borehole_excel_service.get_borehole_wgs84_locations()
-        return success({'items': data})
-
-
-@method_decorator(csrf_exempt, name='dispatch')
 class WorkingFaceListView(View):
     def get(self, request):
         keyword = request.GET.get('keyword')
@@ -90,46 +81,6 @@ class WorkingFaceDetailView(View):
         data = workingface_service.get_workingface_detail(wf_id)
         if not data:
             return error(f"WorkingFace {wf_id} not found", code=404, status=404)
-        return success(data)
-
-
-@method_decorator(csrf_exempt, name='dispatch')
-class BoundaryMineAreaView(View):
-    def get(self, request):
-        try:
-            data = boundary_service.get_mine_area_boundary()
-        except FileNotFoundError as ex:
-            return error(str(ex), code=404, status=404)
-        except Exception as ex:
-            return error(f'Failed to parse mine-area boundary: {ex}', code=500, status=500)
-        return success(data)
-
-
-@method_decorator(csrf_exempt, name='dispatch')
-class BoundaryWorkingFacesView(View):
-    def get(self, request):
-        try:
-            data = boundary_service.get_working_face_boundaries()
-        except FileNotFoundError as ex:
-            return error(str(ex), code=404, status=404)
-        except Exception as ex:
-            return error(f'Failed to parse working-face boundary: {ex}', code=500, status=500)
-        return success(data)
-
-
-@method_decorator(csrf_exempt, name='dispatch')
-class ProjectionMetadataView(View):
-    def get(self, request):
-        return success(boundary_service.get_projection_metadata())
-
-
-@method_decorator(csrf_exempt, name='dispatch')
-class CesiumTiffLayersView(View):
-    def get(self, request):
-        try:
-            data = geotiff_service.get_geotiff_layers()
-        except Exception as ex:
-            return error(f'Failed to load TIFF layers: {ex}', code=500, status=500)
         return success(data)
 
 

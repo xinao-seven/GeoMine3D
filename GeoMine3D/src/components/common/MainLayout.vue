@@ -79,7 +79,6 @@ let timer: ReturnType<typeof setInterval>
 
 const menuItems = [
   { path: '/dashboard', title: '三维分析', icon: 'DataBoard' },
-  { path: '/cesium-view', title: 'Cesium场景', icon: 'Location' },
   { path: '/model-management', title: '模型管理', icon: 'Box' },
   { path: '/borehole-management', title: '钻孔管理', icon: 'SetUp' },
   { path: '/workingface-management', title: '工作面管理', icon: 'Grid' },
