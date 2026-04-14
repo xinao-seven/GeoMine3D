@@ -10,20 +10,20 @@
         <div class="management-layout">
             <div class="list-panel">
                 <el-table class="main-table" :data="list" v-loading="loading" height="100%" highlight-current-row
-                @current-change="handleRowSelect"
-                :row-style="{ background: 'var(--color-bg-card)', color: 'var(--color-text-primary)' }"
-                :header-cell-style="{ background: 'var(--color-bg-panel)', color: 'var(--color-text-secondary)' }">
-                <el-table-column prop="name" label="钻孔名称" min-width="100" />
-                <el-table-column prop="totalDepth" label="总深度(m)" width="110">
-                    <template #default="{ row }">{{ row.totalDepth.toFixed(1) }}</template>
-                </el-table-column>
-                <el-table-column prop="layerCount" label="层数" width="70" />
-                <el-table-column label="操作" width="140" fixed="right">
-                    <template #default="{ row }">
-                        <el-button size="small" type="primary" link @click="viewDetail(row)">详情</el-button>
-                        <el-button size="small" type="success" link @click="locateToScene(row)">定位</el-button>
-                    </template>
-                </el-table-column>
+                    @current-change="handleRowSelect"
+                    :row-style="{ background: 'var(--color-bg-card)', color: 'var(--color-text-primary)' }"
+                    :header-cell-style="{ background: 'var(--color-bg-panel)', color: 'var(--color-text-secondary)' }">
+                    <el-table-column prop="name" label="钻孔名称" min-width="100" />
+                    <el-table-column prop="totalDepth" label="总深度(m)" width="110">
+                        <template #default="{ row }">{{ row.totalDepth.toFixed(1) }}</template>
+                    </el-table-column>
+                    <el-table-column prop="layerCount" label="层数" width="70" />
+                    <el-table-column label="操作" width="140" fixed="right">
+                        <template #default="{ row }">
+                            <el-button size="small" type="primary" link @click="viewDetail(row)">详情</el-button>
+                            <el-button size="small" type="success" link @click="locateToScene(row)">定位</el-button>
+                        </template>
+                    </el-table-column>
                 </el-table>
             </div>
 
@@ -31,17 +31,18 @@
             <div class="detail-panel" v-if="currentDetail">
                 <div class="detail-title">{{ currentDetail.name }}</div>
                 <div class="detail-meta">总深度: {{ currentDetail.totalDepth.toFixed(1) }}m · {{ currentDetail.layerCount
-                    }} 层
+                }} 层
                 </div>
                 <el-table class="detail-table" :data="currentDetail.layers" size="small"
                     :row-style="{ background: 'var(--color-bg-secondary)', color: 'var(--color-text-primary)' }"
                     :header-cell-style="{ background: 'var(--color-bg-panel)', color: 'var(--color-text-secondary)' }">
                     <el-table-column prop="layerName" label="地层" min-width="80" />
                     <el-table-column prop="topDepth" label="顶深" width="70"><template #default="{ row }">{{ row.topDepth
-                            }}m</template></el-table-column>
+                    }}m</template></el-table-column>
                     <el-table-column prop="bottomDepth" label="底深" width="70"><template #default="{ row }">{{
-                            row.bottomDepth }}m</template></el-table-column>
-                    <el-table-column prop="thickness" label="厚度" width="70"><template #default="{ row }">{{ row.thickness
+                        row.bottomDepth }}m</template></el-table-column>
+                    <el-table-column prop="thickness" label="厚度" width="70"><template #default="{ row }">{{
+                        row.thickness
                             }}m</template></el-table-column>
                 </el-table>
                 <BoreholeChart :borehole="currentDetail" style="height:300px;margin-top:16px" />
