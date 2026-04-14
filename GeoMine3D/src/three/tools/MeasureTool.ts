@@ -97,7 +97,10 @@ export class MeasureTool {
 
     this.raycaster.setFromCamera(this.pointer, this.camera)
     const intersects = this.raycaster.intersectObjects(this.scene.children, true)
-    const hit = intersects.find((item) => !item.object.userData.measureHelper)
+    const hit = intersects.find((item) => {
+      const data = item.object.userData
+      return !data.measureHelper && !data.annotationHelper && !data.clipHelper
+    })
     return hit?.point.clone() || null
   }
 

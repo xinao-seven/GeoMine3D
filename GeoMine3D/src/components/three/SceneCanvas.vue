@@ -99,6 +99,25 @@
                     清空
                 </el-button>
             </div>
+
+            <div class="tools-group">
+                <el-tooltip :content="toolState.annotationEnabled ? '关闭标注' : '开启标注'" placement="bottom">
+                    <el-button
+                        class="tool-btn"
+                        :class="{ active: toolState.annotationEnabled }"
+                        @click="toggleAnnotationTool"
+                    >
+                        <el-icon>
+                            <EditPen />
+                        </el-icon>
+                        <span>标注</span>
+                    </el-button>
+                </el-tooltip>
+
+                <el-button class="tool-btn ghost" @click="clearAnnotations">
+                    清空
+                </el-button>
+            </div>
         </div>
 
         <div v-if="lastMeasurementDistance !== null" class="measure-chip">
@@ -125,6 +144,7 @@ import { BoreholeModelLoader } from '@/three/loaders/BoreholeModelLoader'
 import { WorkingFaceModelLoader } from '@/three/loaders/WorkingFaceModelLoader'
 import { ClipTool } from '@/three/tools/ClipTool'
 import { MeasureTool } from '@/three/tools/MeasureTool'
+import { AnnotationTool } from '@/three/tools/AnnotationTool'
 import { modelApi, boreholeApi } from '@/api'
 import { useSceneStore, useBoreholeStore } from '@/stores'
 import { storeToRefs } from 'pinia'
@@ -173,6 +193,7 @@ let highlightManager: HighlightManager
 let selectionManager: SelectionManager
 let clipTool: ClipTool
 let measureTool: MeasureTool
+let annotationTool: AnnotationTool
 let animFrameId: number
 let resizeObserver: ResizeObserver
 let isAnimating = false
@@ -209,6 +230,7 @@ async function initScene() {
         }
     )
     measureTool = new MeasureTool(sceneManager.scene, cameraManager.camera, canvasRef.value)
+    annotationTool = new AnnotationTool(sceneManager.scene, cameraManager.camera, canvasRef.value)
 
     if (toolState.value.clipHeight !== 0) {
         clipTool.setHeight(toolState.value.clipHeight)
@@ -351,6 +373,7 @@ function animate() {
     if (!isAnimating) return
     animFrameId = requestAnimationFrame(animate)
     controlsManager.update()
+    annotationTool?.update()
     lightManager.updateFromCamera(cameraManager.camera)
     rendererManager.render(sceneManager.scene, cameraManager.camera)
     renderAxisGizmo()
@@ -711,7 +734,7 @@ function resetCamera() {
 
 // 将 store 中工具状态同步到运行时实例。
 function syncToolRuntimeState() {
-    if (!clipTool || !measureTool || !selectionManager) return
+    if (!clipTool || !measureTool || !annotationTool || !selectionManager) return
 
     if (toolState.value.clipEnabled) {
         clipTool.enable({
@@ -725,7 +748,6 @@ function syncToolRuntimeState() {
     }
 
     if (toolState.value.measureEnabled) {
-        selectionManager.setEnabled(false)
         measureTool.enable((result) => {
             sceneStore.addMeasurement({
                 id: result.id,
@@ -736,8 +758,15 @@ function syncToolRuntimeState() {
         })
     } else {
         measureTool.disable()
-        selectionManager.setEnabled(true)
     }
+
+    if (toolState.value.annotationEnabled) {
+        annotationTool.enable()
+    } else {
+        annotationTool.disable()
+    }
+
+    selectionManager.setEnabled(!(toolState.value.measureEnabled || toolState.value.annotationEnabled))
 }
 
 // 开关剖切工具。
@@ -748,6 +777,11 @@ function toggleClipTool() {
 // 开关测量工具。
 function toggleMeasureTool() {
     sceneStore.activateTool(toolState.value.measureEnabled ? null : 'measure')
+}
+
+// 开关标注工具。
+function toggleAnnotationTool() {
+    sceneStore.activateTool(toolState.value.annotationEnabled ? null : 'annotation')
 }
 
 // 响应剖切滑块数值变化。
@@ -774,6 +808,11 @@ function setClipHelperVisible(value: boolean | string | number) {
 function clearMeasurements() {
     sceneStore.clearMeasurements()
     measureTool?.clear()
+}
+
+// 清空场景中的全部标注。
+function clearAnnotations() {
+    annotationTool?.clear()
 }
 
 // 切换 geoRoot 的 X 轴旋转映射并重置观察。
@@ -821,6 +860,7 @@ watch(
     () => ({
         clipEnabled: toolState.value.clipEnabled,
         measureEnabled: toolState.value.measureEnabled,
+        annotationEnabled: toolState.value.annotationEnabled,
         clipHeight: toolState.value.clipHeight,
         clipAxis: toolState.value.clipAxis,
         clipKeepLower: toolState.value.clipKeepLower,
@@ -873,6 +913,7 @@ onUnmounted(() => {
     resizeObserver?.disconnect()
     clipTool?.dispose()
     measureTool?.dispose()
+    annotationTool?.dispose()
     selectionManager?.dispose()
     controlsManager?.dispose()
     rendererManager?.dispose()
