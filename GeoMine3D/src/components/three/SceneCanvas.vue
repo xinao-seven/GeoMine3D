@@ -289,6 +289,11 @@ async function initScene() {
             hoverLabel.value.y = event.clientY - rect.top + 14
         }
     )
+    selectionManager.setHoverEnabled(true)
+    refreshSelectionPickTargets()
+
+    controlsManager.controls.addEventListener('start', onControlStart)
+    controlsManager.controls.addEventListener('end', onControlEnd)
 
     resizeObserver = new ResizeObserver(() => {
         if (!containerRef.value) return
@@ -331,6 +336,12 @@ function stopAnimate() {
     if (!isAnimating) return
     isAnimating = false
     cancelAnimationFrame(animFrameId)
+}
+
+// 使用模型管理器维护可拾取对象白名单，避免全场景递归拾取。
+function refreshSelectionPickTargets() {
+    if (!selectionManager || !modelManager) return
+    selectionManager.setPickTargets(modelManager.getAllModels().map((item) => item.object))
 }
 
 // 按请求类型加载对应模型并更新相机与状态。
@@ -382,6 +393,7 @@ async function loadModelByRequest(req: ModelLoadRequest) {
         }
 
         sceneManager.removeGrid()
+        refreshSelectionPickTargets()
         sceneStore.setModelLoadStatus(req.type, req.id, { loaded: true, loading: false })
 
         if (focusType) {
@@ -777,6 +789,15 @@ function hideHoverLabel() {
     hoverLabel.value.visible = false
 }
 
+function onControlStart() {
+    selectionManager?.setHoverEnabled(false)
+    hideHoverLabel()
+}
+
+function onControlEnd() {
+    selectionManager?.setHoverEnabled(true)
+}
+
 // 监听图层显隐
 watch(layerVisible, (val) => {
     layerManager.setLayerVisible('stratum', val.stratum)
@@ -848,6 +869,7 @@ onMounted(() => {
 
 onActivated(() => {
     startAnimate()
+    selectionManager?.setHoverEnabled(true)
     if (!containerRef.value) return
     const { width, height } = containerRef.value.getBoundingClientRect()
     rendererManager?.resize(width, height)
@@ -856,6 +878,7 @@ onActivated(() => {
 
 onDeactivated(() => {
     stopAnimate()
+    selectionManager?.setHoverEnabled(false)
     hideHoverLabel()
 })
 
@@ -867,6 +890,8 @@ onUnmounted(() => {
     measureTool?.dispose()
     annotationTool?.dispose()
     stratumExplodeTool?.dispose()
+    controlsManager?.controls.removeEventListener('start', onControlStart)
+    controlsManager?.controls.removeEventListener('end', onControlEnd)
     selectionManager?.dispose()
     controlsManager?.dispose()
     rendererManager?.dispose()

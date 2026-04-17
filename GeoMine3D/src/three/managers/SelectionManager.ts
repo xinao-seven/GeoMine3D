@@ -14,7 +14,11 @@ export class SelectionManager {
   private onSelect: SelectionCallback
   private onHover?: HoverCallback
   private enabled = true
+  private hoverEnabled = true
   private hoveredObject: THREE.Object3D | null = null
+  private hoverRafId: number | null = null
+  private pendingHoverEvent: MouseEvent | null = null
+  private pickTargets: THREE.Object3D[] = []
 
   constructor(
     camera: THREE.Camera,
@@ -63,7 +67,8 @@ export class SelectionManager {
     this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
 
     this.raycaster.setFromCamera(this.pointer, this.camera)
-    const intersects = this.raycaster.intersectObjects(this.scene.children, true)
+    const pickRoots = this.pickTargets.length ? this.pickTargets : this.scene.children
+    const intersects = this.raycaster.intersectObjects(pickRoots, true)
     return this._findBusinessObject(intersects)
   }
 
@@ -84,7 +89,7 @@ export class SelectionManager {
 
   // 鼠标移动时执行轻量拾取，仅用于悬停提示。
   private _onMouseMove = (event: MouseEvent) => {
-    if (!this.enabled) {
+    if (!this.enabled || !this.hoverEnabled) {
       if (this.hoveredObject) {
         this.hoveredObject = null
         this.onHover?.(null, null)
@@ -92,17 +97,32 @@ export class SelectionManager {
       return
     }
 
-    const obj = this._pickObjectByEvent(event)
-    const nextUuid = obj?.uuid ?? null
-    const prevUuid = this.hoveredObject?.uuid ?? null
-    if (nextUuid === prevUuid) return
+    this.pendingHoverEvent = event
+    if (this.hoverRafId !== null) return
 
-    this.hoveredObject = obj
-    this.onHover?.(obj, obj ? event : null)
+    this.hoverRafId = window.requestAnimationFrame(() => {
+      this.hoverRafId = null
+      const latestEvent = this.pendingHoverEvent
+      this.pendingHoverEvent = null
+      if (!latestEvent || !this.enabled || !this.hoverEnabled) return
+
+      const obj = this._pickObjectByEvent(latestEvent)
+      const nextUuid = obj?.uuid ?? null
+      const prevUuid = this.hoveredObject?.uuid ?? null
+      if (nextUuid === prevUuid) return
+
+      this.hoveredObject = obj
+      this.onHover?.(obj, obj ? latestEvent : null)
+    })
   }
 
   // 鼠标离开画布时清理悬停状态。
   private _onMouseLeave = () => {
+    this.pendingHoverEvent = null
+    if (this.hoverRafId !== null) {
+      window.cancelAnimationFrame(this.hoverRafId)
+      this.hoverRafId = null
+    }
     if (!this.hoveredObject) return
     this.hoveredObject = null
     this.onHover?.(null, null)
@@ -118,11 +138,42 @@ export class SelectionManager {
         this.hoveredObject = null
         this.onHover?.(null, null)
       }
+      this.pendingHoverEvent = null
+      if (this.hoverRafId !== null) {
+        window.cancelAnimationFrame(this.hoverRafId)
+        this.hoverRafId = null
+      }
     }
+  }
+
+  // 控制悬停拾取能力，不影响点击选择。
+  setHoverEnabled(enabled: boolean) {
+    this.hoverEnabled = enabled
+    if (!enabled) {
+      this.pendingHoverEvent = null
+      if (this.hoverRafId !== null) {
+        window.cancelAnimationFrame(this.hoverRafId)
+        this.hoverRafId = null
+      }
+      if (this.hoveredObject) {
+        this.hoveredObject = null
+        this.onHover?.(null, null)
+      }
+    }
+  }
+
+  // 设置用于拾取的对象根节点白名单。
+  setPickTargets(targets: THREE.Object3D[]) {
+    this.pickTargets = targets
   }
 
   // 解绑事件监听。
   dispose() {
+    this.pendingHoverEvent = null
+    if (this.hoverRafId !== null) {
+      window.cancelAnimationFrame(this.hoverRafId)
+      this.hoverRafId = null
+    }
     this.domElement.removeEventListener('click', this._onClick)
     this.domElement.removeEventListener('mousemove', this._onMouseMove)
     this.domElement.removeEventListener('mouseleave', this._onMouseLeave)
