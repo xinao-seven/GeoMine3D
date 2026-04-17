@@ -12,6 +12,12 @@
                         <span>重置</span>
                     </el-button>
                 </el-tooltip>
+
+                <el-tooltip :content="stratumExploded ? '还原地层位置' : '炸开地层层位'" placement="bottom">
+                    <el-button class="tool-btn" :class="{ active: stratumExploded }" @click="toggleStratumExplode">
+                        {{ stratumExploded ? '还原' : '炸开' }}
+                    </el-button>
+                </el-tooltip>
             </div>
 
             <div class="tools-divider" />
@@ -145,6 +151,8 @@ import { WorkingFaceModelLoader } from '@/three/loaders/WorkingFaceModelLoader'
 import { ClipTool } from '@/three/tools/ClipTool'
 import { MeasureTool } from '@/three/tools/MeasureTool'
 import { AnnotationTool } from '@/three/tools/AnnotationTool'
+import { StratumExplodeTool } from '@/three/tools/StratumExplodeTool'
+import { AxisGizmoTool } from '@/three/tools/AxisGizmoTool'
 import { modelApi, boreholeApi } from '@/api'
 import { useSceneStore, useBoreholeStore } from '@/stores'
 import { storeToRefs } from 'pinia'
@@ -171,16 +179,8 @@ const canvasRef = ref<HTMLCanvasElement>()
 const clipRange = ref({ min: -1000, max: 1000 })
 const clipStep = ref(1)
 const rotateXAxisEnabled = ref(true)
-
-const AXIS_GIZMO_SIZE = 110
-const AXIS_GIZMO_PADDING = 12
-
-let axisGizmoScene: THREE.Scene
-let axisGizmoCamera: THREE.PerspectiveCamera
-let axisGizmoRoot: THREE.Group
-let axisGizmoResources: Array<THREE.Material | THREE.Texture> = []
-const axisGizmoCameraInvQuat = new THREE.Quaternion()
-const axisGizmoGeoRootQuat = new THREE.Quaternion()
+const stratumExploded = ref(false)
+const STRATUM_EXPLODE_GAP = 1000
 
 let sceneManager: SceneManager
 let cameraManager: CameraManager
@@ -190,10 +190,12 @@ let lightManager: LightManager
 let modelManager: ModelManager
 let layerManager: LayerManager
 let highlightManager: HighlightManager
+let axisGizmoTool: AxisGizmoTool | null = null
 let selectionManager: SelectionManager
 let clipTool: ClipTool
 let measureTool: MeasureTool
 let annotationTool: AnnotationTool
+let stratumExplodeTool: StratumExplodeTool | null = null
 let animFrameId: number
 let resizeObserver: ResizeObserver
 let isAnimating = false
@@ -231,6 +233,7 @@ async function initScene() {
     )
     measureTool = new MeasureTool(sceneManager.scene, cameraManager.camera, canvasRef.value)
     annotationTool = new AnnotationTool(sceneManager.scene, cameraManager.camera, canvasRef.value)
+    stratumExplodeTool = new StratumExplodeTool(modelManager, { gap: STRATUM_EXPLODE_GAP })
 
     if (toolState.value.clipHeight !== 0) {
         clipTool.setHeight(toolState.value.clipHeight)
@@ -264,108 +267,13 @@ async function initScene() {
     resizeObserver.observe(containerRef.value)
 
     rotateXAxisEnabled.value = sceneManager.isGeoRootRotationXEnabled()
-    initAxisGizmo()
+    axisGizmoTool = new AxisGizmoTool(rendererManager.renderer, cameraManager.camera, sceneManager.geoRoot, {
+        size: 110,
+        padding: 12,
+    })
 
     syncToolRuntimeState()
     startAnimate()
-}
-
-// 创建轴向字母精灵，用于左下角坐标轴指示器。
-function createAxisLabelSprite(text: string, color: string) {
-    const canvas = document.createElement('canvas')
-    canvas.width = 128
-    canvas.height = 128
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return null
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-    ctx.font = 'bold 72px sans-serif'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillStyle = color
-    ctx.fillText(text, canvas.width / 2, canvas.height / 2)
-
-    const texture = new THREE.CanvasTexture(canvas)
-    texture.needsUpdate = true
-    const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false })
-    const sprite = new THREE.Sprite(material)
-    sprite.scale.set(12, 12, 12)
-
-    axisGizmoResources.push(texture, material)
-    return sprite
-}
-
-// 初始化轴向指示器场景。
-function initAxisGizmo() {
-    axisGizmoScene = new THREE.Scene()
-    axisGizmoCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 200)
-    axisGizmoCamera.position.set(0, 0, 80)
-    axisGizmoCamera.lookAt(0, 0, 0)
-
-    const ambient = new THREE.AmbientLight(0xffffff, 0.9)
-    const dir = new THREE.DirectionalLight(0xffffff, 0.6)
-    dir.position.set(20, 30, 40)
-    axisGizmoScene.add(ambient, dir)
-
-    axisGizmoRoot = new THREE.Group()
-    axisGizmoScene.add(axisGizmoRoot)
-
-    const axes = new THREE.AxesHelper(24)
-    axisGizmoRoot.add(axes)
-
-    const xLabel = createAxisLabelSprite('X', '#ff5e5e')
-    const yLabel = createAxisLabelSprite('Y', '#52d273')
-    const zLabel = createAxisLabelSprite('Z', '#4e90ff')
-
-    if (xLabel) {
-        xLabel.position.set(30, 0, 0)
-        axisGizmoRoot.add(xLabel)
-    }
-    if (yLabel) {
-        yLabel.position.set(0, 30, 0)
-        axisGizmoRoot.add(yLabel)
-    }
-    if (zLabel) {
-        zLabel.position.set(0, 0, 30)
-        axisGizmoRoot.add(zLabel)
-    }
-}
-
-// 渲染轴向指示器到主画布左下角视口。
-function renderAxisGizmo() {
-    if (!axisGizmoRoot) return
-
-    // 轴向指示器显示“geoRoot 轴系相对当前相机”的方向，需同时考虑相机姿态与 geoRoot 旋转。
-    axisGizmoCameraInvQuat.copy(cameraManager.camera.quaternion).invert()
-    sceneManager.geoRoot.getWorldQuaternion(axisGizmoGeoRootQuat)
-    axisGizmoRoot.quaternion.copy(axisGizmoCameraInvQuat).multiply(axisGizmoGeoRootQuat)
-
-    const renderer = rendererManager.renderer
-    const rendererSize = renderer.getSize(new THREE.Vector2())
-    const size = Math.min(AXIS_GIZMO_SIZE, Math.floor(Math.min(rendererSize.x, rendererSize.y) * 0.26))
-    const viewportX = AXIS_GIZMO_PADDING
-    const viewportY = AXIS_GIZMO_PADDING
-
-    const prevAutoClear = renderer.autoClear
-    renderer.autoClear = false
-    renderer.clearDepth()
-
-    renderer.setScissorTest(true)
-    renderer.setViewport(viewportX, viewportY, size, size)
-    renderer.setScissor(viewportX, viewportY, size, size)
-    renderer.render(axisGizmoScene, axisGizmoCamera)
-    renderer.setScissorTest(false)
-
-    renderer.setViewport(0, 0, rendererSize.x, rendererSize.y)
-    renderer.autoClear = prevAutoClear
-}
-
-// 释放轴向指示器资源。
-function disposeAxisGizmo() {
-    for (const item of axisGizmoResources) {
-        item.dispose()
-    }
-    axisGizmoResources = []
 }
 
 // 动画主循环：更新控制器、灯光与渲染。
@@ -376,7 +284,7 @@ function animate() {
     annotationTool?.update()
     lightManager.updateFromCamera(cameraManager.camera)
     rendererManager.render(sceneManager.scene, cameraManager.camera)
-    renderAxisGizmo()
+    axisGizmoTool?.render()
 }
 
 // 启动动画循环。
@@ -420,7 +328,6 @@ async function loadModelByRequest(req: ModelLoadRequest) {
                     : await boreholeApi.getBoreholeList()
                 boreholeStore.list = boreholes
                 await loadAllBoreholeModels(boreholes)
-                sceneStore.setModelLoadStatus('borehole', '__all__', { loaded: true, loading: false })
                 focusType = 'borehole'
                 preferImmediateFocus = true
                 focusByBoreholeData(boreholes)
@@ -442,8 +349,9 @@ async function loadModelByRequest(req: ModelLoadRequest) {
             }
         }
 
-        sceneManager.removeGrid() // 模型加载后移除辅助网格
+        sceneManager.removeGrid()
         sceneStore.setModelLoadStatus(req.type, req.id, { loaded: true, loading: false })
+
         if (focusType) {
             fitCameraToType(focusType, preferImmediateFocus)
         } else {
@@ -457,6 +365,35 @@ async function loadModelByRequest(req: ModelLoadRequest) {
         sceneStore.setModelLoadStatus(req.type, req.id, { loading: false })
         console.error(`[SceneCanvas] ${req.type} 模型加载失败`, err)
     }
+}
+
+// 按当前已加载全部模型自适应相机视角。
+function fitCameraToLoadedModels() {
+    const models = modelManager.getAllModels()
+    if (!models.length) return
+
+    const box = new THREE.Box3()
+    models.forEach((m) => box.expandByObject(m.object))
+
+    const fitResult = cameraManager.fitToBox(box)
+    if (!fitResult) return
+
+    cameraManager.camera.near = fitResult.near
+    cameraManager.camera.far = fitResult.far
+    cameraManager.camera.updateProjectionMatrix()
+
+    controlsManager.setDistanceLimits(fitResult.fitDistance * 0.1, fitResult.fitDistance * 5)
+
+    const startTarget = controlsManager.controls.target.clone()
+    cameraManager.animateTo(
+        fitResult.position,
+        fitResult.center,
+        startTarget,
+        (lookAt) => {
+            controlsManager.controls.target.copy(lookAt)
+            controlsManager.controls.update()
+        }
+    )
 }
 
 // 按模型类型聚焦相机。
@@ -538,106 +475,76 @@ async function findModelById(type: 'stratum' | 'workingface', id: string) {
 }
 
 // 加载地层模型，失败时回退到占位体。
-async function loadStratumModel(m: ModelItem) {
+async function loadStratumModel(model: ModelItem) {
     const stratumLoader = new StratumModelLoader()
     try {
-        const obj = await stratumLoader.load(m)
-        modelManager.addModel({ id: m.id, name: m.name, type: 'stratum', object: obj })
-        registerStratumLayersFromObject(obj, m.id, m.name)
+        const object = await stratumLoader.load(model)
+        modelManager.addModel({ id: model.id, name: model.name, type: 'stratum', object })
+        registerStratumLayersFromObject(object, model.id, model.name)
     } catch {
-        // .glb 文件不存在时跳过，用占位几何体代替
-        addPlaceholderStratum(m)
+        addPlaceholderStratum(model)
     }
 
     layerManager.setLayerEdgesVisible('stratum', showEdges.value)
 }
 
 // 加载工作面模型，失败时回退到占位体。
-async function loadWorkingFaceModel(m: ModelItem) {
-    const wfLoader = new WorkingFaceModelLoader()
+async function loadWorkingFaceModel(model: ModelItem) {
+    const workingFaceLoader = new WorkingFaceModelLoader()
     try {
-        const obj = await wfLoader.load(m)
-        modelManager.addModel({ id: m.id, name: m.name, type: 'workingface', object: obj })
+        const object = await workingFaceLoader.load(model)
+        modelManager.addModel({ id: model.id, name: model.name, type: 'workingface', object })
     } catch {
-        addPlaceholderWorkingFace(m)
+        addPlaceholderWorkingFace(model)
     }
 }
 
 // 加载单个钻孔模型并计算其摆放位置。
-async function loadBoreholeModel(b: BoreholeItem, index: number) {
-    const bhLoader = new BoreholeModelLoader()
+async function loadBoreholeModel(borehole: BoreholeItem, index: number) {
+    const boreholeLoader = new BoreholeModelLoader()
 
-    let pos: { x: number; y: number; z: number }
-    if (b.location) {
-        pos = {
-            x: b.location.x,
-            y: b.location.y,
-            z: b.location.z * BOREHOLE_VERTICAL_SCALE,
+    let position: { x: number; y: number; z: number }
+    if (borehole.location) {
+        position = {
+            x: borehole.location.x,
+            y: borehole.location.y,
+            z: borehole.location.z * BOREHOLE_VERTICAL_SCALE,
         }
     } else {
         const spacing = 500
         const cols = 10
-        pos = {
+        position = {
             x: (index % cols) * spacing - (cols * spacing) / 2,
             y: Math.floor(index / cols) * spacing - (cols * spacing) / 2,
             z: 0,
         }
     }
 
-    const obj = bhLoader.createBoreholeObject(b, pos, BOREHOLE_VERTICAL_SCALE)
-    modelManager.addModel({ id: b.id, name: b.name, type: 'borehole', object: obj })
+    const object = boreholeLoader.createBoreholeObject(borehole, position, BOREHOLE_VERTICAL_SCALE)
+    modelManager.addModel({ id: borehole.id, name: borehole.name, type: 'borehole', object })
 }
 
 // 批量加载钻孔模型并同步加载状态。
 async function loadAllBoreholeModels(boreholes: BoreholeItem[]) {
     for (let i = 0; i < boreholes.length; i += 1) {
-        const b = boreholes[i]
-        if (modelManager.getModel(b.id)) {
-            sceneStore.setModelLoadStatus('borehole', b.id, { loaded: true, loading: false })
+        const borehole = boreholes[i]
+        if (modelManager.getModel(borehole.id)) {
+            sceneStore.setModelLoadStatus('borehole', borehole.id, { loaded: true, loading: false })
             continue
         }
-        await loadBoreholeModel(b, i)
-        sceneStore.setModelLoadStatus('borehole', b.id, { loaded: true, loading: false })
+        await loadBoreholeModel(borehole, i)
+        sceneStore.setModelLoadStatus('borehole', borehole.id, { loaded: true, loading: false })
     }
-}
-
-// 按当前已加载全部模型自适应相机视角。
-function fitCameraToLoadedModels() {
-    const models = modelManager.getAllModels()
-    if (!models.length) return
-
-    const box = new THREE.Box3()
-    models.forEach((m) => box.expandByObject(m.object))
-
-    const fitResult = cameraManager.fitToBox(box)
-    if (!fitResult) return
-
-    cameraManager.camera.near = fitResult.near
-    cameraManager.camera.far = fitResult.far
-    cameraManager.camera.updateProjectionMatrix()
-
-    controlsManager.setDistanceLimits(fitResult.fitDistance * 0.1, fitResult.fitDistance * 5)
-
-    const startTarget = controlsManager.controls.target.clone()
-    cameraManager.animateTo(
-        fitResult.position,
-        fitResult.center,
-        startTarget,
-        (lookAt) => {
-            controlsManager.controls.target.copy(lookAt)
-            controlsManager.controls.update()
-        }
-    )
 }
 
 // 构建地层占位模型（用于文件缺失时兜底显示）。
 function addPlaceholderStratum(model: ModelItem) {
     const colors: Record<string, number> = { 'strata-001': 0x4a7a8a, 'strata-002': 0x6d9e73 }
     const color = colors[model.id] ?? 0x5a8a9a
-    const geom = new THREE.BoxGeometry(400, 20, 300)
-    const mat = new THREE.MeshLambertMaterial({ color, transparent: true, opacity: 0.7, clipShadows: true })
-    mat.clippingPlanes = []
-    const mesh = new THREE.Mesh(geom, mat)
+    const geometry = new THREE.BoxGeometry(400, 20, 300)
+    const material = new THREE.MeshLambertMaterial({ color, transparent: true, opacity: 0.7, clipShadows: true })
+    material.clippingPlanes = []
+    const mesh = new THREE.Mesh(geometry, material)
     mesh.position.z = Object.keys(colors).indexOf(model.id) * -25
     mesh.name = `stratum_${model.id}`
     mesh.userData = {
@@ -650,6 +557,18 @@ function addPlaceholderStratum(model: ModelItem) {
     }
     modelManager.addModel({ id: model.id, name: model.name, type: 'stratum', object: mesh })
     registerStratumLayersFromObject(mesh, model.id, model.name)
+}
+
+// 构建工作面占位模型（用于加载失败回退）。
+function addPlaceholderWorkingFace(model: ModelItem) {
+    const geometry = new THREE.BoxGeometry(200, 15, 120)
+    const material = new THREE.MeshLambertMaterial({ color: 0xf5a623, transparent: true, opacity: 0.8, clipShadows: true })
+    material.clippingPlanes = []
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.position.set(Math.random() * 100 - 50, Math.random() * 100 - 50, -80)
+    mesh.name = `workingface_${model.id}`
+    mesh.userData = { id: model.id, name: model.name, type: 'workingface', modelData: model }
+    modelManager.addModel({ id: model.id, name: model.name, type: 'workingface', object: mesh })
 }
 
 // 将 three 颜色对象转为十六进制字符串。
@@ -683,6 +602,13 @@ function registerStratumLayersFromObject(object: THREE.Object3D, modelId: string
     if (controls.length) {
         sceneStore.registerStratumLayers(controls)
     }
+
+}
+
+// 切换地层炸开状态。
+function toggleStratumExplode() {
+    if (!stratumExplodeTool) return
+    stratumExploded.value = stratumExplodeTool.toggle()
 }
 
 // 将分层可见性、颜色和透明度控制应用到对应网格。
@@ -711,18 +637,6 @@ function applyStratumLayerControl(control: StratumLayerControl) {
             edgeLines.visible = showEdges.value && control.visible
         }
     })
-}
-
-// 构建工作面占位模型（用于加载失败回退）。
-function addPlaceholderWorkingFace(model: ModelItem) {
-    const geom = new THREE.BoxGeometry(200, 15, 120)
-    const mat = new THREE.MeshLambertMaterial({ color: 0xf5a623, transparent: true, opacity: 0.8, clipShadows: true })
-    mat.clippingPlanes = []
-    const mesh = new THREE.Mesh(geom, mat)
-    mesh.position.set(Math.random() * 100 - 50, Math.random() * 100 - 50, -80)
-    mesh.name = `workingface_${model.id}`
-    mesh.userData = { id: model.id, name: model.name, type: 'workingface', modelData: model }
-    modelManager.addModel({ id: model.id, name: model.name, type: 'workingface', object: mesh })
 }
 
 // 重置相机到默认观察位姿。
@@ -820,6 +734,7 @@ function onRotateXAxisToggle(value: boolean | string | number) {
     const enabled = Boolean(value)
     rotateXAxisEnabled.value = enabled
     sceneManager?.setGeoRootRotationXEnabled(enabled)
+    stratumExplodeTool?.sync()
 
     if (modelManager?.getAllModels().length) {
         fitCameraToLoadedModels()
@@ -914,11 +829,13 @@ onUnmounted(() => {
     clipTool?.dispose()
     measureTool?.dispose()
     annotationTool?.dispose()
+    stratumExplodeTool?.dispose()
     selectionManager?.dispose()
     controlsManager?.dispose()
     rendererManager?.dispose()
     highlightManager?.dispose()
-    disposeAxisGizmo()
+    axisGizmoTool?.dispose()
+    axisGizmoTool = null
     modelManager?.clear()
     sceneManager?.dispose()
 })
