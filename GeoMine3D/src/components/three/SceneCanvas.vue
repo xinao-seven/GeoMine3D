@@ -130,6 +130,14 @@
             最近测量 {{ lastMeasurementDistance.toFixed(2) }} m
         </div>
 
+        <div
+            v-if="hoverLabel.visible"
+            class="entity-hover-label"
+            :style="{ left: `${hoverLabel.x}px`, top: `${hoverLabel.y}px` }"
+        >
+            {{ hoverLabel.name }}
+        </div>
+
     </div>
 </template>
 
@@ -180,6 +188,12 @@ const clipRange = ref({ min: -1000, max: 1000 })
 const clipStep = ref(1)
 const rotateXAxisEnabled = ref(true)
 const stratumExploded = ref(false)
+const hoverLabel = ref({
+    visible: false,
+    name: '',
+    x: 0,
+    y: 0,
+})
 const STRATUM_EXPLODE_GAP = 1000
 
 let sceneManager: SceneManager
@@ -255,6 +269,24 @@ async function initScene() {
             } else {
                 sceneStore.selectObject(null)
             }
+        },
+        (obj, event) => {
+            if (!containerRef.value || !obj || !event) {
+                hoverLabel.value.visible = false
+                return
+            }
+
+            const name = String(obj.userData?.name || obj.name || '').trim()
+            if (!name) {
+                hoverLabel.value.visible = false
+                return
+            }
+
+            const rect = containerRef.value.getBoundingClientRect()
+            hoverLabel.value.visible = true
+            hoverLabel.value.name = name
+            hoverLabel.value.x = event.clientX - rect.left + 14
+            hoverLabel.value.y = event.clientY - rect.top + 14
         }
     )
 
@@ -741,6 +773,10 @@ function onRotateXAxisToggle(value: boolean | string | number) {
     }
 }
 
+function hideHoverLabel() {
+    hoverLabel.value.visible = false
+}
+
 // 监听图层显隐
 watch(layerVisible, (val) => {
     layerManager.setLayerVisible('stratum', val.stratum)
@@ -820,6 +856,7 @@ onActivated(() => {
 
 onDeactivated(() => {
     stopAnimate()
+    hideHoverLabel()
 })
 
 onUnmounted(() => {
@@ -838,6 +875,7 @@ onUnmounted(() => {
     axisGizmoTool = null
     modelManager?.clear()
     sceneManager?.dispose()
+    hideHoverLabel()
 })
 </script>
 
@@ -967,6 +1005,22 @@ onUnmounted(() => {
     backdrop-filter: blur(6px);
 }
 
+.entity-hover-label {
+    position: absolute;
+    z-index: 12;
+    pointer-events: none;
+    max-width: 320px;
+    padding: 6px 10px;
+    border: 1px solid rgba(0, 200, 255, 0.45);
+    border-radius: 8px;
+    background: rgba(6, 16, 30, 0.9);
+    color: #eaf8ff;
+    font-size: 12px;
+    line-height: 1.25;
+    white-space: nowrap;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.32);
+}
+
 @media (max-width: 900px) {
     .tools-bar {
         top: auto;
@@ -1038,6 +1092,11 @@ onUnmounted(() => {
         top: auto;
         bottom: 56px;
         right: 12px;
+    }
+
+    .entity-hover-label {
+        font-size: 11px;
+        max-width: 240px;
     }
 }
 </style>
