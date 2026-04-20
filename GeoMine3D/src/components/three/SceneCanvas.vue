@@ -130,6 +130,14 @@
             最近测量 {{ lastMeasurementDistance.toFixed(2) }} m
         </div>
 
+        <div
+            v-if="hoverLabel.visible"
+            class="entity-hover-label"
+            :style="{ left: `${hoverLabel.x}px`, top: `${hoverLabel.y}px` }"
+        >
+            {{ hoverLabel.name }}
+        </div>
+
     </div>
 </template>
 
@@ -180,6 +188,12 @@ const clipRange = ref({ min: -1000, max: 1000 })
 const clipStep = ref(1)
 const rotateXAxisEnabled = ref(true)
 const stratumExploded = ref(false)
+const hoverLabel = ref({
+    visible: false,
+    name: '',
+    x: 0,
+    y: 0,
+})
 const STRATUM_EXPLODE_GAP = 1000
 
 let sceneManager: SceneManager
@@ -255,8 +269,31 @@ async function initScene() {
             } else {
                 sceneStore.selectObject(null)
             }
+        },
+        (obj, event) => {
+            if (!containerRef.value || !obj || !event) {
+                hoverLabel.value.visible = false
+                return
+            }
+
+            const name = String(obj.userData?.name || obj.name || '').trim()
+            if (!name) {
+                hoverLabel.value.visible = false
+                return
+            }
+
+            const rect = containerRef.value.getBoundingClientRect()
+            hoverLabel.value.visible = true
+            hoverLabel.value.name = name
+            hoverLabel.value.x = event.clientX - rect.left + 14
+            hoverLabel.value.y = event.clientY - rect.top + 14
         }
     )
+    selectionManager.setHoverEnabled(true)
+    refreshSelectionPickTargets()
+
+    controlsManager.controls.addEventListener('start', onControlStart)
+    controlsManager.controls.addEventListener('end', onControlEnd)
 
     resizeObserver = new ResizeObserver(() => {
         if (!containerRef.value) return
@@ -299,6 +336,12 @@ function stopAnimate() {
     if (!isAnimating) return
     isAnimating = false
     cancelAnimationFrame(animFrameId)
+}
+
+// 使用模型管理器维护可拾取对象白名单，避免全场景递归拾取。
+function refreshSelectionPickTargets() {
+    if (!selectionManager || !modelManager) return
+    selectionManager.setPickTargets(modelManager.getAllModels().map((item) => item.object))
 }
 
 // 按请求类型加载对应模型并更新相机与状态。
@@ -348,6 +391,7 @@ async function loadModelByRequest(req: ModelLoadRequest) {
         }
 
         sceneManager.removeGrid()
+        refreshSelectionPickTargets()
         sceneStore.setModelLoadStatus(req.type, req.id, { loaded: true, loading: false })
 
         if (focusType) {
@@ -676,6 +720,19 @@ function onRotateXAxisToggle(value: boolean | string | number) {
     }
 }
 
+function hideHoverLabel() {
+    hoverLabel.value.visible = false
+}
+
+function onControlStart() {
+    selectionManager?.setHoverEnabled(false)
+    hideHoverLabel()
+}
+
+function onControlEnd() {
+    selectionManager?.setHoverEnabled(true)
+}
+
 // 监听图层显隐
 watch(layerVisible, (val) => {
     layerManager.setLayerVisible('stratum', val.stratum)
@@ -747,6 +804,7 @@ onMounted(() => {
 
 onActivated(() => {
     startAnimate()
+    selectionManager?.setHoverEnabled(true)
     if (!containerRef.value) return
     const { width, height } = containerRef.value.getBoundingClientRect()
     rendererManager?.resize(width, height)
@@ -755,6 +813,8 @@ onActivated(() => {
 
 onDeactivated(() => {
     stopAnimate()
+    selectionManager?.setHoverEnabled(false)
+    hideHoverLabel()
 })
 
 onUnmounted(() => {
@@ -765,6 +825,8 @@ onUnmounted(() => {
     measureTool?.dispose()
     annotationTool?.dispose()
     stratumExplodeTool?.dispose()
+    controlsManager?.controls.removeEventListener('start', onControlStart)
+    controlsManager?.controls.removeEventListener('end', onControlEnd)
     selectionManager?.dispose()
     controlsManager?.dispose()
     rendererManager?.dispose()
@@ -773,6 +835,7 @@ onUnmounted(() => {
     axisGizmoTool = null
     modelManager?.clear()
     sceneManager?.dispose()
+    hideHoverLabel()
 })
 </script>
 
@@ -902,6 +965,22 @@ onUnmounted(() => {
     backdrop-filter: blur(6px);
 }
 
+.entity-hover-label {
+    position: absolute;
+    z-index: 12;
+    pointer-events: none;
+    max-width: 320px;
+    padding: 6px 10px;
+    border: 1px solid rgba(0, 200, 255, 0.45);
+    border-radius: 8px;
+    background: rgba(6, 16, 30, 0.9);
+    color: #eaf8ff;
+    font-size: 12px;
+    line-height: 1.25;
+    white-space: nowrap;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.32);
+}
+
 @media (max-width: 900px) {
     .tools-bar {
         top: auto;
@@ -973,6 +1052,11 @@ onUnmounted(() => {
         top: auto;
         bottom: 56px;
         right: 12px;
+    }
+
+    .entity-hover-label {
+        font-size: 11px;
+        max-width: 240px;
     }
 }
 </style>
