@@ -48,7 +48,7 @@ export class ClipTool {
         const helperMaterial = new THREE.MeshBasicMaterial({
             color: 0x00c8ff,
             transparent: true,
-            opacity: 0.22,
+            opacity: 1,
             side: THREE.DoubleSide,
             depthWrite: false,
         })

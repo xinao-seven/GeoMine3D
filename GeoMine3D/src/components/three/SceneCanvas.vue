@@ -9,7 +9,7 @@
                         <el-icon>
                             <RefreshRight />
                         </el-icon>
-                        <span>重置</span>
+                        <span>重置视角</span>
                     </el-button>
                 </el-tooltip>
 
@@ -141,7 +141,7 @@ import { CameraManager } from '@/three/core/CameraManager'
 import { RendererManager } from '@/three/core/RendererManager'
 import { ControlsManager } from '@/three/core/ControlsManager'
 import { LightManager } from '@/three/core/LightManager'
-import { ModelManager } from '@/three/managers/ModelManager'
+import { ModelManager, type ManagedModel } from '@/three/managers/ModelManager'
 import { LayerManager } from '@/three/managers/LayerManager'
 import { HighlightManager } from '@/three/managers/HighlightManager'
 import { SelectionManager } from '@/three/managers/SelectionManager'
@@ -330,7 +330,6 @@ async function loadModelByRequest(req: ModelLoadRequest) {
                 await loadAllBoreholeModels(boreholes)
                 focusType = 'borehole'
                 preferImmediateFocus = true
-                focusByBoreholeData(boreholes)
             } else {
                 let borehole = req.borehole
                 let index = req.index ?? 0
@@ -345,7 +344,6 @@ async function loadModelByRequest(req: ModelLoadRequest) {
                 await loadBoreholeModel(borehole, index)
                 focusType = 'borehole'
                 preferImmediateFocus = true
-                focusByBoreholeData([borehole], index)
             }
         }
 
@@ -355,7 +353,7 @@ async function loadModelByRequest(req: ModelLoadRequest) {
         if (focusType) {
             fitCameraToType(focusType, preferImmediateFocus)
         } else {
-            fitCameraToLoadedModels()
+            fitCameraToType(null, preferImmediateFocus)
         }
 
         if (toolState.value.clipEnabled) {
@@ -367,38 +365,14 @@ async function loadModelByRequest(req: ModelLoadRequest) {
     }
 }
 
-// 按当前已加载全部模型自适应相机视角。
-function fitCameraToLoadedModels() {
-    const models = modelManager.getAllModels()
-    if (!models.length) return
-
-    const box = new THREE.Box3()
-    models.forEach((m) => box.expandByObject(m.object))
-
-    const fitResult = cameraManager.fitToBox(box)
-    if (!fitResult) return
-
-    cameraManager.camera.near = fitResult.near
-    cameraManager.camera.far = fitResult.far
-    cameraManager.camera.updateProjectionMatrix()
-
-    controlsManager.setDistanceLimits(fitResult.fitDistance * 0.1, fitResult.fitDistance * 5)
-
-    const startTarget = controlsManager.controls.target.clone()
-    cameraManager.animateTo(
-        fitResult.position,
-        fitResult.center,
-        startTarget,
-        (lookAt) => {
-            controlsManager.controls.target.copy(lookAt)
-            controlsManager.controls.update()
-        }
-    )
-}
-
 // 按模型类型聚焦相机。
-function fitCameraToType(type: 'stratum' | 'borehole' | 'workingface', immediate = false) {
-    const models = modelManager.getModelsByType(type)
+function fitCameraToType(type: 'stratum' | 'borehole' | 'workingface' | null, immediate = false) {
+    let models: ManagedModel[] = []
+    if (type !== null) {
+        models = modelManager.getModelsByType(type)
+    } else {
+        models = modelManager.getAllModels()
+    }
     if (!models.length) return
 
     const box = new THREE.Box3()
@@ -429,43 +403,6 @@ function fitCameraToType(type: 'stratum' | 'borehole' | 'workingface', immediate
             controlsManager.controls.update()
         }
     )
-}
-
-// 基于钻孔数据构建包围盒并快速聚焦。
-function focusByBoreholeData(boreholes: BoreholeItem[], startIndex = 0) {
-    if (!boreholes.length) return
-
-    const points = boreholes.map((b, i) => {
-        if (b.location) {
-            const localPoint = new THREE.Vector3(
-                b.location.x,
-                b.location.y,
-                b.location.z * BOREHOLE_VERTICAL_SCALE
-            )
-            return sceneManager.geoRoot.localToWorld(localPoint)
-        }
-        const spacing = 500
-        const cols = 10
-        const localPoint = new THREE.Vector3(
-            ((startIndex + i) % cols) * spacing - (cols * spacing) / 2,
-            Math.floor((startIndex + i) / cols) * spacing - (cols * spacing) / 2,
-            0
-        )
-        return sceneManager.geoRoot.localToWorld(localPoint)
-    })
-
-    const box = new THREE.Box3().setFromPoints(points)
-    const fitResult = cameraManager.fitToBox(box)
-    if (!fitResult) return
-
-    cameraManager.camera.near = Math.max(fitResult.near, 1)
-    cameraManager.camera.far = Math.max(fitResult.far, fitResult.near + 10000)
-    cameraManager.camera.updateProjectionMatrix()
-    controlsManager.setDistanceLimits(fitResult.fitDistance * 0.05, fitResult.fitDistance * 12)
-
-    cameraManager.camera.position.copy(fitResult.position)
-    controlsManager.controls.target.copy(fitResult.center)
-    controlsManager.controls.update()
 }
 
 // 通过 id 从后端模型列表中查找模型。
@@ -641,9 +578,7 @@ function applyStratumLayerControl(control: StratumLayerControl) {
 
 // 重置相机到默认观察位姿。
 function resetCamera() {
-    cameraManager.resetPosition()
-    controlsManager.controls.target.set(0, 0, 0)
-    controlsManager.controls.update()
+    fitCameraToType(null, true)
 }
 
 // 将 store 中工具状态同步到运行时实例。
@@ -737,7 +672,7 @@ function onRotateXAxisToggle(value: boolean | string | number) {
     stratumExplodeTool?.sync()
 
     if (modelManager?.getAllModels().length) {
-        fitCameraToLoadedModels()
+        fitCameraToType(null, true)
     }
 }
 
