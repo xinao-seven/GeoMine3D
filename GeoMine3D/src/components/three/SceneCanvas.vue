@@ -91,6 +91,20 @@
                 />
             </div>
 
+            <div class="tools-divider" />
+
+            <div class="tools-group">
+                <el-tooltip :content="outlineEnabled ? '关闭描边' : '开启描边'" placement="bottom">
+                    <el-button
+                        class="tool-btn"
+                        :class="{ active: outlineEnabled }"
+                        @click="toggleOutline"
+                    >
+                        <span>描边</span>
+                    </el-button>
+                </el-tooltip>
+            </div>
+
             <div class="tools-group">
                 <el-tooltip :content="toolState.measureEnabled ? '关闭测量' : '开启测量'" placement="bottom">
                     <el-button class="tool-btn" :class="{ active: toolState.measureEnabled }" @click="toggleMeasureTool">
@@ -188,6 +202,7 @@ const clipRange = ref({ min: -1000, max: 1000 })
 const clipStep = ref(1)
 const rotateXAxisEnabled = ref(true)
 const stratumExploded = ref(false)
+const outlineEnabled = ref(true)
 const hoverLabel = ref({
     visible: false,
     name: '',
@@ -223,6 +238,7 @@ async function initScene() {
     sceneManager = new SceneManager()
     cameraManager = new CameraManager(width / height)
     rendererManager = new RendererManager(canvasRef.value)
+    rendererManager.setOutlineEnabled(outlineEnabled.value)
     rendererManager.resize(width, height)
     controlsManager = new ControlsManager(cameraManager.camera, canvasRef.value)
     lightManager = new LightManager(sceneManager.scene)
@@ -266,8 +282,10 @@ async function initScene() {
                     type: obj.userData.type,
                     data: obj.userData.boreholeData || obj.userData.modelData || {},
                 })
+                rendererManager?.setOutlineSelectedObjects([obj])
             } else {
                 sceneStore.selectObject(null)
+                rendererManager?.setOutlineSelectedObjects([])
             }
         },
         (obj, event) => {
@@ -677,6 +695,12 @@ function toggleAnnotationTool() {
     sceneStore.activateTool(toolState.value.annotationEnabled ? null : 'annotation')
 }
 
+// 开关 Outline 描边效果。
+function toggleOutline() {
+    outlineEnabled.value = !outlineEnabled.value
+    rendererManager?.setOutlineEnabled(outlineEnabled.value)
+}
+
 // 响应剖切滑块数值变化。
 function onClipHeightChange(value: number | undefined) {
     sceneStore.setClipHeight(typeof value === 'number' ? value : 0)
@@ -789,6 +813,7 @@ watch(locateTarget, (target) => {
         cameraManager.flyTo(center, 2000)
         controlsManager.controls.target.copy(center)
         highlightManager.select(model.object)
+        rendererManager?.setOutlineSelectedObjects([model.object])
     }
 })
 
