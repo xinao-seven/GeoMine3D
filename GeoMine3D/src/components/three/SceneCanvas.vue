@@ -1,5 +1,5 @@
 <template>
-    <div ref="containerRef" class="scene-canvas">
+    <div ref="containerRef" class="scene-canvas" @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop">
         <canvas ref="canvasRef" class="canvas" />
 
         <div class="tools-bar">
@@ -138,12 +138,23 @@
             {{ hoverLabel.name }}
         </div>
 
+        <!-- 拖放加载遮罩 -->
+        <div v-if="isDragOver" class="drop-overlay">
+            <div class="drop-indicator">
+                <span class="drop-icon">⊕</span>
+                <span class="drop-text">释放以加载 .glb 模型</span>
+            </div>
+        </div>
+        <div v-if="dropError" class="drop-error">{{ dropError }}</div>
+
     </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, onActivated, onDeactivated, watch } from 'vue'
 import * as THREE from 'three'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader'
 import { SceneManager } from '@/three/core/SceneManager'
 import { CameraManager } from '@/three/core/CameraManager'
 import { RendererManager } from '@/three/core/RendererManager'
@@ -195,6 +206,157 @@ const hoverLabel = ref({
     y: 0,
 })
 const STRATUM_EXPLODE_GAP = 1000
+
+// 拖放状态
+const isDragOver = ref(false)
+const dropError = ref('')
+let droppedModelCount = 0
+
+// 创建带 DRACO 支持的 GLTF 加载器
+const DRACO_DECODER_PATH = 'https://www.gstatic.com/draco/versioned/decoders/1.5.7/'
+function createGLTFLoader(): GLTFLoader {
+    const loader = new GLTFLoader()
+    const dracoLoader = new DRACOLoader()
+    dracoLoader.setDecoderPath(DRACO_DECODER_PATH)
+    dracoLoader.preload()
+    loader.setDRACOLoader(dracoLoader)
+    return loader
+}
+
+// 拖拽颜色调色板（与地层加载器颜色一致）
+const DROP_PALETTE = [
+    0x8b4513, 0xdaa520, 0x2e8b57, 0x4682b4,
+    0xd2691e, 0x9acd32, 0xcd853f, 0x20b2aa,
+    0x778899, 0xf0e68c,
+]
+
+function generateDropColor(index: number): number {
+    return DROP_PALETTE[index % DROP_PALETTE.length]
+}
+
+// 拖拽事件处理
+function onDragOver(e: DragEvent) {
+    e.preventDefault()
+    if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = 'copy'
+    }
+    isDragOver.value = true
+}
+
+function onDragLeave(e: DragEvent) {
+    const container = containerRef.value
+    if (!container || !e.relatedTarget || !container.contains(e.relatedTarget as Node)) {
+        isDragOver.value = false
+    }
+}
+
+function onDrop(e: DragEvent) {
+    e.preventDefault()
+    isDragOver.value = false
+
+    const files = e.dataTransfer?.files
+    if (!files || files.length === 0) return
+
+    const file = files[0]
+    if (!file.name.toLowerCase().endsWith('.glb')) {
+        dropError.value = '仅支持 .glb 文件格式'
+        setTimeout(() => { dropError.value = '' }, 3000)
+        return
+    }
+
+    loadDroppedGLB(file)
+}
+
+// 加载拖入的 GLB 文件
+async function loadDroppedGLB(file: File) {
+    const url = URL.createObjectURL(file)
+    const modelName = file.name.replace(/\.glb$/i, '')
+    const modelId = `dropped_${modelName}_${Date.now()}`
+    droppedModelCount += 1
+
+    try {
+        const loader = createGLTFLoader()
+        const gltf = await new Promise<THREE.Group>((resolve, reject) => {
+            loader.load(url, (g) => resolve(g.scene), undefined, (e) => reject(e))
+        })
+
+        const group = gltf
+        group.name = `dropped_${modelId}`
+        group.userData = { id: modelId, name: modelName, type: 'custom' }
+
+        const meshes: THREE.Mesh[] = []
+        group.traverse((child) => {
+            if ((child as THREE.Mesh).isMesh) {
+                meshes.push(child as THREE.Mesh)
+            }
+        })
+
+        meshes.forEach((mesh, index) => {
+            mesh.visible = true
+
+            const color = generateDropColor(index)
+            const lambertMaterial = new THREE.MeshLambertMaterial({
+                color,
+                transparent: true,
+                opacity: 0.95,
+                side: THREE.DoubleSide,
+                emissive: 0x0d121f,
+                emissiveIntensity: 0.08,
+                clipShadows: true,
+            })
+            lambertMaterial.clippingPlanes = []
+
+            // 保留原始纹理贴图（若有）
+            const origMat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material
+            if ((origMat as any)?.map) {
+                lambertMaterial.map = (origMat as any).map
+                if (lambertMaterial.map) lambertMaterial.map.colorSpace = THREE.SRGBColorSpace
+            }
+
+            mesh.material = lambertMaterial
+
+            // 添加边缘线
+            const edges = new THREE.EdgesGeometry(mesh.geometry)
+            const edgesMaterial = new THREE.LineBasicMaterial({
+                color: 0x000000,
+                transparent: true,
+                opacity: 0.8,
+            })
+            const edgeLines = new THREE.LineSegments(edges, edgesMaterial)
+            edgeLines.visible = false
+            mesh.add(edgeLines)
+
+            mesh.userData = {
+                id: `${modelId}::${index}`,
+                name: `${modelName}_${index + 1}`,
+                type: 'custom',
+                modelId,
+                layerIndex: index,
+                edgeLines,
+            }
+        })
+
+        modelManager.addModel({ id: modelId, name: modelName, type: 'custom', object: group })
+        sceneManager.removeGrid()
+        refreshSelectionPickTargets()
+
+        // 注册到图层面板（复用 stratumLayers 机制）
+        registerStratumLayersFromObject(group, modelId, modelName)
+
+        fitCameraToType(null, true)
+
+        // 同步剖面工具范围
+        if (toolState.value.clipEnabled) {
+            syncToolRuntimeState()
+        }
+    } catch (err) {
+        console.error('[SceneCanvas] 拖入模型加载失败', err)
+        dropError.value = `模型加载失败: ${(err as Error).message}`
+        setTimeout(() => { dropError.value = '' }, 5000)
+    } finally {
+        URL.revokeObjectURL(url)
+    }
+}
 
 let sceneManager: SceneManager
 let cameraManager: CameraManager
@@ -1057,6 +1219,69 @@ onUnmounted(() => {
     .entity-hover-label {
         font-size: 11px;
         max-width: 240px;
+    }
+}
+
+/* ── 拖放加载遮罩 ── */
+.drop-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(6, 16, 30, 0.75);
+    backdrop-filter: blur(4px);
+    border: 2px dashed rgba(0, 200, 255, 0.6);
+    border-radius: 8px;
+}
+
+.drop-indicator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 32px 48px;
+    border-radius: 12px;
+    background: rgba(10, 22, 40, 0.85);
+    border: 1px solid rgba(0, 200, 255, 0.35);
+}
+
+.drop-icon {
+    font-size: 36px;
+    color: rgba(0, 200, 255, 0.8);
+    line-height: 1;
+}
+
+.drop-text {
+    font-size: 15px;
+    color: #d9f4ff;
+    white-space: nowrap;
+}
+
+.drop-error {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    z-index: 100;
+    transform: translateX(-50%);
+    padding: 8px 20px;
+    border-radius: 8px;
+    background: rgba(200, 40, 40, 0.9);
+    color: #fff;
+    font-size: 13px;
+    white-space: nowrap;
+    pointer-events: none;
+    backdrop-filter: blur(4px);
+}
+
+@media (max-width: 900px) {
+    .drop-text {
+        font-size: 13px;
+    }
+
+    .drop-icon {
+        font-size: 28px;
     }
 }
 </style>
