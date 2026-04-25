@@ -209,7 +209,7 @@ const hoverLabel = ref({
     x: 0,
     y: 0,
 })
-const STRATUM_EXPLODE_GAP = 1000
+const STRATUM_EXPLODE_GAP = 3000
 
 let sceneManager: SceneManager
 let cameraManager: CameraManager
