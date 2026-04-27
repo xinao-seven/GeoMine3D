@@ -167,14 +167,14 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, onActivated, onDeactivated, watch } from 'vue'
 import * as THREE from 'three'
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
-import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader'
+import { storeToRefs } from 'pinia'
+import { DropLoader } from '@/three/loaders/DropLoader'
 import { SceneManager } from '@/three/core/SceneManager'
 import { CameraManager } from '@/three/core/CameraManager'
 import { RendererManager } from '@/three/core/RendererManager'
 import { ControlsManager } from '@/three/core/ControlsManager'
 import { LightManager } from '@/three/core/LightManager'
-import { ModelManager, type ManagedModel } from '@/three/managers/ModelManager'
+import { ModelManager } from '@/three/managers/ModelManager'
 import { LayerManager } from '@/three/managers/LayerManager'
 import { HighlightManager } from '@/three/managers/HighlightManager'
 import { SelectionManager } from '@/three/managers/SelectionManager'
@@ -188,12 +188,14 @@ import { StratumExplodeTool } from '@/three/tools/StratumExplodeTool'
 import { AxisGizmoTool } from '@/three/tools/AxisGizmoTool'
 import { modelApi, boreholeApi } from '@/api'
 import { useSceneStore, useBoreholeStore } from '@/stores'
-import { storeToRefs } from 'pinia'
 import type { ModelItem, BoreholeItem, StratumLayerControl } from '@/types'
 import type { ModelLoadRequest } from '@/stores/sceneStore'
 
+// ==================== Store & State ====================
+
 const sceneStore = useSceneStore()
 const boreholeStore = useBoreholeStore()
+
 const {
     layerVisible,
     opacity,
@@ -205,7 +207,6 @@ const {
     measurements,
     lastMeasurementDistance,
 } = storeToRefs(sceneStore)
-const BOREHOLE_VERTICAL_SCALE = 20
 
 const containerRef = ref<HTMLDivElement>()
 const canvasRef = ref<HTMLCanvasElement>()
@@ -214,164 +215,13 @@ const clipStep = ref(1)
 const rotateXAxisEnabled = ref(true)
 const stratumExploded = ref(false)
 const outlineEnabled = ref(true)
-const hoverLabel = ref({
-    visible: false,
-    name: '',
-    x: 0,
-    y: 0,
-})
-const STRATUM_EXPLODE_GAP = 3000
-
-// 拖放状态
+const hoverLabel = ref({ visible: false, name: '', x: 0, y: 0 })
 const isDragOver = ref(false)
 const dropError = ref('')
-let droppedModelCount = 0
 
-// 创建带 DRACO 支持的 GLTF 加载器
-const DRACO_DECODER_PATH = 'https://www.gstatic.com/draco/versioned/decoders/1.5.7/'
-function createGLTFLoader(): GLTFLoader {
-    const loader = new GLTFLoader()
-    const dracoLoader = new DRACOLoader()
-    dracoLoader.setDecoderPath(DRACO_DECODER_PATH)
-    dracoLoader.preload()
-    loader.setDRACOLoader(dracoLoader)
-    return loader
-}
-
-// 拖拽颜色调色板（与地层加载器颜色一致）
-const DROP_PALETTE = [
-    0x8b4513, 0xdaa520, 0x2e8b57, 0x4682b4,
-    0xd2691e, 0x9acd32, 0xcd853f, 0x20b2aa,
-    0x778899, 0xf0e68c,
-]
-
-function generateDropColor(index: number): number {
-    return DROP_PALETTE[index % DROP_PALETTE.length]
-}
-
-// 拖拽事件处理
-function onDragOver(e: DragEvent) {
-    e.preventDefault()
-    if (e.dataTransfer) {
-        e.dataTransfer.dropEffect = 'copy'
-    }
-    isDragOver.value = true
-}
-
-function onDragLeave(e: DragEvent) {
-    const container = containerRef.value
-    if (!container || !e.relatedTarget || !container.contains(e.relatedTarget as Node)) {
-        isDragOver.value = false
-    }
-}
-
-function onDrop(e: DragEvent) {
-    e.preventDefault()
-    isDragOver.value = false
-
-    const files = e.dataTransfer?.files
-    if (!files || files.length === 0) return
-
-    const file = files[0]
-    if (!file.name.toLowerCase().endsWith('.glb')) {
-        dropError.value = '仅支持 .glb 文件格式'
-        setTimeout(() => { dropError.value = '' }, 3000)
-        return
-    }
-
-    loadDroppedGLB(file)
-}
-
-// 加载拖入的 GLB 文件
-async function loadDroppedGLB(file: File) {
-    const url = URL.createObjectURL(file)
-    const modelName = file.name.replace(/\.glb$/i, '')
-    const modelId = `dropped_${modelName}_${Date.now()}`
-    droppedModelCount += 1
-
-    try {
-        const loader = createGLTFLoader()
-        const gltf = await new Promise<THREE.Group>((resolve, reject) => {
-            loader.load(url, (g) => resolve(g.scene), undefined, (e) => reject(e))
-        })
-
-        const group = gltf
-        group.name = `dropped_${modelId}`
-        group.userData = { id: modelId, name: modelName, type: 'custom' }
-
-        const meshes: THREE.Mesh[] = []
-        group.traverse((child) => {
-            if ((child as THREE.Mesh).isMesh) {
-                meshes.push(child as THREE.Mesh)
-            }
-        })
-
-        meshes.forEach((mesh, index) => {
-            mesh.visible = true
-
-            const color = generateDropColor(index)
-            const lambertMaterial = new THREE.MeshLambertMaterial({
-                color,
-                transparent: true,
-                opacity: 0.95,
-                side: THREE.DoubleSide,
-                emissive: 0x0d121f,
-                emissiveIntensity: 0.08,
-                clipShadows: true,
-            })
-            lambertMaterial.clippingPlanes = []
-
-            // 保留原始纹理贴图（若有）
-            const origMat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material
-            if ((origMat as any)?.map) {
-                lambertMaterial.map = (origMat as any).map
-                if (lambertMaterial.map) lambertMaterial.map.colorSpace = THREE.SRGBColorSpace
-            }
-
-            mesh.material = lambertMaterial
-
-            // 添加边缘线
-            const edges = new THREE.EdgesGeometry(mesh.geometry)
-            const edgesMaterial = new THREE.LineBasicMaterial({
-                color: 0x000000,
-                transparent: true,
-                opacity: 0.8,
-            })
-            const edgeLines = new THREE.LineSegments(edges, edgesMaterial)
-            edgeLines.visible = false
-            mesh.add(edgeLines)
-
-            mesh.userData = {
-                id: `${modelId}::${index}`,
-                name: `${modelName}_${index + 1}`,
-                type: 'custom',
-                modelId,
-                layerIndex: index,
-                edgeLines,
-            }
-        })
-
-        modelManager.addModel({ id: modelId, name: modelName, type: 'custom', object: group })
-        sceneManager.removeGrid()
-        refreshSelectionPickTargets()
-
-        // 注册到图层面板（复用 stratumLayers 机制）
-        registerStratumLayersFromObject(group, modelId, modelName)
-
-        fitCameraToType(null, true)
-
-        // 同步剖面工具范围
-        if (toolState.value.clipEnabled) {
-            syncToolRuntimeState()
-        }
-    } catch (err) {
-        console.error('[SceneCanvas] 拖入模型加载失败', err)
-        dropError.value = `模型加载失败: ${(err as Error).message}`
-        setTimeout(() => { dropError.value = '' }, 5000)
-    } finally {
-        URL.revokeObjectURL(url)
-    }
-}
+const BOREHOLE_VERTICAL_SCALE = 20
+const STRATUM_EXPLODE_GAP = 1000
+const dropLoader = new DropLoader()
 
 let sceneManager: SceneManager
 let cameraManager: CameraManager
@@ -381,119 +231,18 @@ let lightManager: LightManager
 let modelManager: ModelManager
 let layerManager: LayerManager
 let highlightManager: HighlightManager
-let axisGizmoTool: AxisGizmoTool | null = null
 let selectionManager: SelectionManager
 let clipTool: ClipTool
 let measureTool: MeasureTool
 let annotationTool: AnnotationTool
+let axisGizmoTool: AxisGizmoTool | null = null
 let stratumExplodeTool: StratumExplodeTool | null = null
 let animFrameId: number
 let resizeObserver: ResizeObserver
 let isAnimating = false
 
-// 初始化 three 场景、管理器、工具与交互绑定。
-async function initScene() {
-    if (!canvasRef.value || !containerRef.value) return
+// ==================== Animation ====================
 
-    const { width, height } = containerRef.value.getBoundingClientRect()
-
-    sceneManager = new SceneManager()
-    cameraManager = new CameraManager(width / height)
-    rendererManager = new RendererManager(canvasRef.value)
-    rendererManager.setOutlineEnabled(outlineEnabled.value)
-    rendererManager.resize(width, height)
-    controlsManager = new ControlsManager(cameraManager.camera, canvasRef.value)
-    lightManager = new LightManager(sceneManager.scene)
-    modelManager = new ModelManager(sceneManager)
-    layerManager = new LayerManager(modelManager)
-    highlightManager = new HighlightManager()
-    clipTool = new ClipTool(
-        rendererManager.renderer,
-        sceneManager.scene,
-        {
-            //滑块位置的回调
-            onPositionChange: (position) => {
-                sceneStore.setClipHeight(position)
-            },
-            //滑块范围回调
-            onRangeChange: (min, max) => {
-                clipRange.value = { min, max }
-                const span = Math.max(1, max - min)
-                clipStep.value = Math.max(0.1, Number((span / 200).toFixed(2)))
-            },
-        }
-    )
-    measureTool = new MeasureTool(sceneManager.scene, cameraManager.camera, canvasRef.value)
-    annotationTool = new AnnotationTool(sceneManager.scene, cameraManager.camera, canvasRef.value)
-    stratumExplodeTool = new StratumExplodeTool(modelManager, { gap: STRATUM_EXPLODE_GAP })
-
-    if (toolState.value.clipHeight !== 0) {
-        clipTool.setHeight(toolState.value.clipHeight)
-    }
-
-    selectionManager = new SelectionManager(
-        cameraManager.camera,
-        sceneManager.scene,
-        canvasRef.value,
-        highlightManager,
-        (obj) => {
-            if (obj) {
-                sceneStore.selectObject({
-                    id: obj.userData.id,
-                    name: obj.userData.name,
-                    type: obj.userData.type,
-                    data: obj.userData.boreholeData || obj.userData.modelData || {},
-                })
-                rendererManager?.setOutlineSelectedObjects([obj])
-            } else {
-                sceneStore.selectObject(null)
-                rendererManager?.setOutlineSelectedObjects([])
-            }
-        },
-        (obj, event) => {
-            if (!containerRef.value || !obj || !event) {
-                hoverLabel.value.visible = false
-                return
-            }
-
-            const name = String(obj.userData?.name || obj.name || '').trim()
-            if (!name) {
-                hoverLabel.value.visible = false
-                return
-            }
-
-            const rect = containerRef.value.getBoundingClientRect()
-            hoverLabel.value.visible = true
-            hoverLabel.value.name = name
-            hoverLabel.value.x = event.clientX - rect.left + 14
-            hoverLabel.value.y = event.clientY - rect.top + 14
-        }
-    )
-    selectionManager.setHoverEnabled(true)
-    refreshSelectionPickTargets()
-
-    controlsManager.controls.addEventListener('start', onControlStart)
-    controlsManager.controls.addEventListener('end', onControlEnd)
-
-    resizeObserver = new ResizeObserver(() => {
-        if (!containerRef.value) return
-        const { width: w, height: h } = containerRef.value.getBoundingClientRect()
-        rendererManager.resize(w, h)
-        cameraManager.updateAspect(w, h)
-    })
-    resizeObserver.observe(containerRef.value)
-
-    rotateXAxisEnabled.value = sceneManager.isGeoRootRotationXEnabled()
-    axisGizmoTool = new AxisGizmoTool(rendererManager.renderer, cameraManager.camera, sceneManager.geoRoot, {
-        size: 110,
-        padding: 12,
-    })
-
-    syncToolRuntimeState()
-    startAnimate()
-}
-
-// 动画主循环：更新控制器、灯光与渲染。
 function animate() {
     if (!isAnimating) return
     animFrameId = requestAnimationFrame(animate)
@@ -504,27 +253,81 @@ function animate() {
     axisGizmoTool?.render()
 }
 
-// 启动动画循环。
 function startAnimate() {
     if (isAnimating) return
     isAnimating = true
     animate()
 }
 
-// 停止动画循环。
 function stopAnimate() {
     if (!isAnimating) return
     isAnimating = false
     cancelAnimationFrame(animFrameId)
 }
 
-// 使用模型管理器维护可拾取对象白名单，避免全场景递归拾取。
-function refreshSelectionPickTargets() {
-    if (!selectionManager || !modelManager) return
-    selectionManager.setPickTargets(modelManager.getAllModels().map((item) => item.object))
+// ==================== Model Loading ====================
+
+async function findModelById(type: 'stratum' | 'workingface', id: string) {
+    const modelList = await modelApi.getModelList({ type })
+    return modelList.find((item) => item.id === id)
 }
 
-// 按请求类型加载对应模型并更新相机与状态。
+async function loadStratumModel(model: ModelItem) {
+    const stratumLoader = new StratumModelLoader()
+    try {
+        const object = await stratumLoader.load(model)
+        modelManager.addModel({ id: model.id, name: model.name, type: 'stratum', object })
+        registerStratumLayersFromObject(object, model.id, model.name)
+    } catch {
+        addPlaceholderStratum(model)
+    }
+    layerManager.setLayerEdgesVisible('stratum', showEdges.value)
+}
+
+async function loadWorkingFaceModel(model: ModelItem) {
+    const workingFaceLoader = new WorkingFaceModelLoader()
+    try {
+        const object = await workingFaceLoader.load(model)
+        modelManager.addModel({ id: model.id, name: model.name, type: 'workingface', object })
+    } catch {
+        addPlaceholderWorkingFace(model)
+    }
+}
+
+async function loadBoreholeModel(borehole: BoreholeItem, index: number) {
+    const boreholeLoader = new BoreholeModelLoader()
+    let position: { x: number; y: number; z: number }
+    if (borehole.location) {
+        position = {
+            x: borehole.location.x,
+            y: borehole.location.y,
+            z: borehole.location.z * BOREHOLE_VERTICAL_SCALE,
+        }
+    } else {
+        const spacing = 500
+        const cols = 10
+        position = {
+            x: (index % cols) * spacing - (cols * spacing) / 2,
+            y: Math.floor(index / cols) * spacing - (cols * spacing) / 2,
+            z: 0,
+        }
+    }
+    const object = boreholeLoader.createBoreholeObject(borehole, position, BOREHOLE_VERTICAL_SCALE)
+    modelManager.addModel({ id: borehole.id, name: borehole.name, type: 'borehole', object })
+}
+
+async function loadAllBoreholeModels(boreholes: BoreholeItem[]) {
+    for (let i = 0; i < boreholes.length; i += 1) {
+        const borehole = boreholes[i]
+        if (modelManager.getModel(borehole.id)) {
+            sceneStore.setModelLoadStatus('borehole', borehole.id, { loaded: true, loading: false })
+            continue
+        }
+        await loadBoreholeModel(borehole, i)
+        sceneStore.setModelLoadStatus('borehole', borehole.id, { loaded: true, loading: false })
+    }
+}
+
 async function loadModelByRequest(req: ModelLoadRequest) {
     try {
         let preferImmediateFocus = false
@@ -589,14 +392,95 @@ async function loadModelByRequest(req: ModelLoadRequest) {
     }
 }
 
-// 按模型类型聚焦相机。
-function fitCameraToType(type: 'stratum' | 'borehole' | 'workingface' | null, immediate = false) {
-    let models: ManagedModel[] = []
-    if (type !== null) {
-        models = modelManager.getModelsByType(type)
-    } else {
-        models = modelManager.getAllModels()
+function addPlaceholderStratum(model: ModelItem) {
+    const colors: Record<string, number> = { 'strata-001': 0x4a7a8a, 'strata-002': 0x6d9e73 }
+    const color = colors[model.id] ?? 0x5a8a9a
+    const geometry = new THREE.BoxGeometry(400, 20, 300)
+    const material = new THREE.MeshLambertMaterial({ color, transparent: true, opacity: 0.7, clipShadows: true })
+    material.clippingPlanes = []
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.position.z = Object.keys(colors).indexOf(model.id) * -25
+    mesh.name = `stratum_${model.id}`
+    mesh.userData = {
+        id: `${model.id}::0`,
+        name: `${model.name}_layer_1`,
+        type: 'stratum',
+        modelData: model,
+        modelId: model.id,
+        layerName: `${model.name}_layer_1`,
     }
+    modelManager.addModel({ id: model.id, name: model.name, type: 'stratum', object: mesh })
+    registerStratumLayersFromObject(mesh, model.id, model.name)
+}
+
+function addPlaceholderWorkingFace(model: ModelItem) {
+    const geometry = new THREE.BoxGeometry(200, 15, 120)
+    const material = new THREE.MeshLambertMaterial({ color: 0xf5a623, transparent: true, opacity: 0.8, clipShadows: true })
+    material.clippingPlanes = []
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.position.set(Math.random() * 100 - 50, Math.random() * 100 - 50, -80)
+    mesh.name = `workingface_${model.id}`
+    mesh.userData = { id: model.id, name: model.name, type: 'workingface', modelData: model }
+    modelManager.addModel({ id: model.id, name: model.name, type: 'workingface', object: mesh })
+}
+
+// ==================== Drag-and-Drop ====================
+
+function onDragOver(e: DragEvent) {
+    e.preventDefault()
+    if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = 'copy'
+    }
+    isDragOver.value = true
+}
+
+function onDragLeave(e: DragEvent) {
+    const container = containerRef.value
+    if (!container || !e.relatedTarget || !container.contains(e.relatedTarget as Node)) {
+        isDragOver.value = false
+    }
+}
+
+function onDrop(e: DragEvent) {
+    e.preventDefault()
+    isDragOver.value = false
+    const files = e.dataTransfer?.files
+    if (!files || files.length === 0) return
+    const file = files[0]
+    if (!file.name.toLowerCase().endsWith('.glb')) {
+        dropError.value = '仅支持 .glb 文件格式'
+        setTimeout(() => { dropError.value = '' }, 3000)
+        return
+    }
+    loadDroppedGLB(file)
+}
+
+async function loadDroppedGLB(file: File) {
+    try {
+        const { group, modelId, modelName, controls } = await dropLoader.loadFromFile(file)
+        modelManager.addModel({ id: modelId, name: modelName, type: 'custom', object: group })
+        sceneManager.removeGrid()
+        refreshSelectionPickTargets()
+        if (controls.length) {
+            sceneStore.registerStratumLayers(controls)
+        }
+        fitCameraToType(null, true)
+        if (toolState.value.clipEnabled) {
+            syncToolRuntimeState()
+        }
+    } catch (err) {
+        console.error('[SceneCanvas] 拖入模型加载失败', err)
+        dropError.value = `模型加载失败: ${(err as Error).message}`
+        setTimeout(() => { dropError.value = '' }, 5000)
+    }
+}
+
+// ==================== Camera ====================
+
+function fitCameraToType(type: 'stratum' | 'borehole' | 'workingface' | null, immediate = false) {
+    const models = type !== null
+        ? modelManager.getModelsByType(type)
+        : modelManager.getAllModels()
     if (!models.length) return
 
     const box = new THREE.Box3()
@@ -629,116 +513,47 @@ function fitCameraToType(type: 'stratum' | 'borehole' | 'workingface' | null, im
     )
 }
 
-// 通过 id 从后端模型列表中查找模型。
-async function findModelById(type: 'stratum' | 'workingface', id: string) {
-    const modelList = await modelApi.getModelList({ type })
-    return modelList.find((item) => item.id === id)
+function resetCamera() {
+    fitCameraToType(null, true)
 }
 
-// 加载地层模型，失败时回退到占位体。
-async function loadStratumModel(model: ModelItem) {
-    const stratumLoader = new StratumModelLoader()
-    try {
-        const object = await stratumLoader.load(model)
-        modelManager.addModel({ id: model.id, name: model.name, type: 'stratum', object })
-        registerStratumLayersFromObject(object, model.id, model.name)
-    } catch {
-        addPlaceholderStratum(model)
-    }
-
-    layerManager.setLayerEdgesVisible('stratum', showEdges.value)
-}
-
-// 加载工作面模型，失败时回退到占位体。
-async function loadWorkingFaceModel(model: ModelItem) {
-    const workingFaceLoader = new WorkingFaceModelLoader()
-    try {
-        const object = await workingFaceLoader.load(model)
-        modelManager.addModel({ id: model.id, name: model.name, type: 'workingface', object })
-    } catch {
-        addPlaceholderWorkingFace(model)
+function onRotateXAxisToggle(value: boolean | string | number) {
+    const enabled = Boolean(value)
+    rotateXAxisEnabled.value = enabled
+    sceneManager?.setGeoRootRotationXEnabled(enabled)
+    stratumExplodeTool?.sync()
+    if (modelManager?.getAllModels().length) {
+        fitCameraToType(null, true)
     }
 }
 
-// 加载单个钻孔模型并计算其摆放位置。
-async function loadBoreholeModel(borehole: BoreholeItem, index: number) {
-    const boreholeLoader = new BoreholeModelLoader()
+// ==================== Selection & Hover ====================
 
-    let position: { x: number; y: number; z: number }
-    if (borehole.location) {
-        position = {
-            x: borehole.location.x,
-            y: borehole.location.y,
-            z: borehole.location.z * BOREHOLE_VERTICAL_SCALE,
-        }
-    } else {
-        const spacing = 500
-        const cols = 10
-        position = {
-            x: (index % cols) * spacing - (cols * spacing) / 2,
-            y: Math.floor(index / cols) * spacing - (cols * spacing) / 2,
-            z: 0,
-        }
-    }
-
-    const object = boreholeLoader.createBoreholeObject(borehole, position, BOREHOLE_VERTICAL_SCALE)
-    modelManager.addModel({ id: borehole.id, name: borehole.name, type: 'borehole', object })
+function refreshSelectionPickTargets() {
+    if (!selectionManager || !modelManager) return
+    selectionManager.setPickTargets(modelManager.getAllModels().map((item) => item.object))
 }
 
-// 批量加载钻孔模型并同步加载状态。
-async function loadAllBoreholeModels(boreholes: BoreholeItem[]) {
-    for (let i = 0; i < boreholes.length; i += 1) {
-        const borehole = boreholes[i]
-        if (modelManager.getModel(borehole.id)) {
-            sceneStore.setModelLoadStatus('borehole', borehole.id, { loaded: true, loading: false })
-            continue
-        }
-        await loadBoreholeModel(borehole, i)
-        sceneStore.setModelLoadStatus('borehole', borehole.id, { loaded: true, loading: false })
-    }
+function hideHoverLabel() {
+    hoverLabel.value.visible = false
 }
 
-// 构建地层占位模型（用于文件缺失时兜底显示）。
-function addPlaceholderStratum(model: ModelItem) {
-    const colors: Record<string, number> = { 'strata-001': 0x4a7a8a, 'strata-002': 0x6d9e73 }
-    const color = colors[model.id] ?? 0x5a8a9a
-    const geometry = new THREE.BoxGeometry(400, 20, 300)
-    const material = new THREE.MeshLambertMaterial({ color, transparent: true, opacity: 0.7, clipShadows: true })
-    material.clippingPlanes = []
-    const mesh = new THREE.Mesh(geometry, material)
-    mesh.position.z = Object.keys(colors).indexOf(model.id) * -25
-    mesh.name = `stratum_${model.id}`
-    mesh.userData = {
-        id: `${model.id}::0`,
-        name: `${model.name}_layer_1`,
-        type: 'stratum',
-        modelData: model,
-        modelId: model.id,
-        layerName: `${model.name}_layer_1`,
-    }
-    modelManager.addModel({ id: model.id, name: model.name, type: 'stratum', object: mesh })
-    registerStratumLayersFromObject(mesh, model.id, model.name)
+function onControlStart() {
+    selectionManager?.setHoverEnabled(false)
+    hideHoverLabel()
 }
 
-// 构建工作面占位模型（用于加载失败回退）。
-function addPlaceholderWorkingFace(model: ModelItem) {
-    const geometry = new THREE.BoxGeometry(200, 15, 120)
-    const material = new THREE.MeshLambertMaterial({ color: 0xf5a623, transparent: true, opacity: 0.8, clipShadows: true })
-    material.clippingPlanes = []
-    const mesh = new THREE.Mesh(geometry, material)
-    mesh.position.set(Math.random() * 100 - 50, Math.random() * 100 - 50, -80)
-    mesh.name = `workingface_${model.id}`
-    mesh.userData = { id: model.id, name: model.name, type: 'workingface', modelData: model }
-    modelManager.addModel({ id: model.id, name: model.name, type: 'workingface', object: mesh })
+function onControlEnd() {
+    selectionManager?.setHoverEnabled(true)
 }
 
-// 将 three 颜色对象转为十六进制字符串。
+// ==================== Layer ====================
+
 function toHexColor(color?: THREE.Color) {
     if (!color) return '#5a8a9a'
     return `#${color.getHexString()}`
 }
 
-// 从地层对象中提取分层控制数据并注册到 store。
 function registerStratumLayersFromObject(object: THREE.Object3D, modelId: string, modelName: string) {
     const controls: StratumLayerControl[] = []
     object.traverse((child) => {
@@ -749,30 +564,18 @@ function registerStratumLayersFromObject(object: THREE.Object3D, modelId: string
         const material = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material
         const color = material && (material as any).color ? toHexColor((material as any).color) : '#5a8a9a'
         const opacity = typeof (material as any)?.opacity === 'number' ? (material as any).opacity : 1
-        controls.push({
-            key,
-            modelId,
-            modelName,
-            layerName,
-            visible: mesh.visible,
-            opacity,
-            color,
-        })
+        controls.push({ key, modelId, modelName, layerName, visible: mesh.visible, opacity, color })
     })
-
     if (controls.length) {
         sceneStore.registerStratumLayers(controls)
     }
-
 }
 
-// 切换地层炸开状态。
 function toggleStratumExplode() {
     if (!stratumExplodeTool) return
     stratumExploded.value = stratumExplodeTool.toggle()
 }
 
-// 将分层可见性、颜色和透明度控制应用到对应网格。
 function applyStratumLayerControl(control: StratumLayerControl) {
     const model = modelManager.getModel(control.modelId)
     if (!model) return
@@ -792,7 +595,6 @@ function applyStratumLayerControl(control: StratumLayerControl) {
             mat.opacity = control.opacity
             mat.needsUpdate = true
         }
-
         const edgeLines = (mesh as any).userData?.edgeLines
         if (edgeLines) {
             edgeLines.visible = showEdges.value && control.visible
@@ -800,12 +602,8 @@ function applyStratumLayerControl(control: StratumLayerControl) {
     })
 }
 
-// 重置相机到默认观察位姿。
-function resetCamera() {
-    fitCameraToType(null, true)
-}
+// ==================== Tools ====================
 
-// 将 store 中工具状态同步到运行时实例。
 function syncToolRuntimeState() {
     if (!clipTool || !measureTool || !annotationTool || !selectionManager) return
 
@@ -842,91 +640,153 @@ function syncToolRuntimeState() {
     selectionManager.setEnabled(!(toolState.value.measureEnabled || toolState.value.annotationEnabled))
 }
 
-// 开关剖切工具。
 function toggleClipTool() {
     sceneStore.activateTool(toolState.value.clipEnabled ? null : 'clip')
 }
 
-// 开关测量工具。
 function toggleMeasureTool() {
     sceneStore.activateTool(toolState.value.measureEnabled ? null : 'measure')
 }
 
-// 开关标注工具。
 function toggleAnnotationTool() {
     sceneStore.activateTool(toolState.value.annotationEnabled ? null : 'annotation')
 }
 
-// 开关 Outline 描边效果。
 function toggleOutline() {
     outlineEnabled.value = !outlineEnabled.value
     rendererManager?.setOutlineEnabled(outlineEnabled.value)
 }
 
-// 响应剖切滑块数值变化。
 function onClipHeightChange(value: number | undefined) {
     sceneStore.setClipHeight(typeof value === 'number' ? value : 0)
 }
 
-// 设置剖切轴。
 function setClipAxis(axis: 'x' | 'y' | 'z') {
     sceneStore.setClipAxis(axis)
 }
 
-// 设置剖切保留方向（低侧/高侧）。
 function setClipKeepLower(value: boolean | string | number) {
     sceneStore.setClipKeepLower(Boolean(value))
 }
 
-// 设置剖切辅助面显示状态。
 function setClipHelperVisible(value: boolean | string | number) {
     sceneStore.setClipHelperVisible(Boolean(value))
 }
 
-// 清空测量结果与场景测量图元。
 function clearMeasurements() {
     sceneStore.clearMeasurements()
     measureTool?.clear()
 }
 
-// 清空场景中的全部标注。
 function clearAnnotations() {
     annotationTool?.clear()
 }
 
-// 切换 geoRoot 的 X 轴旋转映射并重置观察。
-function onRotateXAxisToggle(value: boolean | string | number) {
-    const enabled = Boolean(value)
-    rotateXAxisEnabled.value = enabled
-    sceneManager?.setGeoRootRotationXEnabled(enabled)
-    stratumExplodeTool?.sync()
+// ==================== Scene Initialization ====================
 
-    if (modelManager?.getAllModels().length) {
-        fitCameraToType(null, true)
+async function initScene() {
+    if (!canvasRef.value || !containerRef.value) return
+
+    const { width, height } = containerRef.value.getBoundingClientRect()
+
+    sceneManager = new SceneManager()
+    cameraManager = new CameraManager(width / height)
+    rendererManager = new RendererManager(canvasRef.value)
+    rendererManager.setOutlineEnabled(outlineEnabled.value)
+    rendererManager.resize(width, height)
+    controlsManager = new ControlsManager(cameraManager.camera, canvasRef.value)
+    lightManager = new LightManager(sceneManager.scene)
+    modelManager = new ModelManager(sceneManager)
+    layerManager = new LayerManager(modelManager)
+    highlightManager = new HighlightManager()
+    clipTool = new ClipTool(
+        rendererManager.renderer,
+        sceneManager.scene,
+        {
+            onPositionChange: (position) => { sceneStore.setClipHeight(position) },
+            onRangeChange: (min, max) => {
+                clipRange.value = { min, max }
+                const span = Math.max(1, max - min)
+                clipStep.value = Math.max(0.1, Number((span / 200).toFixed(2)))
+            },
+        }
+    )
+    measureTool = new MeasureTool(sceneManager.scene, cameraManager.camera, canvasRef.value)
+    annotationTool = new AnnotationTool(sceneManager.scene, cameraManager.camera, canvasRef.value)
+    stratumExplodeTool = new StratumExplodeTool(modelManager, { gap: STRATUM_EXPLODE_GAP })
+
+    if (toolState.value.clipHeight !== 0) {
+        clipTool.setHeight(toolState.value.clipHeight)
     }
+
+    selectionManager = new SelectionManager(
+        cameraManager.camera,
+        sceneManager.scene,
+        canvasRef.value,
+        highlightManager,
+        (obj) => {
+            if (obj) {
+                sceneStore.selectObject({
+                    id: obj.userData.id,
+                    name: obj.userData.name,
+                    type: obj.userData.type,
+                    data: obj.userData.boreholeData || obj.userData.modelData || {},
+                })
+                rendererManager?.setOutlineSelectedObjects([obj])
+            } else {
+                sceneStore.selectObject(null)
+                rendererManager?.setOutlineSelectedObjects([])
+            }
+        },
+        (obj, event) => {
+            if (!containerRef.value || !obj || !event) {
+                hoverLabel.value.visible = false
+                return
+            }
+            const name = String(obj.userData?.name || obj.name || '').trim()
+            if (!name) {
+                hoverLabel.value.visible = false
+                return
+            }
+            const rect = containerRef.value.getBoundingClientRect()
+            hoverLabel.value.visible = true
+            hoverLabel.value.name = name
+            hoverLabel.value.x = event.clientX - rect.left + 14
+            hoverLabel.value.y = event.clientY - rect.top + 14
+        }
+    )
+    selectionManager.setHoverEnabled(true)
+    refreshSelectionPickTargets()
+
+    controlsManager.controls.addEventListener('start', onControlStart)
+    controlsManager.controls.addEventListener('end', onControlEnd)
+
+    resizeObserver = new ResizeObserver(() => {
+        if (!containerRef.value) return
+        const { width: w, height: h } = containerRef.value.getBoundingClientRect()
+        rendererManager.resize(w, h)
+        cameraManager.updateAspect(w, h)
+    })
+    resizeObserver.observe(containerRef.value)
+
+    rotateXAxisEnabled.value = sceneManager.isGeoRootRotationXEnabled()
+    axisGizmoTool = new AxisGizmoTool(rendererManager.renderer, cameraManager.camera, sceneManager.geoRoot, {
+        size: 110,
+        padding: 12,
+    })
+
+    syncToolRuntimeState()
+    startAnimate()
 }
 
-function hideHoverLabel() {
-    hoverLabel.value.visible = false
-}
+// ==================== Watchers ====================
 
-function onControlStart() {
-    selectionManager?.setHoverEnabled(false)
-    hideHoverLabel()
-}
-
-function onControlEnd() {
-    selectionManager?.setHoverEnabled(true)
-}
-
-// 监听图层显隐
 watch(layerVisible, (val) => {
     layerManager.setLayerVisible('stratum', val.stratum)
     layerManager.setLayerVisible('borehole', val.borehole)
     layerManager.setLayerVisible('workingface', val.workingface)
 }, { deep: true })
 
-// 监听透明度
 watch(opacity, (val) => {
     layerManager.setLayerOpacity('stratum', val.stratum)
     layerManager.setLayerOpacity('borehole', val.borehole)
@@ -959,13 +819,10 @@ watch(
         clipKeepLower: toolState.value.clipKeepLower,
         clipHelperVisible: toolState.value.clipHelperVisible,
     }),
-    () => {
-        syncToolRuntimeState()
-    },
+    () => { syncToolRuntimeState() },
     { deep: true }
 )
 
-// 监听定位目标
 watch(locateTarget, (target) => {
     if (!target) return
     const model = modelManager.getModel(target.id)
@@ -985,9 +842,9 @@ watch(loadRequest, (req) => {
     }
 })
 
-onMounted(() => {
-    initScene()
-})
+// ==================== Lifecycle ====================
+
+onMounted(() => { initScene() })
 
 onActivated(() => {
     startAnimate()

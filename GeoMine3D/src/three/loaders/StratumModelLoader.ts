@@ -22,12 +22,12 @@ export class StratumModelLoader {
     // 为地层分层按索引生成稳定颜色。
     private generateLayerColor(index: number): number {
         const colors = [
-            0x8b4513,
+            0x2e8b57,
             0xdaa520,
             0x2e8b57,
-            0x4682b4,
+            0x000000,
             0xd2691e,
-            0x9acd32,
+            0x20b2aa,
             0xcd853f,
             0x20b2aa,
             0x778899,
