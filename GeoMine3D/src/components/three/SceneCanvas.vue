@@ -18,6 +18,11 @@
                         {{ stratumExploded ? '还原' : '炸开' }}
                     </el-button>
                 </el-tooltip>
+                <el-tooltip :content="hoverEnabled ? '关闭悬停效果' : '开启悬停效果'" placement="bottom">
+                    <el-button class="tool-btn" :class="{ active: hoverEnabled }" @click="toggleHoverEffect">
+                        {{ hoverEnabled ? '悬停标签开' : '悬停标签关' }}
+                    </el-button>
+                </el-tooltip>
             </div>
 
             <div class="tools-divider" />
@@ -215,6 +220,7 @@ const clipStep = ref(1)
 const rotateXAxisEnabled = ref(true)
 const stratumExploded = ref(false)
 const outlineEnabled = ref(true)
+const hoverEnabled = ref(false)
 const hoverLabel = ref({ visible: false, name: '', x: 0, y: 0 })
 const isDragOver = ref(false)
 const dropError = ref('')
@@ -544,7 +550,13 @@ function onControlStart() {
 }
 
 function onControlEnd() {
-    selectionManager?.setHoverEnabled(true)
+    if(hoverEnabled.value) {
+        selectionManager?.setHoverEnabled(true)
+    }
+}
+function toggleHoverEffect() {
+    hoverEnabled.value = !hoverEnabled.value
+    selectionManager?.setHoverEnabled(hoverEnabled.value)
 }
 
 // ==================== Layer ====================
@@ -575,6 +587,7 @@ function toggleStratumExplode() {
     if (!stratumExplodeTool) return
     stratumExploded.value = stratumExplodeTool.toggle()
 }
+
 
 function applyStratumLayerControl(control: StratumLayerControl) {
     const model = modelManager.getModel(control.modelId)
@@ -848,7 +861,9 @@ onMounted(() => { initScene() })
 
 onActivated(() => {
     startAnimate()
-    selectionManager?.setHoverEnabled(true)
+    if (hoverEnabled.value) {
+        selectionManager?.setHoverEnabled(true)
+    }
     if (!containerRef.value) return
     const { width, height } = containerRef.value.getBoundingClientRect()
     rendererManager?.resize(width, height)
