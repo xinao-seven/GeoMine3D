@@ -4,6 +4,20 @@
 
         <div class="tools-bar">
             <div class="tools-group">
+                <input ref="fileInputRef" type="file" accept=".glb" style="display:none" @change="onFileSelected">
+                <el-tooltip content="加载本地 .glb 模型" placement="bottom">
+                    <el-button class="tool-btn" :disabled="isLoading" @click="fileInputRef?.click()">
+                        <el-icon>
+                            <Plus />
+                        </el-icon>
+                        <span>加载模型</span>
+                    </el-button>
+                </el-tooltip>
+            </div>
+
+            <div class="tools-divider" />
+
+            <div class="tools-group">
                 <el-tooltip content="重置视角" placement="bottom">
                     <el-button class="tool-btn" @click="resetCamera">
                         <el-icon>
@@ -166,6 +180,14 @@
         </div>
         <div v-if="dropError" class="drop-error">{{ dropError }}</div>
 
+        <!-- 模型加载中遮罩 -->
+        <div v-if="isLoading" class="loading-overlay">
+            <div class="loading-card">
+                <span class="loading-spinner"></span>
+                <span class="loading-text">{{ loadingText || '模型加载中...' }}</span>
+            </div>
+        </div>
+
     </div>
 </template>
 
@@ -215,6 +237,7 @@ const {
 
 const containerRef = ref<HTMLDivElement>()
 const canvasRef = ref<HTMLCanvasElement>()
+const fileInputRef = ref<HTMLInputElement>()
 const clipRange = ref({ min: -1000, max: 1000 })
 const clipStep = ref(1)
 const rotateXAxisEnabled = ref(true)
@@ -224,6 +247,8 @@ const hoverEnabled = ref(false)
 const hoverLabel = ref({ visible: false, name: '', x: 0, y: 0 })
 const isDragOver = ref(false)
 const dropError = ref('')
+const isLoading = ref(false)
+const loadingText = ref('')
 
 const BOREHOLE_VERTICAL_SCALE = 20
 const STRATUM_EXPLODE_GAP = 1000
@@ -335,6 +360,13 @@ async function loadAllBoreholeModels(boreholes: BoreholeItem[]) {
 }
 
 async function loadModelByRequest(req: ModelLoadRequest) {
+    isLoading.value = true
+    const typeLabel: Record<string, string> = {
+        stratum: '地层',
+        borehole: '钻孔',
+        workingface: '工作面',
+    }
+    loadingText.value = `正在加载${typeLabel[req.type] || req.type}模型...`
     try {
         let preferImmediateFocus = false
         let focusType: 'stratum' | 'borehole' | 'workingface' | null = null
@@ -395,6 +427,9 @@ async function loadModelByRequest(req: ModelLoadRequest) {
     } catch (err) {
         sceneStore.setModelLoadStatus(req.type, req.id, { loading: false })
         console.error(`[SceneCanvas] ${req.type} 模型加载失败`, err)
+    } finally {
+        isLoading.value = false
+        loadingText.value = ''
     }
 }
 
@@ -461,7 +496,22 @@ function onDrop(e: DragEvent) {
     loadDroppedGLB(file)
 }
 
+function onFileSelected(e: Event) {
+    const input = e.target as HTMLInputElement
+    const file = input.files?.[0]
+    if (!file) return
+    if (!file.name.toLowerCase().endsWith('.glb')) {
+        dropError.value = '仅支持 .glb 文件格式'
+        setTimeout(() => { dropError.value = '' }, 3000)
+        return
+    }
+    loadDroppedGLB(file)
+    input.value = ''
+}
+
 async function loadDroppedGLB(file: File) {
+    isLoading.value = true
+    loadingText.value = `正在加载 ${file.name}...`
     try {
         const { group, modelId, modelName, controls } = await dropLoader.loadFromFile(file)
         modelManager.addModel({ id: modelId, name: modelName, type: 'custom', object: group })
@@ -475,9 +525,12 @@ async function loadDroppedGLB(file: File) {
             syncToolRuntimeState()
         }
     } catch (err) {
-        console.error('[SceneCanvas] 拖入模型加载失败', err)
+        console.error('[SceneCanvas] 模型加载失败', err)
         dropError.value = `模型加载失败: ${(err as Error).message}`
         setTimeout(() => { dropError.value = '' }, 5000)
+    } finally {
+        isLoading.value = false
+        loadingText.value = ''
     }
 }
 
@@ -1156,6 +1209,50 @@ onUnmounted(() => {
     white-space: nowrap;
 }
 
+/* ── 模型加载中遮罩 ── */
+.loading-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(6, 16, 30, 0.7);
+    backdrop-filter: blur(3px);
+    border-radius: 8px;
+}
+
+.loading-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 32px 48px;
+    border-radius: 12px;
+    background: rgba(10, 22, 40, 0.9);
+    border: 1px solid rgba(0, 200, 255, 0.3);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(0, 200, 255, 0.15);
+    border-top-color: var(--color-accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.loading-text {
+    font-size: 14px;
+    color: #d9f4ff;
+    white-space: nowrap;
+}
+
 .drop-error {
     position: absolute;
     bottom: 20px;
@@ -1179,6 +1276,20 @@ onUnmounted(() => {
 
     .drop-icon {
         font-size: 28px;
+    }
+
+    .loading-card {
+        padding: 24px 32px;
+        gap: 12px;
+    }
+
+    .loading-spinner {
+        width: 32px;
+        height: 32px;
+    }
+
+    .loading-text {
+        font-size: 12px;
     }
 }
 </style>
