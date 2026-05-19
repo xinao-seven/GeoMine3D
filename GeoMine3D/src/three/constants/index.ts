@@ -1,4 +1,4 @@
-export const SCENE_BACKGROUND_COLOR = 0x0a1628
+export const SCENE_BACKGROUND_COLOR = 0xffffff
 export const GRID_COLOR = 0x1e3a5f
 export const AMBIENT_LIGHT_COLOR = 0xffffff
 export const AMBIENT_LIGHT_INTENSITY = 0.6

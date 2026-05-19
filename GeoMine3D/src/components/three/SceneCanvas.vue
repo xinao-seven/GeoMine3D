@@ -124,6 +124,20 @@
                 </el-tooltip>
             </div>
 
+            <div class="tools-divider" />
+
+            <div class="tools-group">
+                <el-tooltip :content="boundingBoxEnabled ? '关闭坐标盒' : '显示坐标盒'" placement="bottom">
+                    <el-button
+                        class="tool-btn"
+                        :class="{ active: boundingBoxEnabled }"
+                        @click="toggleBoundingBox"
+                    >
+                        <span>坐标盒</span>
+                    </el-button>
+                </el-tooltip>
+            </div>
+
             <div class="tools-group">
                 <el-tooltip :content="toolState.measureEnabled ? '关闭测量' : '开启测量'" placement="bottom">
                     <el-button class="tool-btn" :class="{ active: toolState.measureEnabled }" @click="toggleMeasureTool">
@@ -213,6 +227,7 @@ import { MeasureTool } from '@/three/tools/MeasureTool'
 import { AnnotationTool } from '@/three/tools/AnnotationTool'
 import { StratumExplodeTool } from '@/three/tools/StratumExplodeTool'
 import { AxisGizmoTool } from '@/three/tools/AxisGizmoTool'
+import { BoundingBoxTool } from '@/three/tools/BoundingBoxTool'
 import { modelApi, boreholeApi } from '@/api'
 import { useSceneStore, useBoreholeStore } from '@/stores'
 import type { ModelItem, BoreholeItem, StratumLayerControl } from '@/types'
@@ -242,7 +257,8 @@ const clipRange = ref({ min: -1000, max: 1000 })
 const clipStep = ref(1)
 const rotateXAxisEnabled = ref(true)
 const stratumExploded = ref(false)
-const outlineEnabled = ref(true)
+const outlineEnabled = ref(false)
+const boundingBoxEnabled = ref(false)
 const hoverEnabled = ref(false)
 const hoverLabel = ref({ visible: false, name: '', x: 0, y: 0 })
 const isDragOver = ref(false)
@@ -267,6 +283,7 @@ let clipTool: ClipTool
 let measureTool: MeasureTool
 let annotationTool: AnnotationTool
 let axisGizmoTool: AxisGizmoTool | null = null
+let boundingBoxTool: BoundingBoxTool | null = null
 let stratumExplodeTool: StratumExplodeTool | null = null
 let animFrameId: number
 let resizeObserver: ResizeObserver
@@ -279,6 +296,7 @@ function animate() {
     animFrameId = requestAnimationFrame(animate)
     controlsManager.update()
     annotationTool?.update()
+    boundingBoxTool?.update()
     lightManager.updateFromCamera(cameraManager.camera)
     rendererManager.render(sceneManager.scene, cameraManager.camera)
     axisGizmoTool?.render()
@@ -723,6 +741,11 @@ function toggleOutline() {
     rendererManager?.setOutlineEnabled(outlineEnabled.value)
 }
 
+function toggleBoundingBox() {
+    if (!boundingBoxTool) return
+    boundingBoxEnabled.value = boundingBoxTool.toggle()
+}
+
 function onClipHeightChange(value: number | undefined) {
     sceneStore.setClipHeight(typeof value === 'number' ? value : 0)
 }
@@ -841,6 +864,8 @@ async function initScene() {
         padding: 12,
     })
 
+    boundingBoxTool = new BoundingBoxTool(sceneManager.scene, modelManager, cameraManager.camera, canvasRef.value)
+
     syncToolRuntimeState()
     startAnimate()
 }
@@ -945,6 +970,8 @@ onUnmounted(() => {
     highlightManager?.dispose()
     axisGizmoTool?.dispose()
     axisGizmoTool = null
+    boundingBoxTool?.dispose()
+    boundingBoxTool = null
     modelManager?.clear()
     sceneManager?.dispose()
     hideHoverLabel()
