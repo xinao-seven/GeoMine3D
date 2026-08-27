@@ -1,0 +1,26 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: geomine3d-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: geomine3d
+      MYSQL_USER: geomine
+      MYSQL_PASSWORD: geomine
+      MYSQL_ROOT_PASSWORD: geomine-root
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - geomine3d_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-ugeomine", "-pgeomine"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  geomine3d_mysql_data:

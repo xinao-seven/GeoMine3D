@@ -24,6 +24,9 @@ dist-ssr
 *.sw?
 *.pyc
 __pycache__/
+.env
+.venv/
+backend/uploads/
 
 # Interview prep notes (local only)
 WebGIS面试题与项目难点总结.md
