@@ -1,9 +1,12 @@
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, Response, UploadFile, status
+from fastapi.responses import FileResponse
 
 from app.api.dependencies import DbSession
 from app.core.config import settings
+from app.core.exceptions import AppError
+from app.models.asset import ModelVersion
 from app.schemas.asset import (
     ModelAssetCreate,
     ModelAssetRead,
@@ -34,6 +37,21 @@ async def create_model(project_id: str, payload: ModelAssetCreate, session: DbSe
 @router.get("/models/{model_id}", response_model=DataResponse[ModelAssetRead])
 async def get_model(model_id: str, session: DbSession):
     return DataResponse(data=await ModelService(session).get_or_404(model_id))
+
+
+@router.get("/models/{model_id}/file", response_class=FileResponse)
+async def get_model_file(model_id: str, session: DbSession):
+    asset = await ModelService(session).get_or_404(model_id)
+    if not asset.current_version_id:
+        raise AppError("MODEL_FILE_NOT_FOUND", "模型尚未上传文件", status_code=404)
+    version = await session.get(ModelVersion, asset.current_version_id)
+    if version is None:
+        raise AppError("MODEL_FILE_NOT_FOUND", "模型版本不存在", status_code=404)
+    path = (settings.upload_path / version.file_path).resolve()
+    upload_root = settings.upload_path.resolve()
+    if upload_root not in path.parents or not path.is_file():
+        raise AppError("MODEL_FILE_NOT_FOUND", "模型文件不存在", status_code=404)
+    return FileResponse(path, filename=path.name, media_type="model/gltf-binary")
 
 
 @router.patch("/models/{model_id}", response_model=DataResponse[ModelAssetRead])

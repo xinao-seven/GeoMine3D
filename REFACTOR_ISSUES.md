@@ -32,13 +32,13 @@
 
 ## ISSUE-003：Three.js 生命周期清理不完整
 
-- 状态：待处理
+- 状态：已解决
 - 范围：Three.js
 - 发现时间：2026-08-27
 - 现象：`ModelManager.clear()` 只将对象移出场景并清空 Map，没有递归释放模型内部的 geometry、material 和 texture。
 - 影响：反复进入、退出或重新加载场景时可能产生 GPU 资源泄漏。
-- 计划：引入 `ResourceTracker`，明确共享资源所有权并统一释放。
-- 验证：重复装载/卸载场景后，`renderer.info.memory.geometries/textures` 不持续增长。
+- 处理：引入带引用计数的 `ResourceTracker`，由 `ModelManager` 在注册、移除和清空模型时统一追踪及释放 geometry、material、texture；高亮恢复时同步 dispose 临时材质。
+- 验证：生产构建通过。后续仍需在真实模型环境重复装载/卸载，并确认 `renderer.info.memory.geometries/textures` 不持续增长。
 
 ## ISSUE-004：现有 SceneCanvas 承担过多编排职责
 
@@ -109,3 +109,23 @@
 - 影响：本轮只能验证 SQLAlchemy 模型导入、OpenAPI、纯 HTTP 健康检查和 Alembic 的 MySQL 离线 SQL，不能执行真实 MySQL CRUD 集成测试。
 - 处理：保留 Docker Compose 和 `.env.example`；Alembic 初始迁移已使用 MySQL 方言成功生成离线 SQL。
 - 验证：在具备 Docker/MySQL 的环境运行 `docker compose up -d mysql`、`alembic upgrade head` 和后续数据库集成测试。
+
+## ISSUE-011：工作台首屏包体积偏大
+
+- 状态：待处理
+- 范围：前端 / 工程化
+- 发现时间：2026-08-27
+- 现象：生产构建中 `GeoWorkspace` 路由产物约 1.83 MB，gzip 后约 550 KB，Vite 发出 chunk 大小警告。
+- 影响：首次进入工作台的脚本下载、解析与执行成本较高。
+- 原因：Three.js、ECharts、Element Plus 组件和现有三维工具集中进入同一路由 chunk。
+- 计划：工作台形态稳定后再做 ECharts Dock 延迟加载、Element Plus 按需引入，以及 Three.js examples 工具按功能动态导入，避免在结构重构阶段过早拆包。
+- 验证：构建产物中主工作台 gzip 体积下降，并对首次交互时间进行前后对比。
+
+## ISSUE-012：窄视口下旧三维工具栏超出中央画布
+
+- 状态：已解决
+- 范围：前端
+- 发现时间：2026-08-27
+- 现象：左右面板同时打开时，中央视口宽度小于旧工具栏内容宽度，靠左的工具按钮被裁掉。
+- 处理：在工作台容器内限制工具栏最大宽度并允许横向滚动，各工具组禁止收缩。
+- 验证：1280×720 工作台中全部工具可通过横向滚动访问，面板不再覆盖工具栏。

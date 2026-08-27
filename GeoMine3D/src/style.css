@@ -1,16 +1,16 @@
 :root {
-  --color-bg-primary: #0a1628;
-  --color-bg-secondary: #0d1f3c;
-  --color-bg-panel: #0f2447;
-  --color-bg-card: #132d55;
-  --color-border: #1e3a5f;
-  --color-text-primary: #e8f4ff;
-  --color-text-secondary: #8ab4d4;
-  --color-accent: #00c8ff;
-  --color-accent-hover: #33d6ff;
-  --color-success: #00d98b;
-  --color-warning: #ffb020;
-  --color-danger: #ff4d4f;
+  --color-bg-primary: #0b0f0c;
+  --color-bg-secondary: #101411;
+  --color-bg-panel: #121714;
+  --color-bg-card: #191f1a;
+  --color-border: #2d342e;
+  --color-text-primary: #deddd6;
+  --color-text-secondary: #879087;
+  --color-accent: #b57d3d;
+  --color-accent-hover: #d09a5b;
+  --color-success: #719678;
+  --color-warning: #c99a59;
+  --color-danger: #b96755;
   --sidebar-width: 210px;
   --header-height: 56px;
 }
@@ -25,7 +25,7 @@ body {
   margin: 0;
   background: var(--color-bg-primary);
   color: var(--color-text-primary);
-  font-family: 'Microsoft YaHei', 'PingFang SC', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
   font-size: 14px;
   line-height: 1.5;
 }
@@ -42,4 +42,29 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-accent);
+}
+
+button, input, textarea { font: inherit; }
+
+.el-dialog {
+  --el-dialog-bg-color: #141915;
+  --el-text-color-primary: #deddd6;
+  --el-text-color-regular: #959e96;
+  --el-border-color: #303731;
+  border: 1px solid #303731;
+  border-radius: 2px;
+}
+
+.el-input, .el-textarea, .el-select {
+  --el-input-bg-color: #0f1310;
+  --el-input-border-color: #343b35;
+  --el-input-text-color: #dad8ce;
+  --el-input-placeholder-color: #596159;
+}
+
+.el-button--primary {
+  --el-button-bg-color: #936334;
+  --el-button-border-color: #b27a3f;
+  --el-button-hover-bg-color: #aa7640;
+  --el-button-hover-border-color: #ce9659;
 }

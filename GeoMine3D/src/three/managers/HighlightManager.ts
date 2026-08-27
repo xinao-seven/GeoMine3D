@@ -71,6 +71,8 @@ export class HighlightManager {
                 const mesh = child as THREE.Mesh
                 const original = this.originalMaterials.get(mesh)
                 if (original) {
+                    const temporary = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+                    for (const material of temporary) material.dispose()
                     mesh.material = original
                     this.originalMaterials.delete(mesh)
                 }
@@ -80,6 +82,12 @@ export class HighlightManager {
 
     // 清理高亮管理器内部缓存。
     dispose() {
+        if (this.highlightedObject) this._restoreMaterials(this.highlightedObject)
+        if (this.selectedObject && this.selectedObject !== this.highlightedObject) {
+            this._restoreMaterials(this.selectedObject)
+        }
+        this.highlightedObject = null
+        this.selectedObject = null
         this.originalMaterials.clear()
     }
 }

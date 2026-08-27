@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import type { SceneManager } from '../core/SceneManager'
+import { ResourceTracker } from '../core/ResourceTracker'
 
 export interface ManagedModel {
     id: string
@@ -11,6 +12,7 @@ export interface ManagedModel {
 export class ModelManager {
     private models = new Map<string, ManagedModel>()
     private sceneManager: SceneManager
+    private resources = new ResourceTracker()
 
     constructor(sceneManager: SceneManager) {
         this.sceneManager = sceneManager
@@ -18,7 +20,9 @@ export class ModelManager {
 
     // 注册模型并加入场景。
     addModel(model: ManagedModel) {
+        if (this.models.has(model.id)) this.removeModel(model.id)
         this.models.set(model.id, model)
+        this.resources.trackObject(model.object)
         this.sceneManager.addObject(model.object)
     }
 
@@ -27,6 +31,7 @@ export class ModelManager {
         const model = this.models.get(id)
         if (model) {
             this.sceneManager.removeObject(model.object)
+            this.resources.releaseObject(model.object)
             this.models.delete(id)
         }
     }
@@ -50,7 +55,9 @@ export class ModelManager {
     clear() {
         for (const model of this.models.values()) {
             this.sceneManager.removeObject(model.object)
+            this.resources.releaseObject(model.object)
         }
         this.models.clear()
+        this.resources.disposeAll()
     }
 }

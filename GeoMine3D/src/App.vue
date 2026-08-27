@@ -16,8 +16,8 @@ html, body, #app {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
-  background: #0a1628;
-  color: #e8f4ff;
+  font-family: 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  background: #0b0f0c;
+  color: #deddd6;
 }
 </style>
