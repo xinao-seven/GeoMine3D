@@ -27,7 +27,7 @@
 
         <footer class="status-bar">
             <span><i class="online"></i> ENGINE READY</span><span>CRS {{ project?.coordinate_system || 'LOCAL' }}</span>
-            <span>X — &nbsp; Y — &nbsp; Z —</span><span class="status-spacer"></span><span>FPS --</span><span>CALLS --</span><span>TRI --</span>
+            <span>X — &nbsp; Y — &nbsp; Z —</span><span class="status-spacer"></span><span>FPS {{ performance.fps }}</span><span>CALLS {{ performance.calls }}</span><span>TRI {{ compactNumber(performance.triangles) }}</span>
         </footer>
 
         <el-dialog v-model="workspace.commandPaletteVisible" width="560px" :show-close="false" class="command-dialog">
@@ -51,7 +51,7 @@ import { workspaceApi, type ProjectRecord } from '@/api/workspace'
 import { useSceneStore, useWorkspaceStore } from '@/stores'
 
 const route=useRoute(); const router=useRouter(); const workspace=useWorkspaceStore(); const sceneStore=useSceneStore()
-const {leftVisible,rightVisible,bottomVisible}=storeToRefs(workspace); const project=ref<ProjectRecord|null>(null); const command=ref('')
+const {leftVisible,rightVisible,bottomVisible,performance}=storeToRefs(workspace); const project=ref<ProjectRecord|null>(null); const command=ref('')
 const projectName=computed(()=>project.value?.name || (route.params.projectId==='local'?'本地演示工作区':'三维地质项目'))
 const commands=[
     {name:'启用三轴剖切',icon:'Crop',shortcut:'C',run:()=>sceneStore.activateTool('clip')},
@@ -63,6 +63,7 @@ const commands=[
 const filteredCommands=computed(()=>commands.filter(item=>item.name.includes(command.value.trim())))
 function runCommand(item:typeof commands[number]){item.run();workspace.commandPaletteVisible=false;command.value=''}
 function executeCommand(){if(filteredCommands.value[0])runCommand(filteredCommands.value[0])}
+function compactNumber(value:number){return new Intl.NumberFormat('en',{notation:'compact',maximumFractionDigits:1}).format(value)}
 function onGlobalKeydown(event: KeyboardEvent) {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()

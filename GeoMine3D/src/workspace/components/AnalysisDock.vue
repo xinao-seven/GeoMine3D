@@ -23,10 +23,10 @@
                 <div class="dock-empty" v-else>场景对象属性表将在加载数据后显示</div>
             </template>
             <template v-else>
-                <div class="metric"><span>FPS</span><strong>--</strong><small>等待渲染器采样</small></div>
-                <div class="metric"><span>DRAW CALLS</span><strong>--</strong><small>renderer.info</small></div>
-                <div class="metric"><span>TRIANGLES</span><strong>--</strong><small>当前帧</small></div>
-                <div class="performance-note">性能采样器将在 GeoEngine 重构阶段接入。</div>
+                <div class="metric"><span>FPS</span><strong>{{ performance.fps }}</strong><small>500ms 滑动窗口</small></div>
+                <div class="metric"><span>DRAW CALLS</span><strong>{{ performance.calls }}</strong><small>renderer.info</small></div>
+                <div class="metric"><span>TRIANGLES</span><strong>{{ compactNumber(performance.triangles) }}</strong><small>当前帧</small></div>
+                <div class="performance-note">GPU 资源：{{ performance.geometries }} geometries / {{ performance.textures }} textures</div>
             </template>
         </div>
     </section>
@@ -39,10 +39,11 @@ import BoreholeChart from '@/components/charts/BoreholeChart.vue'
 import { useBoreholeStore, useSceneStore, useWorkspaceStore } from '@/stores'
 import type { WorkspaceDock } from '@/stores/workspaceStore'
 const store = useWorkspaceStore(); const sceneStore = useSceneStore(); const boreholeStore = useBoreholeStore()
-const { activeDock } = storeToRefs(store); const { selectedObject, layerVisible, measurements, modelLoadStatus } = storeToRefs(sceneStore); const { currentDetail } = storeToRefs(boreholeStore)
+const { activeDock, performance } = storeToRefs(store); const { selectedObject, layerVisible, measurements, modelLoadStatus } = storeToRefs(sceneStore); const { currentDetail } = storeToRefs(boreholeStore)
 const tabs: Array<{id:WorkspaceDock;label:string;icon:string}> = [{id:'overview',label:'场景概览',icon:'DataAnalysis'},{id:'borehole',label:'钻孔柱状图',icon:'Histogram'},{id:'table',label:'属性表',icon:'Grid'},{id:'performance',label:'性能',icon:'Odometer'}]
 const activeLayerCount = computed(() => Object.values(layerVisible.value).filter(Boolean).length)
 const objectCount = computed(() => Object.values(modelLoadStatus.value).filter(item => item.loaded).length)
+function compactNumber(value:number){return new Intl.NumberFormat('en',{notation:'compact',maximumFractionDigits:1}).format(value)}
 </script>
 
 <style scoped>

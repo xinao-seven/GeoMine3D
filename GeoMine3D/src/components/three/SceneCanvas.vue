@@ -229,7 +229,7 @@ import { StratumExplodeTool } from '@/three/tools/StratumExplodeTool'
 import { AxisGizmoTool } from '@/three/tools/AxisGizmoTool'
 import { BoundingBoxTool } from '@/three/tools/BoundingBoxTool'
 import { modelApi, boreholeApi } from '@/api'
-import { useSceneStore, useBoreholeStore } from '@/stores'
+import { useSceneStore, useBoreholeStore, useWorkspaceStore } from '@/stores'
 import type { ModelItem, BoreholeItem, StratumLayerControl } from '@/types'
 import type { ModelLoadRequest } from '@/stores/sceneStore'
 
@@ -237,6 +237,7 @@ import type { ModelLoadRequest } from '@/stores/sceneStore'
 
 const sceneStore = useSceneStore()
 const boreholeStore = useBoreholeStore()
+const workspaceStore = useWorkspaceStore()
 
 const {
     layerVisible,
@@ -288,6 +289,8 @@ let stratumExplodeTool: StratumExplodeTool | null = null
 let animFrameId: number
 let resizeObserver: ResizeObserver
 let isAnimating = false
+let performanceWindowStarted = performance.now()
+let performanceFrameCount = 0
 
 // ==================== Animation ====================
 
@@ -300,11 +303,27 @@ function animate() {
     lightManager.updateFromCamera(cameraManager.camera)
     rendererManager.render(sceneManager.scene, cameraManager.camera)
     axisGizmoTool?.render()
+    performanceFrameCount += 1
+    const now = performance.now()
+    const elapsed = now - performanceWindowStarted
+    if (elapsed >= 500) {
+        workspaceStore.updatePerformance({
+            fps: Math.round(performanceFrameCount * 1000 / elapsed),
+            calls: rendererManager.renderer.info.render.calls,
+            triangles: rendererManager.renderer.info.render.triangles,
+            geometries: rendererManager.renderer.info.memory.geometries,
+            textures: rendererManager.renderer.info.memory.textures,
+        })
+        performanceWindowStarted = now
+        performanceFrameCount = 0
+    }
 }
 
 function startAnimate() {
     if (isAnimating) return
     isAnimating = true
+    performanceWindowStarted = performance.now()
+    performanceFrameCount = 0
     animate()
 }
 
