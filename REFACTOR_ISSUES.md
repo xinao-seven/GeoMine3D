@@ -79,3 +79,33 @@
 - 影响：当前只能完成 Python 字节码编译检查，暂时不能执行应用导入、OpenAPI 生成和 API 测试。
 - 处理：使用 Codex 工作区提供的 Python，在 `backend/.venv` 中安装 `requirements.txt` 依赖；`.venv` 已加入忽略规则。
 - 验证：FastAPI 应用已成功导入并生成 `/api/v1/projects` 路由；健康检查与 OpenAPI 自动测试通过。项目 CRUD 的真实数据库测试将在 MySQL 迁移完成后补充。
+
+## ISSUE-008：Service 方法名遮蔽 Python 内置 `list`
+
+- 状态：已解决
+- 范围：后端
+- 发现时间：2026-08-27
+- 现象：`BoreholeService` 已定义名为 `list` 的方法，类体后续注解 `list[BoreholeSegmentInput]` 在运行时把 `list` 解析成了该方法，导致模块导入失败。
+- 影响：FastAPI 无法启动和生成 OpenAPI。
+- 处理：启用 `from __future__ import annotations`，推迟注解求值，避免类命名空间遮蔽内置泛型。
+- 验证：应用导入与 OpenAPI 测试恢复通过。
+
+## ISSUE-009：仓库中缺少旧业务数据目录
+
+- 状态：待处理
+- 范围：数据
+- 发现时间：2026-08-27
+- 现象：项目约定的 `backend/data` 目录当前不存在，无法读取 `models_meta.json`、钻孔 Excel 和工作面 JSON。
+- 影响：暂时不能生成可验证的自动迁移脚本，也不能用真实项目数据做数据库联调。
+- 计划：先完成导入接口和数据库结构；数据文件恢复后再增加一次性迁移命令，并以文件条数、钻孔层段数和坐标范围进行校验。
+- 验证：迁移前后项目、模型、钻孔、层段和工作面数量一致，抽样坐标与深度一致。
+
+## ISSUE-010：当前环境没有可用的 Docker/MySQL 服务
+
+- 状态：接受风险
+- 范围：后端 / 工程化
+- 发现时间：2026-08-27
+- 现象：本机 `docker version` 无服务端输出，无法启动 `docker-compose.yml` 中的 MySQL。
+- 影响：本轮只能验证 SQLAlchemy 模型导入、OpenAPI、纯 HTTP 健康检查和 Alembic 的 MySQL 离线 SQL，不能执行真实 MySQL CRUD 集成测试。
+- 处理：保留 Docker Compose 和 `.env.example`；Alembic 初始迁移已使用 MySQL 方言成功生成离线 SQL。
+- 验证：在具备 Docker/MySQL 的环境运行 `docker compose up -d mysql`、`alembic upgrade head` 和后续数据库集成测试。

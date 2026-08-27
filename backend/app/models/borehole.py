@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Float, ForeignKey, Integer, JSON, String
+from sqlalchemy import Float, ForeignKey, Integer, JSON, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
 class Borehole(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "boreholes"
+    __table_args__ = (UniqueConstraint("project_id", "code", name="uq_project_borehole_code"),)
 
     project_id: Mapped[str] = mapped_column(
         ForeignKey("projects.id", ondelete="CASCADE"), index=True
