@@ -31,7 +31,7 @@
                 <div class="local-orbit" aria-hidden="true"><i></i><i></i><i></i></div>
                 <div class="card-content">
                     <h3>本地演示工作区</h3>
-                    <p>无需数据库即可进入，支持拖放 GLB 并使用现有三维工具。</p>
+                    <p>仅用于拖放电脑中的 GLB；server 静态模型与钻孔请打开 DATABASE 项目。</p>
                 </div>
                 <div class="card-meta"><span>LOCAL</span><span>READY</span></div>
             </button>

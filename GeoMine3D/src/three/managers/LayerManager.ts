@@ -1,10 +1,13 @@
 import type { ModelManager } from './ModelManager'
+import type { HighlightManager } from './HighlightManager'
 
 export class LayerManager {
     private modelManager: ModelManager
+    private highlightManager?: HighlightManager
 
-    constructor(modelManager: ModelManager) {
+    constructor(modelManager: ModelManager, highlightManager?: HighlightManager) {
         this.modelManager = modelManager
+        this.highlightManager = highlightManager
     }
 
     // 统一切换指定类型图层可见性。
@@ -23,10 +26,12 @@ export class LayerManager {
                 if ((child as any).isMesh) {
                     const mesh = child as any
                     if (mesh.material) {
-                        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+                        const mats = this.highlightManager?.getEditableMaterials(mesh)
+                            ?? (Array.isArray(mesh.material) ? mesh.material : [mesh.material])
                         for (const mat of mats) {
                             mat.transparent = opacity < 1
                             mat.opacity = opacity
+                            mat.needsUpdate = true
                         }
                     }
                 }

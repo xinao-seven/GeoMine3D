@@ -48,7 +48,7 @@ export class DropLoader {
             })
 
             group.name = `dropped_${modelId}`
-            group.userData = { id: modelId, name: modelName, type: 'custom' }
+            group.userData = { id: modelId, name: modelName, type: 'stratum' }
 
             const meshes: THREE.Mesh[] = []
             group.traverse((child) => {
@@ -93,9 +93,10 @@ export class DropLoader {
                 mesh.userData = {
                     id: `${modelId}::${index}`,
                     name: `${modelName}_${index + 1}`,
-                    type: 'custom',
+                    type: 'stratum',
                     modelId,
                     layerIndex: index,
+                    layerName: mesh.name?.trim() || `${modelName}_${index + 1}`,
                     edgeLines,
                 }
             })

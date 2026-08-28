@@ -6,6 +6,12 @@ export class HighlightManager {
     private selectedObject: THREE.Object3D | null = null
     private originalMaterials = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>()
 
+    // 材质编辑应作用于业务材质，而不是选中/悬停时的临时高亮材质。
+    getEditableMaterials(mesh: THREE.Mesh): THREE.Material[] {
+        const source = this.originalMaterials.get(mesh) ?? mesh.material
+        return Array.isArray(source) ? source : [source]
+    }
+
     // 设置临时高亮对象，不影响已选中对象的状态优先级。
     highlight(object: THREE.Object3D | null) {
         // 清除之前的高亮

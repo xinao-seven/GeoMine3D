@@ -349,6 +349,7 @@ async function loadStratumModel(model: ModelItem) {
     } catch {
         addPlaceholderStratum(model)
     }
+    layerManager.setLayerOpacity('stratum', opacity.value.stratum)
     layerManager.setLayerEdgesVisible('stratum', showEdges.value)
 }
 
@@ -362,14 +363,18 @@ async function loadWorkingFaceModel(model: ModelItem) {
     }
 }
 
-async function loadBoreholeModel(borehole: BoreholeItem, index: number) {
+async function loadBoreholeModel(
+    borehole: BoreholeItem,
+    index: number,
+    origin?: { x: number; y: number; z: number },
+) {
     const boreholeLoader = new BoreholeModelLoader()
     let position: { x: number; y: number; z: number }
     if (borehole.location) {
         position = {
-            x: borehole.location.x,
-            y: borehole.location.y,
-            z: borehole.location.z * BOREHOLE_VERTICAL_SCALE,
+            x: borehole.location.x - (origin?.x ?? 0),
+            y: borehole.location.y - (origin?.y ?? 0),
+            z: (borehole.location.z - (origin?.z ?? 0)) * BOREHOLE_VERTICAL_SCALE,
         }
     } else {
         const spacing = 500
@@ -385,13 +390,21 @@ async function loadBoreholeModel(borehole: BoreholeItem, index: number) {
 }
 
 async function loadAllBoreholeModels(boreholes: BoreholeItem[]) {
+    const located = boreholes.filter((item) => item.location).map((item) => item.location!)
+    const origin = located.length
+        ? {
+            x: located.reduce((sum, item) => sum + item.x, 0) / located.length,
+            y: located.reduce((sum, item) => sum + item.y, 0) / located.length,
+            z: located.reduce((sum, item) => sum + item.z, 0) / located.length,
+        }
+        : undefined
     for (let i = 0; i < boreholes.length; i += 1) {
         const borehole = boreholes[i]
         if (modelManager.getModel(borehole.id)) {
             sceneStore.setModelLoadStatus('borehole', borehole.id, { loaded: true, loading: false })
             continue
         }
-        await loadBoreholeModel(borehole, i)
+        await loadBoreholeModel(borehole, i, origin)
         sceneStore.setModelLoadStatus('borehole', borehole.id, { loaded: true, loading: false })
     }
 }
@@ -551,12 +564,14 @@ async function loadDroppedGLB(file: File) {
     loadingText.value = `正在加载 ${file.name}...`
     try {
         const { group, modelId, modelName, controls } = await dropLoader.loadFromFile(file)
-        modelManager.addModel({ id: modelId, name: modelName, type: 'custom', object: group })
+        modelManager.addModel({ id: modelId, name: modelName, type: 'stratum', object: group })
         sceneManager.removeGrid()
         refreshSelectionPickTargets()
         if (controls.length) {
             sceneStore.registerStratumLayers(controls)
         }
+        layerManager.setLayerOpacity('stratum', opacity.value.stratum)
+        layerManager.setLayerEdgesVisible('stratum', showEdges.value)
         fitCameraToType(null, true)
         if (toolState.value.clipEnabled) {
             syncToolRuntimeState()
@@ -689,7 +704,7 @@ function applyStratumLayerControl(control: StratumLayerControl) {
         if (key !== control.key) return
 
         mesh.visible = control.visible
-        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+        const mats = highlightManager.getEditableMaterials(mesh)
         for (const mat of mats as any[]) {
             if (mat.color) {
                 mat.color.set(control.color)
@@ -805,8 +820,8 @@ async function initScene() {
     controlsManager = new ControlsManager(cameraManager.camera, canvasRef.value)
     lightManager = new LightManager(sceneManager.scene)
     modelManager = new ModelManager(sceneManager)
-    layerManager = new LayerManager(modelManager)
     highlightManager = new HighlightManager()
+    layerManager = new LayerManager(modelManager, highlightManager)
     clipTool = new ClipTool(
         rendererManager.renderer,
         sceneManager.scene,
