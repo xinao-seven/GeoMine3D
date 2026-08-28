@@ -24,7 +24,7 @@ export class ClipTool {
     private clipPlane: THREE.Plane
     private axis: ClipAxis = 'y'
     private keepLower = true
-    private showHelper = true
+    private showHelper = false
     private position = 0
     private minPosition = -1000
     private maxPosition = 1000

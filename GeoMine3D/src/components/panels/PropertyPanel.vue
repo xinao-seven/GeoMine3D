@@ -11,7 +11,28 @@
         <el-tag :type="tagType" size="small">{{ typeLabel }}</el-tag>
       </div>
 
-      <div class="prop-list">
+      <div v-if="selectedBorehole" class="borehole-detail">
+        <div class="borehole-metrics">
+          <div><span>总深度</span><strong>{{ selectedBorehole.totalDepth.toFixed(2) }}</strong><small>m</small></div>
+          <div><span>地层数</span><strong>{{ selectedBorehole.layers.length }}</strong><small>层</small></div>
+        </div>
+        <div v-if="selectedBorehole.location" class="coordinate-block">
+          <span>投影坐标</span>
+          <code>X {{ selectedBorehole.location.x.toFixed(2) }}</code>
+          <code>Y {{ selectedBorehole.location.y.toFixed(2) }}</code>
+          <code>Z {{ selectedBorehole.location.z.toFixed(2) }}</code>
+        </div>
+        <div class="strata-heading"><span>钻孔分层</span><b>{{ selectedBorehole.layers.length }}</b></div>
+        <div class="strata-list">
+          <div v-for="(layer, index) in selectedBorehole.layers" :key="`${layer.layerName}-${index}`" class="strata-item">
+            <i :style="{ background: layerColor(index) }"></i>
+            <div><strong>{{ layer.layerName }}</strong><span>{{ layer.topDepth.toFixed(2) }} — {{ layer.bottomDepth.toFixed(2) }} m</span></div>
+            <b>{{ layer.thickness.toFixed(2) }}</b>
+          </div>
+        </div>
+      </div>
+
+      <div v-else class="prop-list">
         <div class="prop-item">
           <span class="prop-key">名称</span>
           <span class="prop-value">{{ selectedObject.name }}</span>
@@ -41,6 +62,7 @@
 import { computed } from 'vue'
 import { useSceneStore, useBoreholeStore, useWorkspaceStore } from '@/stores'
 import { storeToRefs } from 'pinia'
+import type { BoreholeDetail } from '@/types'
 
 const sceneStore = useSceneStore()
 const boreholeStore = useBoreholeStore()
@@ -57,10 +79,19 @@ const tagType = computed(() => {
   return (map[selectedObject.value?.type ?? ''] ?? 'info') as any
 })
 
+const selectedBorehole = computed(() => {
+  if (selectedObject.value?.type !== 'borehole') return null
+  const data = selectedObject.value.data as Partial<BoreholeDetail> | undefined
+  return data?.layers && typeof data.totalDepth === 'number' ? data as BoreholeDetail : null
+})
+
+const strataColors = ['#a98a5f', '#766950', '#876345', '#586c60', '#6f7776', '#3f4642', '#b69763']
+function layerColor(index: number) { return strataColors[index % strataColors.length] }
+
 const filteredData = computed(() => {
   const data = selectedObject.value?.data
   if (!data) return {}
-  const skip = ['id', 'name', 'type', 'modelData', 'boreholeData']
+  const skip = ['id', 'name', 'type', 'modelData', 'boreholeData', 'layers', 'location']
   return Object.fromEntries(Object.entries(data).filter(([k]) => !skip.includes(k)))
 })
 
@@ -126,4 +157,23 @@ async function loadBoreholeChart() {
 .borehole-action {
   margin-top: 12px;
 }
+
+.borehole-detail { display:flex; flex-direction:column; gap:12px; }
+.borehole-metrics { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+.borehole-metrics>div { padding:10px; border-left:2px solid #80603a; background:#171c18; }
+.borehole-metrics span { display:block; color:#707971; font-size:9px; }
+.borehole-metrics strong { color:#ddd8ca; font:20px Bahnschrift,sans-serif; }
+.borehole-metrics small { margin-left:4px; color:#7d867e; font-size:9px; }
+.coordinate-block { display:grid; grid-template-columns:1fr; gap:4px; padding:9px 10px; border:1px solid #303731; }
+.coordinate-block span { margin-bottom:3px; color:#8e9790; font-size:10px; }
+.coordinate-block code { color:#68736b; font:9px Bahnschrift,sans-serif; }
+.strata-heading { display:flex; justify-content:space-between; padding-bottom:7px; border-bottom:1px solid #303731; color:#9da59e; font-size:10px; }
+.strata-heading b { color:#a87943; font:9px Bahnschrift,sans-serif; }
+.strata-list { max-height:300px; overflow:auto; }
+.strata-item { min-height:43px; display:grid; grid-template-columns:5px minmax(0,1fr) 42px; align-items:center; gap:8px; border-bottom:1px solid #272d28; }
+.strata-item i { width:5px; height:25px; }
+.strata-item div { min-width:0; display:flex; flex-direction:column; gap:3px; }
+.strata-item strong { overflow:hidden; color:#b9beb7; font-size:10px; font-weight:500; text-overflow:ellipsis; white-space:nowrap; }
+.strata-item span { color:#626b64; font:8px Bahnschrift,sans-serif; }
+.strata-item>b { color:#8f795c; font:9px Bahnschrift,sans-serif; text-align:right; }
 </style>

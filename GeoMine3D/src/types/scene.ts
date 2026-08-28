@@ -34,7 +34,6 @@ export interface ToolState {
   clipHeight: number
   clipAxis: 'x' | 'y' | 'z'
   clipKeepLower: boolean
-  clipHelperVisible: boolean
   measureEnabled: boolean
   annotationEnabled: boolean
 }

@@ -17,6 +17,7 @@ const emit = defineEmits<{
 
 const chartRef = ref<HTMLDivElement>()
 let chart: echarts.ECharts | null = null
+let resizeObserver: ResizeObserver | null = null
 
 function buildOption(borehole: BoreholeDetail) {
     const layers = [...borehole.layers].reverse()
@@ -102,10 +103,14 @@ onMounted(() => {
     if (props.borehole && chart) {
         chart.setOption(buildOption(props.borehole), true)
     }
-    window.addEventListener('resize', () => chart?.resize())
+    if (chartRef.value) {
+        resizeObserver = new ResizeObserver(() => chart?.resize())
+        resizeObserver.observe(chartRef.value)
+    }
 })
 
 onUnmounted(() => {
+    resizeObserver?.disconnect()
     chart?.dispose()
 })
 </script>
@@ -114,6 +119,6 @@ onUnmounted(() => {
 .borehole-chart {
     width: 100%;
     height: 100%;
-    min-height: 300px;
+    min-height: 0;
 }
 </style>

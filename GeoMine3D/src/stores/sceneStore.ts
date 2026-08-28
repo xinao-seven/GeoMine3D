@@ -52,7 +52,6 @@ export const useSceneStore = defineStore('scene', () => {
         clipHeight: 0,
         clipAxis: 'y',
         clipKeepLower: true,
-        clipHelperVisible: true,
         measureEnabled: false,
         annotationEnabled: false,
     })
@@ -109,10 +108,6 @@ export const useSceneStore = defineStore('scene', () => {
 
     function setClipKeepLower(keepLower: boolean) {
         toolState.clipKeepLower = keepLower
-    }
-
-    function setClipHelperVisible(visible: boolean) {
-        toolState.clipHelperVisible = visible
     }
 
     function addMeasurement(record: MeasurementRecord) {
@@ -198,7 +193,6 @@ export const useSceneStore = defineStore('scene', () => {
         setClipHeight,
         setClipAxis,
         setClipKeepLower,
-        setClipHelperVisible,
         addMeasurement,
         clearMeasurements,
         getModelKey,

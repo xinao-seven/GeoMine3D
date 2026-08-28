@@ -86,13 +86,6 @@
                             inactive-text="留高"
                             @update:model-value="setClipKeepLower"
                         />
-                        <el-switch
-                            :model-value="toolState.clipHelperVisible"
-                            inline-prompt
-                            active-text="辅助面"
-                            inactive-text="隐藏"
-                            @update:model-value="setClipHelperVisible"
-                        />
                     </div>
                 </div>
             </div>
@@ -202,11 +195,19 @@
             </div>
         </div>
 
+        <form v-if="annotationDraft.visible" class="annotation-composer" @submit.prevent="confirmAnnotation">
+            <div class="annotation-composer__head"><span>NEW ANNOTATION</span><button type="button" @click="cancelAnnotation">×</button></div>
+            <strong>空间标注 {{ annotationDraft.index }}</strong>
+            <small>X {{ annotationDraft.x.toFixed(2) }} · Y {{ annotationDraft.y.toFixed(2) }} · Z {{ annotationDraft.z.toFixed(2) }}</small>
+            <el-input ref="annotationInputRef" v-model="annotationDraft.text" maxlength="80" placeholder="输入标注内容" />
+            <div class="annotation-composer__actions"><button type="button" @click="cancelAnnotation">取消</button><button class="confirm" type="submit">创建标注</button></div>
+        </form>
+
     </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, onActivated, onDeactivated, watch } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted, onActivated, onDeactivated, watch } from 'vue'
 import * as THREE from 'three'
 import { storeToRefs } from 'pinia'
 import { DropLoader } from '@/three/loaders/DropLoader'
@@ -267,6 +268,8 @@ const isDragOver = ref(false)
 const dropError = ref('')
 const isLoading = ref(false)
 const loadingText = ref('')
+const annotationInputRef = ref()
+const annotationDraft = ref({ visible: false, index: 1, text: '', x: 0, y: 0, z: 0 })
 
 const BOREHOLE_VERTICAL_SCALE = 20
 const STRATUM_EXPLODE_GAP = 1000
@@ -767,7 +770,7 @@ function syncToolRuntimeState() {
             axis: toolState.value.clipAxis,
             position: toolState.value.clipHeight,
             keepLower: toolState.value.clipKeepLower,
-            showHelper: toolState.value.clipHelperVisible,
+            showHelper: false,
         })
     } else {
         clipTool.disable()
@@ -787,9 +790,22 @@ function syncToolRuntimeState() {
     }
 
     if (toolState.value.annotationEnabled) {
-        annotationTool.enable()
+        annotationTool.enable({
+            onPoint: (index, point) => {
+                annotationDraft.value = {
+                    visible: true,
+                    index,
+                    text: `标注 ${index}`,
+                    x: point.x,
+                    y: point.y,
+                    z: point.z,
+                }
+                nextTick(() => annotationInputRef.value?.focus?.())
+            },
+        })
     } else {
         annotationTool.disable()
+        cancelAnnotation()
     }
 
     selectionManager.setEnabled(!(toolState.value.measureEnabled || toolState.value.annotationEnabled))
@@ -829,10 +845,6 @@ function setClipKeepLower(value: boolean | string | number) {
     sceneStore.setClipKeepLower(Boolean(value))
 }
 
-function setClipHelperVisible(value: boolean | string | number) {
-    sceneStore.setClipHelperVisible(Boolean(value))
-}
-
 function clearMeasurements() {
     sceneStore.clearMeasurements()
     measureTool?.clear()
@@ -840,6 +852,20 @@ function clearMeasurements() {
 
 function clearAnnotations() {
     annotationTool?.clear()
+}
+
+function confirmAnnotation() {
+    if (!annotationDraft.value.text.trim()) return
+    annotationTool?.addAnnotation(
+        new THREE.Vector3(annotationDraft.value.x, annotationDraft.value.y, annotationDraft.value.z),
+        annotationDraft.value.text,
+    )
+    annotationDraft.value.visible = false
+}
+
+function cancelAnnotation() {
+    annotationDraft.value.visible = false
+    annotationDraft.value.text = ''
 }
 
 // ==================== Scene Initialization ====================
@@ -988,7 +1014,6 @@ watch(
         clipHeight: toolState.value.clipHeight,
         clipAxis: toolState.value.clipAxis,
         clipKeepLower: toolState.value.clipKeepLower,
-        clipHelperVisible: toolState.value.clipHelperVisible,
     }),
     () => { syncToolRuntimeState() },
     { deep: true }
@@ -1374,6 +1399,70 @@ onUnmounted(() => {
     white-space: nowrap;
     pointer-events: none;
     backdrop-filter: blur(4px);
+}
+
+.annotation-composer {
+    position: absolute;
+    z-index: 110;
+    left: 22px;
+    bottom: 24px;
+    width: 310px;
+    padding: 14px;
+    border: 1px solid #7b5b33;
+    background: rgba(18, 23, 20, .96);
+    box-shadow: 0 18px 46px rgba(0, 0, 0, .46);
+    color: #d9d7ce;
+}
+
+.annotation-composer__head,
+.annotation-composer__actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.annotation-composer__head span {
+    color: #b98548;
+    font: 9px Bahnschrift, sans-serif;
+    letter-spacing: .15em;
+}
+
+.annotation-composer__head button,
+.annotation-composer__actions button {
+    border: 0;
+    background: transparent;
+    color: #777f78;
+    cursor: pointer;
+}
+
+.annotation-composer strong {
+    display: block;
+    margin-top: 10px;
+    font-size: 13px;
+}
+
+.annotation-composer small {
+    display: block;
+    margin: 4px 0 12px;
+    color: #687169;
+    font: 9px Bahnschrift, sans-serif;
+}
+
+.annotation-composer__actions {
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.annotation-composer__actions button {
+    padding: 7px 11px;
+    border: 1px solid #353d36;
+}
+
+.annotation-composer__actions .confirm {
+    border-color: #8c6638;
+    background: #714d29;
+    color: #f0dfc7;
 }
 
 @media (max-width: 900px) {

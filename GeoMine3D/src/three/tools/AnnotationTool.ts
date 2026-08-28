@@ -10,6 +10,7 @@ export interface AnnotationResult {
 export interface AnnotationEnableOptions {
     onCreate?: (result: AnnotationResult) => void
     resolveText?: (index: number, point: THREE.Vector3) => string | null | undefined
+    onPoint?: (index: number, point: THREE.Vector3) => void
 }
 
 interface AnnotationVisual {
@@ -46,6 +47,7 @@ export class AnnotationTool {
     private annotationNodes = new Map<string, AnnotationVisual>()
     private onCreate?: (result: AnnotationResult) => void
     private resolveText?: (index: number, point: THREE.Vector3) => string | null | undefined
+    private onPoint?: (index: number, point: THREE.Vector3) => void
 
     constructor(scene: THREE.Scene, camera: THREE.Camera, domElement: HTMLElement) {
         this.scene = scene
@@ -62,6 +64,7 @@ export class AnnotationTool {
         this.enabled = true
         this.onCreate = options.onCreate
         this.resolveText = options.resolveText
+        this.onPoint = options.onPoint
         this.domElement.addEventListener('click', this.onClick)
     }
 
@@ -104,6 +107,16 @@ export class AnnotationTool {
         return [...this.results]
     }
 
+    // 由工作台编辑器确认文本后创建标注。
+    addAnnotation(position: THREE.Vector3, text: string) {
+        const normalized = text.trim()
+        if (!normalized) return null
+        const result = this.createAnnotation(position, normalized)
+        this.results.push(result)
+        this.onCreate?.(result)
+        return result
+    }
+
     // 在动画循环中调用，按相机距离刷新标注可读尺寸。
     update() {
         if (!this.annotationNodes.size) return
@@ -125,12 +138,14 @@ export class AnnotationTool {
         if (!point) return
 
         const index = this.results.length + 1
+        if (this.onPoint) {
+            this.onPoint(index, point)
+            return
+        }
         const text = this.getAnnotationText(index, point)
         if (!text) return
 
-        const result = this.createAnnotation(point, text)
-        this.results.push(result)
-        this.onCreate?.(result)
+        this.addAnnotation(point, text)
     }
 
     // 通过射线拾取获取场景落点。
