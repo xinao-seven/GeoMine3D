@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Float, String, Text
+from sqlalchemy import Double, Float, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -19,9 +19,9 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
     description: Mapped[str | None] = mapped_column(Text)
     coordinate_system: Mapped[str] = mapped_column(String(64), default="local", nullable=False)
-    origin_x: Mapped[float] = mapped_column(Float, default=0, nullable=False)
-    origin_y: Mapped[float] = mapped_column(Float, default=0, nullable=False)
-    origin_z: Mapped[float] = mapped_column(Float, default=0, nullable=False)
+    origin_x: Mapped[float] = mapped_column(Double, default=0, nullable=False)
+    origin_y: Mapped[float] = mapped_column(Double, default=0, nullable=False)
+    origin_z: Mapped[float] = mapped_column(Double, default=0, nullable=False)
     vertical_scale: Mapped[float] = mapped_column(Float, default=1, nullable=False)
 
     models: Mapped[list["ModelAsset"]] = relationship(
