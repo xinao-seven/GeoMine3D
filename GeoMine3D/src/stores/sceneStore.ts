@@ -67,6 +67,8 @@ export const useSceneStore = defineStore('scene', () => {
     const loadRequest = ref<ModelLoadRequest | null>(null)
     // 地层单元控制项（显隐/颜色/透明度）
     const stratumLayers = ref<StratumLayerControl[]>([])
+    // 数据库项目的投影坐标原点；用于让真实坐标模型与钻孔使用同一局部坐标系。
+    const coordinateOrigin = ref<{ x: number; y: number; z: number; verticalScale: number } | null>(null)
 
     // 定位目标（用于从其他页面跳转到 dashboard 时定位）
     const locateTarget = ref<{ type: string; id: string; name: string } | null>(null)
@@ -165,6 +167,10 @@ export const useSceneStore = defineStore('scene', () => {
         Object.assign(stratumLayers.value[index], patch)
     }
 
+    function setCoordinateOrigin(origin: { x: number; y: number; z: number; verticalScale: number } | null) {
+        coordinateOrigin.value = origin
+    }
+
     function locateTo(target: { type: string; id: string; name: string }) {
         locateTarget.value = target
     }
@@ -181,6 +187,7 @@ export const useSceneStore = defineStore('scene', () => {
         modelLoadStatus,
         loadRequest,
         stratumLayers,
+        coordinateOrigin,
         locateTarget,
         selectObject,
         setHighlight,
@@ -200,6 +207,7 @@ export const useSceneStore = defineStore('scene', () => {
         requestLoadModel,
         registerStratumLayers,
         updateStratumLayer,
+        setCoordinateOrigin,
         locateTo,
     }
 })

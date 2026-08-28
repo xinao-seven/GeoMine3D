@@ -39,11 +39,12 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useSceneStore, useBoreholeStore } from '@/stores'
+import { useSceneStore, useBoreholeStore, useWorkspaceStore } from '@/stores'
 import { storeToRefs } from 'pinia'
 
 const sceneStore = useSceneStore()
 const boreholeStore = useBoreholeStore()
+const workspaceStore = useWorkspaceStore()
 const { selectedObject } = storeToRefs(sceneStore)
 
 const typeLabel = computed(() => {
@@ -67,6 +68,7 @@ async function loadBoreholeChart() {
   const obj = selectedObject.value
   if (obj?.type === 'borehole') {
     await boreholeStore.fetchDetail(obj.id)
+    workspaceStore.openDock('borehole')
   }
 }
 </script>

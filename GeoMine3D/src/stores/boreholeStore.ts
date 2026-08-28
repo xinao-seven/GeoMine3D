@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { BoreholeItem, BoreholeDetail, BoreholeListQuery } from '@/types'
 import { boreholeApi } from '@/api'
+import { toBoreholeDetail, workspaceApi } from '@/api/workspace'
 
 export const useBoreholeStore = defineStore('borehole', () => {
     // 钻孔列表数据（管理页和场景导入使用）
@@ -26,7 +27,17 @@ export const useBoreholeStore = defineStore('borehole', () => {
     async function fetchDetail(id: string) {
         loading.value = true
         try {
-            currentDetail.value = await boreholeApi.getBoreholeDetail(id)
+            const cached = list.value.find(item => item.id === id) as BoreholeDetail | undefined
+            if (cached?.layers) {
+                currentDetail.value = cached
+                return
+            }
+            try {
+                currentDetail.value = toBoreholeDetail(await workspaceApi.getBorehole(id))
+            } catch {
+                // 保留旧页面在旧服务运行时的兼容能力。
+                currentDetail.value = await boreholeApi.getBoreholeDetail(id)
+            }
         } finally {
             loading.value = false
         }

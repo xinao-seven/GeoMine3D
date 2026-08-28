@@ -1,4 +1,5 @@
 import axios from 'axios'
+import type { BoreholeDetail } from '@/types'
 
 export interface ProjectRecord {
     id: string
@@ -72,7 +73,26 @@ export const workspaceApi = {
     async listBoreholes(projectId: string) {
         return (await workspaceClient.get<DataResponse<BoreholeRecord[]>>(`/projects/${projectId}/boreholes`)).data.data
     },
+    async getBorehole(boreholeId: string) {
+        return (await workspaceClient.get<DataResponse<BoreholeRecord>>(`/boreholes/${boreholeId}`)).data.data
+    },
     modelFileUrl(modelId: string) {
         return `/api/v1/models/${modelId}/file`
     },
+}
+
+export function toBoreholeDetail(item: BoreholeRecord): BoreholeDetail {
+    return {
+        id: item.id,
+        name: item.name || item.code,
+        totalDepth: item.total_depth,
+        layerCount: item.segments.length,
+        location: { x: item.x, y: item.y, z: item.z },
+        layers: item.segments.map(segment => ({
+            layerName: segment.layer_name,
+            topDepth: segment.top_depth,
+            bottomDepth: segment.bottom_depth,
+            thickness: segment.thickness,
+        })),
+    }
 }

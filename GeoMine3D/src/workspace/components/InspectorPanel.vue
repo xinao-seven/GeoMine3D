@@ -12,8 +12,6 @@
         <div class="property-wrap"><PropertyPanel /></div>
         <div class="inspector-section">
             <div class="section-title">显示参数</div>
-            <label><span>地层透明度</span><b>{{ Math.round(opacity.stratum * 100) }}%</b></label>
-            <el-slider :model-value="opacity.stratum * 100" :show-tooltip="false" @input="setOpacity" />
             <label><span>边缘线</span><el-switch :model-value="showEdges" size="small" @change="sceneStore.setShowEdges($event as boolean)" /></label>
         </div>
     </aside>
@@ -25,10 +23,9 @@ import { storeToRefs } from 'pinia'
 import PropertyPanel from '@/components/panels/PropertyPanel.vue'
 import { useSceneStore } from '@/stores'
 const sceneStore = useSceneStore()
-const { selectedObject, opacity, showEdges } = storeToRefs(sceneStore)
+const { selectedObject, showEdges } = storeToRefs(sceneStore)
 const typeLabels: Record<string, string> = { stratum: '地层单元', borehole: '钻孔', workingface: '工作面' }
 const typeLabel = computed(() => typeLabels[selectedObject.value?.type || ''] || '空间对象')
-function setOpacity(value: number | number[]) { if (typeof value === 'number') sceneStore.setOpacity('stratum', value / 100) }
 </script>
 
 <style scoped>

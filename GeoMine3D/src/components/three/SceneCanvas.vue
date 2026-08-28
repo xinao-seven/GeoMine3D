@@ -246,6 +246,7 @@ const {
     loadRequest,
     showEdges,
     stratumLayers,
+    coordinateOrigin,
     toolState,
     measurements,
     lastMeasurementDistance,
@@ -344,13 +345,44 @@ async function loadStratumModel(model: ModelItem) {
     const stratumLoader = new StratumModelLoader()
     try {
         const object = await stratumLoader.load(model)
+        alignProjectedModel(object)
         modelManager.addModel({ id: model.id, name: model.name, type: 'stratum', object })
         registerStratumLayersFromObject(object, model.id, model.name)
     } catch {
         addPlaceholderStratum(model)
     }
-    layerManager.setLayerOpacity('stratum', opacity.value.stratum)
     layerManager.setLayerEdgesVisible('stratum', showEdges.value)
+}
+
+function alignProjectedModel(object: THREE.Object3D) {
+    const origin = coordinateOrigin.value
+    if (!origin) return
+    const center = new THREE.Box3().setFromObject(object).getCenter(new THREE.Vector3())
+    const xProjected = Math.abs(center.x) >= 100000
+    const yProjected = Math.abs(center.y) >= 100000
+    const zProjected = Math.abs(center.z) >= 100000
+    if (!xProjected || (!yProjected && !zProjected)) return
+
+    if (yProjected) {
+        // 主数据格式：X/Y 为投影平面，Z 为已夸张高程。
+        object.position.x -= origin.x
+        object.position.y -= origin.y
+        object.position.z -= origin.z * origin.verticalScale
+        object.userData.axisMapping = 'XYZ'
+    } else {
+        // 部分旧模型为 Y-up：X/Z 为投影平面，Y 为已夸张高程，先交换 Y/Z。
+        const axisMapping = new THREE.Matrix4().set(
+            1, 0, 0, -origin.x,
+            0, 0, 1, -origin.y,
+            0, 1, 0, -origin.z * origin.verticalScale,
+            0, 0, 0, 1,
+        )
+        object.applyMatrix4(axisMapping)
+        object.userData.axisMapping = 'XZY'
+    }
+    object.updateMatrixWorld(true)
+    object.userData.coordinateMode = 'projected'
+    object.userData.coordinateOrigin = { ...origin }
 }
 
 async function loadWorkingFaceModel(model: ModelItem) {
@@ -366,7 +398,7 @@ async function loadWorkingFaceModel(model: ModelItem) {
 async function loadBoreholeModel(
     borehole: BoreholeItem,
     index: number,
-    origin?: { x: number; y: number; z: number },
+    origin?: { x: number; y: number; z: number; verticalScale: number },
 ) {
     const boreholeLoader = new BoreholeModelLoader()
     let position: { x: number; y: number; z: number }
@@ -374,7 +406,7 @@ async function loadBoreholeModel(
         position = {
             x: borehole.location.x - (origin?.x ?? 0),
             y: borehole.location.y - (origin?.y ?? 0),
-            z: (borehole.location.z - (origin?.z ?? 0)) * BOREHOLE_VERTICAL_SCALE,
+            z: (borehole.location.z - (origin?.z ?? 0)) * (origin?.verticalScale ?? BOREHOLE_VERTICAL_SCALE),
         }
     } else {
         const spacing = 500
@@ -385,19 +417,25 @@ async function loadBoreholeModel(
             z: 0,
         }
     }
-    const object = boreholeLoader.createBoreholeObject(borehole, position, BOREHOLE_VERTICAL_SCALE)
+    const object = boreholeLoader.createBoreholeObject(
+        borehole,
+        position,
+        origin?.verticalScale ?? BOREHOLE_VERTICAL_SCALE,
+    )
     modelManager.addModel({ id: borehole.id, name: borehole.name, type: 'borehole', object })
 }
 
 async function loadAllBoreholeModels(boreholes: BoreholeItem[]) {
     const located = boreholes.filter((item) => item.location).map((item) => item.location!)
-    const origin = located.length
+    const projectOrigin = coordinateOrigin.value
+    const origin = projectOrigin ?? (located.length
         ? {
             x: located.reduce((sum, item) => sum + item.x, 0) / located.length,
             y: located.reduce((sum, item) => sum + item.y, 0) / located.length,
             z: located.reduce((sum, item) => sum + item.z, 0) / located.length,
+            verticalScale: BOREHOLE_VERTICAL_SCALE,
         }
-        : undefined
+        : undefined)
     for (let i = 0; i < boreholes.length; i += 1) {
         const borehole = boreholes[i]
         if (modelManager.getModel(borehole.id)) {
@@ -570,7 +608,6 @@ async function loadDroppedGLB(file: File) {
         if (controls.length) {
             sceneStore.registerStratumLayers(controls)
         }
-        layerManager.setLayerOpacity('stratum', opacity.value.stratum)
         layerManager.setLayerEdgesVisible('stratum', showEdges.value)
         fitCameraToType(null, true)
         if (toolState.value.clipEnabled) {
@@ -927,6 +964,15 @@ watch(stratumLayers, (layers) => {
         applyStratumLayerControl(layer)
     }
 }, { deep: true })
+
+watch(coordinateOrigin, (origin) => {
+    if (!origin || !modelManager) return
+    for (const model of modelManager.getModelsByType('stratum')) {
+        if (model.object.userData.coordinateMode !== 'projected') {
+            alignProjectedModel(model.object)
+        }
+    }
+})
 
 watch(() => toolState.value.clipHeight, (height) => {
     if (clipTool && Math.abs(clipTool.getHeight() - height) > 1e-6) {

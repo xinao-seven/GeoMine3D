@@ -33,8 +33,6 @@
             </div>
             <div class="scene-options">
                 <label><span>显示地层边缘</span><el-switch :model-value="showEdges" size="small" @change="sceneStore.setShowEdges($event as boolean)" /></label>
-                <label><span>地层透明度</span><b>{{ Math.round(opacity.stratum*100) }}%</b></label>
-                <el-slider :model-value="opacity.stratum*100" :show-tooltip="false" @input="setStratumOpacity" />
             </div>
         </div>
         <div v-else class="panel-body" v-loading="loading">
@@ -69,14 +67,14 @@
 import { computed, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
-import { workspaceApi, type BoreholeRecord, type ModelAssetRecord } from '@/api/workspace'
+import { toBoreholeDetail, workspaceApi, type BoreholeRecord, type ModelAssetRecord } from '@/api/workspace'
 import { useSceneStore } from '@/stores'
 import type { BoreholeItem, ModelItem } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
 const sceneStore = useSceneStore()
-const { layerVisible, opacity, showEdges, stratumLayers } = storeToRefs(sceneStore)
+const { layerVisible, showEdges, stratumLayers } = storeToRefs(sceneStore)
 const layerGroups = [
     { type: 'stratum' as const, label: '地层模型' },
     { type: 'borehole' as const, label: '钻孔' },
@@ -117,15 +115,8 @@ function modelStatus(asset: ModelAssetRecord) {
 }
 
 function loadAllBoreholes() {
-    const items: BoreholeItem[] = boreholes.value.map(item => ({
-        id: item.id, name: item.name || item.code, totalDepth: item.total_depth,
-        layerCount: item.segments.length, location: { x: item.x, y: item.y, z: item.z },
-    }))
+    const items: BoreholeItem[] = boreholes.value.map(toBoreholeDetail)
     sceneStore.requestLoadModel({ type: 'borehole', id: '__all__', name: '全部钻孔', boreholeList: items })
-}
-
-function setStratumOpacity(value: number | number[]) {
-    if (typeof value === 'number') sceneStore.setOpacity('stratum', value / 100)
 }
 
 function setSelectedLayerColor(value: string | null) {

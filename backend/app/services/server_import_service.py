@@ -157,7 +157,8 @@ class ServerDataImportService:
         project.origin_x = origin_x
         project.origin_y = origin_y
         project.origin_z = origin_z
-        project.vertical_scale = 1
+        # 现有静态模型生成流程已对高程使用 20 倍夸张，钻孔必须采用同一比例。
+        project.vertical_scale = 20
         await self.session.flush()
         return project
 

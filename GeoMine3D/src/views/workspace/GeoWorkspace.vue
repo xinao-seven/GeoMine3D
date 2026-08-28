@@ -73,9 +73,19 @@ function onGlobalKeydown(event: KeyboardEvent) {
 }
 onMounted(async()=>{
     window.addEventListener('keydown', onGlobalKeydown)
-    if(route.params.projectId!=='local'){try{project.value=await workspaceApi.getProject(String(route.params.projectId))}catch{}}
+    if(route.params.projectId!=='local'){
+        try{
+            project.value=await workspaceApi.getProject(String(route.params.projectId))
+            sceneStore.setCoordinateOrigin({x:project.value.origin_x,y:project.value.origin_y,z:project.value.origin_z,verticalScale:project.value.vertical_scale})
+        }catch{}
+    } else {
+        sceneStore.setCoordinateOrigin(null)
+    }
 })
-onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
+onUnmounted(() => {
+    window.removeEventListener('keydown', onGlobalKeydown)
+    sceneStore.setCoordinateOrigin(null)
+})
 </script>
 
 <style scoped>
