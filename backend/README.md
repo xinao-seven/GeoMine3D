@@ -8,6 +8,7 @@
 Copy-Item .env.example .env
 docker compose up -d mysql
 alembic upgrade head
+python scripts/import_server_data.py
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -23,7 +24,13 @@ API 文档：`http://127.0.0.1:8000/docs`
 - `app/core`：配置、数据库和异常处理
 - `alembic`：数据库迁移
 
-模型文件不写入 MySQL。数据库只保存路径、版本、hash、包围盒等元数据，实际 GLB 文件保存在 `uploads/models`，生产环境可替换为对象存储。
+`import_server_data.py` 会从 `../server/data` 读取钻孔、地层和工作面，从
+`../server/static/models` 扫描 GLB；两个目录都能通过 `.env` 覆盖。命令可重复执行，
+业务记录按项目和业务键更新，每次执行会新增一条 `import_runs` 审计记录。
+
+模型文件不写入 MySQL。数据库只保存路径、版本、hash、包围盒等元数据；导入的
+GLB 继续保存在 `server/static/models`，新上传版本保存在 `uploads/models`，生产环境
+可进一步替换为对象存储。
 
 ## 验证
 

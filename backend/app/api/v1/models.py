@@ -47,11 +47,19 @@ async def get_model_file(model_id: str, session: DbSession):
     version = await session.get(ModelVersion, asset.current_version_id)
     if version is None:
         raise AppError("MODEL_FILE_NOT_FOUND", "模型版本不存在", status_code=404)
-    path = (settings.upload_path / version.file_path).resolve()
-    upload_root = settings.upload_path.resolve()
-    if upload_root not in path.parents or not path.is_file():
+    roots = {
+        "upload": settings.upload_path,
+        "server_static": settings.source_model_path,
+    }
+    root = roots.get(version.storage_scope)
+    if root is None:
+        raise AppError("MODEL_STORAGE_INVALID", "模型存储位置无效", status_code=500)
+    root = root.resolve()
+    path = (root / version.file_path).resolve()
+    if root not in path.parents or not path.is_file():
         raise AppError("MODEL_FILE_NOT_FOUND", "模型文件不存在", status_code=404)
-    return FileResponse(path, filename=path.name, media_type="model/gltf-binary")
+    media_type = "model/gltf+json" if path.suffix.lower() == ".gltf" else "model/gltf-binary"
+    return FileResponse(path, filename=path.name, media_type=media_type)
 
 
 @router.patch("/models/{model_id}", response_model=DataResponse[ModelAssetRead])
