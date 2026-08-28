@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from app.models.asset import ModelAsset
     from app.models.borehole import Borehole
     from app.models.scene import Annotation, SceneConfig
+    from app.models.workspace import ImportRun, WorkingFace
 
 
 class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -33,5 +34,11 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="project", cascade="all, delete-orphan"
     )
     annotations: Mapped[list["Annotation"]] = relationship(
+        back_populates="project", cascade="all, delete-orphan"
+    )
+    working_faces: Mapped[list["WorkingFace"]] = relationship(
+        back_populates="project", cascade="all, delete-orphan"
+    )
+    import_runs: Mapped[list["ImportRun"]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
     )

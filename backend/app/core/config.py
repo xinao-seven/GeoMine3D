@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     app_name: str = "GeoMine3D API"
     app_env: str = "development"
-    debug: bool = True
+    debug: bool = False
     api_v1_prefix: str = "/api/v1"
     database_url: str = (
         "mysql+asyncmy://geomine:geomine@127.0.0.1:3306/geomine3d?charset=utf8mb4"
@@ -29,11 +29,23 @@ class Settings(BaseSettings):
     upload_dir: Path = Path("uploads")
     model_public_prefix: str = "/uploads"
     max_upload_size_mb: int = 1024
+    source_data_dir: Path = Path("../server/data")
+    source_model_dir: Path = Path("../server/static/models")
 
     @property
     def upload_path(self) -> Path:
         path = self.upload_dir
         return path if path.is_absolute() else BACKEND_DIR / path
+
+    @property
+    def source_data_path(self) -> Path:
+        path = self.source_data_dir
+        return path if path.is_absolute() else (BACKEND_DIR / path).resolve()
+
+    @property
+    def source_model_path(self) -> Path:
+        path = self.source_model_dir
+        return path if path.is_absolute() else (BACKEND_DIR / path).resolve()
 
 
 @lru_cache

@@ -25,6 +25,7 @@ class ModelVersionRead(BaseModel):
     id: str
     version: int
     file_path: str
+    storage_scope: str
     file_size: int
     content_hash: str
     draco_compressed: bool
