@@ -1,6 +1,6 @@
 # GeoMine3D FastAPI Backend
 
-新的后端位于 `backend/app`，目标技术栈为 FastAPI、SQLAlchemy 2.0、Alembic 和 MySQL 8。旧 Django 目录在迁移完成前仅作为数据规则参照，不再是新功能入口。
+后端位于 `backend/app`，技术栈为 FastAPI、SQLAlchemy 2.0、Alembic 和 MySQL 8。旧 Django 实现已经移除，历史源数据继续由 `server/data` 和 `server/static/models` 提供。
 
 ## 本地启动
 

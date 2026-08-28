@@ -14,11 +14,13 @@ npm run preview      # Preview production build
 ### Backend (backend/)
 ```bash
 pip install -r requirements.txt
-python scripts/create_sample_data.py   # Generate boreholes.xlsx
-python manage.py runserver 8000        # Start Django at localhost:8000
+docker compose up -d mysql
+alembic upgrade head
+python scripts/import_server_data.py
+uvicorn app.main:app --reload --port 8000
 ```
 
-No test or lint tooling is configured (no vitest/jest, no eslint/prettier, no pytest).
+Backend tests use `pytest`. No frontend test or lint tooling is configured.
 
 ## Project Structure
 
@@ -39,24 +41,24 @@ GeoMine3D/                  # Frontend: Vue3 + TS + Vite + Three.js + ECharts
 ├── vite.config.ts          # Proxy /api /static /data → localhost:8000
 └── tsconfig*.json          # @/* alias → ./src/*
 
-backend/                    # Backend: Django 4.2 + DRF (no auth, no DB for biz data)
-├── config/                 # settings.py, urls.py
-├── apps/
-│   ├── common/             # Unified JSON response + exception handling
-│   └── geology/            # Views, URLs, services (model, borehole, workingface, analysis, boundary, geotiff)
+backend/                    # Backend: FastAPI + SQLAlchemy + MySQL
+├── app/                    # API, services, repositories, models and schemas
+├── alembic/                # Database migrations
+├── scripts/                # Data import helpers
+└── tests/                  # Backend tests
+
+server/                     # Preserved legacy data service and source assets
 ├── data/                   # JSON/Excel/SHP/TIFF business data files
-├── scripts/                # Helper scripts
 └── static/models/          # .glb model files
 ```
 
 ## Architecture
 
 - **No authentication** or user system.
-- **No database** for business data — all data comes from JSON/Excel files in `backend/data/`. SQLite exists only for Django internals. Borehole strata Excel files in `backend/data/boreholes/` are auto-scanned.
-- **Three.js scene** does NOT auto-load on mount — user clicks "加载场景" button in overlay to trigger `loadSceneData()`.
-- **ECharts** on `/analysis` page uses 2x2 grid layout via `useResizeObserver`.
+- Business metadata is persisted in MySQL through SQLAlchemy; source data is imported from `server/data/` and model files remain in `server/static/models/`.
+- The primary frontend is the project center and `/workspace/:projectId` visualization workbench.
 - **Drag-and-drop** .glb files onto scene to load models.
-- Backend API returns unified format: `{code, message, data}`. CORS is fully open.
+- FastAPI responses use the unified format `{code, message, data}` and expose OpenAPI docs at `/docs`.
 
 ## Key Conventions
 
@@ -71,8 +73,8 @@ backend/                    # Backend: Django 4.2 + DRF (no auth, no DB for biz 
 
 | File | Location |
 |------|----------|
-| Model metadata | `backend/data/models_meta.json` |
-| Working face data | `backend/data/workingfaces.json` |
-| Borehole strata | `backend/data/boreholes/*.xlsx` (auto-scanned) |
-| Borehole coordinates | `backend/data/location/钻孔位置.xlsx` |
-| .glb models | `backend/static/models/` |
+| Model metadata | `server/data/models_meta.json` |
+| Working face data | `server/data/workingfaces.json` |
+| Borehole strata | `server/data/boreholes/*.xlsx` |
+| Borehole coordinates | `server/data/location/钻孔位置.xlsx` |
+| .glb models | `server/static/models/` |

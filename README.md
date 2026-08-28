@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/Three.js-000000?style=flat-square&logo=threedotjs&logoColor=white" alt="Three.js" />
   <img src="https://img.shields.io/badge/ECharts-AA344D?style=flat-square&logo=apacheecharts&logoColor=white" alt="ECharts" />
   <img src="https://img.shields.io/badge/Element_Plus-409EFF?style=flat-square&logo=element&logoColor=white" alt="Element Plus" />
-  <img src="https://img.shields.io/badge/Django-092E20?style=flat-square&logo=django&logoColor=white" alt="Django" />
+  <img src="https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI" />
   <img src="https://img.shields.io/badge/Pinia-FFD859?style=flat-square&logo=pinia&logoColor=black" alt="Pinia" />
   <img src="https://img.shields.io/badge/Vite-646CFF?style=flat-square&logo=vite&logoColor=white" alt="Vite" />
 </p>
@@ -28,7 +28,7 @@ GeoMine3D 是一个面向煤矿行业的**三维地质可视化分析平台原�
 - **钻孔数据驱动** — 通过 Excel 导入钻孔分层数据，自动解析并生成三维钻孔柱状图
 - **场景工具集** — 提供剖切、测量、标注、炸开、高亮等多种三维分析工具
 - **业务联动分析** — 三维场景与二维图表双向联动，点击地层/钻孔即可查看对应属性与统计数据
-- **前后端分离架构** — Vue 3 前端 + Django REST 后端，接口化数据交互
+- **前后端分离架构** — Vue 3 前端 + FastAPI 后端，使用 SQLAlchemy 和 MySQL 持久化业务数据
 
 ### 主要功能
 
@@ -65,9 +65,10 @@ GeoMine3D 是一个面向煤矿行业的**三维地质可视化分析平台原�
 
 | 技术 | 用途 |
 |------|------|
-| **Python** + **Django** | Web 框架 |
-| **Django REST Framework** | REST API |
-| **pandas** + **openpyxl** | Excel 钻孔数据解析 |
+| **Python** + **FastAPI** | Web 框架与 REST API |
+| **SQLAlchemy** + **MySQL** | ORM 与业务数据持久化 |
+| **Alembic** | 数据库版本迁移 |
+| **openpyxl** | Excel 钻孔数据解析 |
 | **pyproj** | 地理坐标投影转换 |
 
 ---
@@ -102,31 +103,14 @@ GeoMine3D/
 │   │   └── types/                       # TypeScript 类型定义
 │   └── package.json
 │
-└── backend/                             # 后端项目
-    ├── config/                          # Django 配置
-    │   ├── settings.py
-    │   └── urls.py
-    ├── apps/
-    │   ├── common/                      # 统一响应与异常处理
-    │   └── geology/                     # 业务模块
-    │       ├── urls.py                  # 17 个 REST 接口定义
-    │       ├── views.py                 # 视图层
-    │       └── services/                # 业务服务层
-    │           ├── model_service.py
-    │           ├── borehole_excel_service.py
-    │           ├── workingface_service.py
-    │           └── analysis_service.py
-    ├── data/                            # 业务数据文件
-    │   ├── boreholes/                   # 钻孔 Excel 数据
-    │   ├── location/                    # 钻孔坐标数据
-    │   ├── models_meta.json             # 模型元数据
-    │   └── workingfaces.json            # 工作面数据
-    ├── static/models/                   # .glb 3D 模型文件
-    │   ├── strata/
-    │   ├── boreholes/
-    │   └── workingfaces/
-    └── scripts/                         # 工具脚本
-        └── create_sample_data.py
+├── backend/                             # FastAPI 后端项目
+│   ├── app/                             # API、服务、仓储、模型和 Schema
+│   ├── alembic/                         # 数据库迁移
+│   ├── scripts/import_server_data.py    # 历史数据导入
+│   └── tests/                           # 后端测试
+└── server/                              # 保留的数据服务与源数据目录
+    ├── data/                            # 钻孔、坐标和工作面源数据
+    └── static/models/                   # 本地 GLB 模型
 ```
 
 ---
@@ -147,14 +131,18 @@ cd backend
 # 安装依赖
 pip install -r requirements.txt
 
-# （可选）生成示例钻孔 Excel 数据
-python scripts/create_sample_data.py
+# 启动 MySQL 并初始化数据库
+docker compose up -d mysql
+alembic upgrade head
 
-# 启动 Django 开发服务器
-python manage.py runserver 8000
+# 导入 server 下的钻孔和模型数据
+python scripts/import_server_data.py
+
+# 启动 FastAPI
+uvicorn app.main:app --reload --port 8000
 ```
 
-后端 API 地址：`http://localhost:8000/api/`
+后端 API 地址：`http://localhost:8000/api/v1/`，接口文档：`http://localhost:8000/docs`
 
 ### 前端启动
 
@@ -170,11 +158,11 @@ npm run dev
 
 前端地址：`http://localhost:5173`
 
-> 开发服务器已配置代理，`/api`、`/static`、`/data` 请求自动转发至后端。
+> 开发服务器已配置代理，`/api` 请求转发至 FastAPI；旧数据和静态模型仍由 `server/` 目录提供。
 
 ### 数据准备
 
-将 `.glb` 模型文件放入 `backend/static/models/` 对应子目录（`strata/`、`boreholes/`、`workingfaces/`），后端会自动扫描并提供元数据接口。钻孔数据使用 `scripts/create_sample_data.py` 生成示例，或按格式自行准备 Excel 文件。
+将 `.glb` 模型文件放入 `server/static/models/`，钻孔源数据放入 `server/data/`，然后执行 `python scripts/import_server_data.py` 将业务元数据同步到 MySQL。
 
 ---
 
@@ -188,18 +176,16 @@ npm run dev
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/dashboard/summary` | 总览聚合数据 |
-| GET | `/api/models` | 模型列表（支持 `type`/`keyword` 筛选） |
-| GET | `/api/models/{id}` | 模型详情 |
-| GET | `/api/models/{id}/resource` | 模型资源路径 |
-| GET | `/api/boreholes` | 钻孔列表（支持 `keyword`/`min_depth`/`max_depth`） |
-| GET | `/api/boreholes/{id}` | 钻孔详情（含分层数据） |
-| GET | `/api/boreholes/search` | 钻孔搜索 |
-| GET | `/api/workingfaces` | 工作面列表（支持 `status` 筛选） |
-| GET | `/api/workingfaces/{id}` | 工作面详情 |
-| GET | `/api/analysis/thickness-distribution` | 地层厚度分布统计 |
-| GET | `/api/analysis/borehole-depth-distribution` | 钻孔深度分布统计 |
-| GET | `/api/analysis/workingface-status` | 工作面状态统计 |
-| GET | `/api/analysis/borehole-count` | 钻孔数量统计 |
-| GET | `/api/analysis/layer-frequency` | 地层频次统计 |
-| GET | `/api/analysis/borehole-xy-raw` | 钻孔 XY 散点坐标 |
+| GET / POST | `/api/v1/projects` | 项目列表与创建 |
+| GET / PATCH / DELETE | `/api/v1/projects/{project_id}` | 项目详情、更新与删除 |
+| GET / POST | `/api/v1/projects/{project_id}/models` | 项目模型列表与创建 |
+| GET / PATCH / DELETE | `/api/v1/models/{model_id}` | 模型元数据管理 |
+| GET | `/api/v1/models/{model_id}/file` | 获取模型文件 |
+| POST | `/api/v1/models/{model_id}/versions` | 上传模型版本 |
+| GET / POST | `/api/v1/projects/{project_id}/boreholes` | 钻孔列表与创建 |
+| GET / PATCH / DELETE | `/api/v1/boreholes/{borehole_id}` | 钻孔详情与管理 |
+| PUT | `/api/v1/boreholes/{borehole_id}/segments` | 替换钻孔分层数据 |
+| GET / POST | `/api/v1/projects/{project_id}/scenes` | 场景配置列表与创建 |
+| GET / PUT / DELETE | `/api/v1/scenes/{scene_id}` | 场景配置管理 |
+| GET | `/api/v1/projects/{project_id}/working-faces` | 工作面列表 |
+| GET | `/api/v1/projects/{project_id}/imports` | 数据导入审计记录 |
