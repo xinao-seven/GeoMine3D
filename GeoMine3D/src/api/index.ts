@@ -1,5 +1,0 @@
-export * as modelApi from './modules/model'
-export * as boreholeApi from './modules/borehole'
-export * as workingfaceApi from './modules/workingface'
-export * as analysisApi from './modules/analysis'
-export { default as request } from './request'

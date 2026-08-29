@@ -229,7 +229,6 @@ import { AnnotationTool } from '@/three/tools/AnnotationTool'
 import { StratumExplodeTool } from '@/three/tools/StratumExplodeTool'
 import { AxisGizmoTool } from '@/three/tools/AxisGizmoTool'
 import { BoundingBoxTool } from '@/three/tools/BoundingBoxTool'
-import { modelApi, boreholeApi } from '@/api'
 import { useSceneStore, useBoreholeStore, useWorkspaceStore } from '@/stores'
 import type { ModelItem, BoreholeItem, StratumLayerControl } from '@/types'
 import type { ModelLoadRequest } from '@/stores/sceneStore'
@@ -242,8 +241,6 @@ const workspaceStore = useWorkspaceStore()
 
 const {
     layerVisible,
-    opacity,
-    locateTarget,
     loadRequest,
     showEdges,
     stratumLayers,
@@ -338,11 +335,6 @@ function stopAnimate() {
 }
 
 // ==================== Model Loading ====================
-
-async function findModelById(type: 'stratum' | 'workingface', id: string) {
-    const modelList = await modelApi.getModelList({ type })
-    return modelList.find((item) => item.id === id)
-}
 
 async function loadStratumModel(model: ModelItem) {
     const stratumLoader = new StratumModelLoader()
@@ -463,43 +455,20 @@ async function loadModelByRequest(req: ModelLoadRequest) {
         let focusType: 'stratum' | 'borehole' | 'workingface' | null = null
 
         if (req.type === 'stratum') {
-            const model = req.model || await findModelById('stratum', req.id)
-            if (!model) throw new Error(`未找到地层模型: ${req.id}`)
-            await loadStratumModel(model)
+            await loadStratumModel(req.model)
             focusType = 'stratum'
         }
 
         if (req.type === 'workingface') {
-            const model = req.model || await findModelById('workingface', req.id)
-            if (!model) throw new Error(`未找到工作面模型: ${req.id}`)
-            await loadWorkingFaceModel(model)
+            await loadWorkingFaceModel(req.model)
             focusType = 'workingface'
         }
 
         if (req.type === 'borehole') {
-            if (req.id === '__all__') {
-                const boreholes = req.boreholeList && req.boreholeList.length
-                    ? req.boreholeList
-                    : await boreholeApi.getBoreholeList()
-                boreholeStore.list = boreholes
-                await loadAllBoreholeModels(boreholes)
-                focusType = 'borehole'
-                preferImmediateFocus = true
-            } else {
-                let borehole = req.borehole
-                let index = req.index ?? 0
-                if (!borehole) {
-                    const boreholes = await boreholeApi.getBoreholeList()
-                    const foundIndex = boreholes.findIndex((item) => item.id === req.id)
-                    if (foundIndex === -1) throw new Error(`未找到钻孔: ${req.id}`)
-                    borehole = boreholes[foundIndex]
-                    index = foundIndex
-                    boreholeStore.list = boreholes
-                }
-                await loadBoreholeModel(borehole, index)
-                focusType = 'borehole'
-                preferImmediateFocus = true
-            }
+            boreholeStore.list = req.boreholeList
+            await loadAllBoreholeModels(req.boreholeList)
+            focusType = 'borehole'
+            preferImmediateFocus = true
         }
 
         sceneManager.removeGrid()
@@ -884,7 +853,7 @@ async function initScene() {
     lightManager = new LightManager(sceneManager.scene)
     modelManager = new ModelManager(sceneManager)
     highlightManager = new HighlightManager()
-    layerManager = new LayerManager(modelManager, highlightManager)
+    layerManager = new LayerManager(modelManager)
     clipTool = new ClipTool(
         rendererManager.renderer,
         sceneManager.scene,
@@ -975,12 +944,6 @@ watch(layerVisible, (val) => {
     layerManager.setLayerVisible('workingface', val.workingface)
 }, { deep: true })
 
-watch(opacity, (val) => {
-    layerManager.setLayerOpacity('stratum', val.stratum)
-    layerManager.setLayerOpacity('borehole', val.borehole)
-    layerManager.setLayerOpacity('workingface', val.workingface)
-}, { deep: true })
-
 watch(showEdges, (visible) => {
     layerManager.setLayerEdgesVisible('stratum', visible)
 })
@@ -1018,19 +981,6 @@ watch(
     () => { syncToolRuntimeState() },
     { deep: true }
 )
-
-watch(locateTarget, (target) => {
-    if (!target) return
-    const model = modelManager.getModel(target.id)
-    if (model) {
-        const box = new THREE.Box3().setFromObject(model.object)
-        const center = box.getCenter(new THREE.Vector3())
-        cameraManager.flyTo(center, 2000)
-        controlsManager.controls.target.copy(center)
-        highlightManager.select(model.object)
-        rendererManager?.setOutlineSelectedObjects([model.object])
-    }
-})
 
 watch(loadRequest, (req) => {
     if (req) {

@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { BoreholeItem, BoreholeDetail, BoreholeListQuery } from '@/types'
-import { boreholeApi } from '@/api'
+import type { BoreholeItem, BoreholeDetail } from '@/types'
 import { toBoreholeDetail, workspaceApi } from '@/api/workspace'
 
 export const useBoreholeStore = defineStore('borehole', () => {
@@ -11,19 +10,6 @@ export const useBoreholeStore = defineStore('borehole', () => {
     const currentDetail = ref<BoreholeDetail | null>(null)
     // 钻孔相关接口加载状态
     const loading = ref(false)
-    // 钻孔列表查询条件（分页/筛选参数）
-    const query = ref<BoreholeListQuery>({})
-
-    async function fetchList(params?: BoreholeListQuery) {
-        loading.value = true
-        try {
-            if (params) query.value = params
-            list.value = await boreholeApi.getBoreholeList(query.value)
-        } finally {
-            loading.value = false
-        }
-    }
-
     async function fetchDetail(id: string) {
         loading.value = true
         try {
@@ -32,16 +18,11 @@ export const useBoreholeStore = defineStore('borehole', () => {
                 currentDetail.value = cached
                 return
             }
-            try {
-                currentDetail.value = toBoreholeDetail(await workspaceApi.getBorehole(id))
-            } catch {
-                // 保留旧页面在旧服务运行时的兼容能力。
-                currentDetail.value = await boreholeApi.getBoreholeDetail(id)
-            }
+            currentDetail.value = toBoreholeDetail(await workspaceApi.getBorehole(id))
         } finally {
             loading.value = false
         }
     }
 
-    return { list, currentDetail, loading, query, fetchList, fetchDetail }
+    return { list, currentDetail, loading, fetchDetail }
 })

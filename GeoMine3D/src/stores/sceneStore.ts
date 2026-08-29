@@ -3,7 +3,6 @@ import { ref, reactive } from 'vue'
 import type {
     SceneObject,
     LayerState,
-    OpacityState,
     ModelItem,
     BoreholeItem,
     StratumLayerControl,
@@ -13,35 +12,28 @@ import type {
 
 type ModelType = 'stratum' | 'borehole' | 'workingface'
 
-export interface ModelLoadRequest {
-    requestId: number
-    type: ModelType
+export type ModelLoadPayload = {
+    type: 'stratum' | 'workingface'
     id: string
     name: string
-    model?: ModelItem
-    borehole?: BoreholeItem
-    boreholeList?: BoreholeItem[]
-    index?: number
+    model: ModelItem
+} | {
+    type: 'borehole'
+    id: '__all__'
+    name: string
+    boreholeList: BoreholeItem[]
 }
+
+export type ModelLoadRequest = ModelLoadPayload & { requestId: number }
 
 export const useSceneStore = defineStore('scene', () => {
     // 当前在三维场景中被选中的对象（用于属性面板展示）
     const selectedObject = ref<SceneObject | null>(null)
-    // 当前高亮对象 id（用于跨组件高亮联动）
-    const highlightedId = ref<string | null>(null)
-
     // 三类图层的显示开关状态
     const layerVisible = reactive<LayerState>({
         stratum: true,
         borehole: true,
         workingface: true,
-    })
-
-    // 三类图层的透明度状态（0~1）
-    const opacity = reactive<OpacityState>({
-        stratum: 1.0,
-        borehole: 1.0,
-        workingface: 1.0,
     })
 
     // 地层边缘线显示开关
@@ -69,23 +61,12 @@ export const useSceneStore = defineStore('scene', () => {
     // 数据库项目的投影坐标原点；用于让真实坐标模型与钻孔使用同一局部坐标系。
     const coordinateOrigin = ref<{ x: number; y: number; z: number; verticalScale: number } | null>(null)
 
-    // 定位目标（用于从其他页面跳转到 dashboard 时定位）
-    const locateTarget = ref<{ type: string; id: string; name: string } | null>(null)
-
     function selectObject(obj: SceneObject | null) {
         selectedObject.value = obj
     }
 
-    function setHighlight(id: string | null) {
-        highlightedId.value = id
-    }
-
     function setLayerVisible(type: keyof LayerState, visible: boolean) {
         layerVisible[type] = visible
-    }
-
-    function setOpacity(type: keyof OpacityState, value: number) {
-        opacity[type] = Math.max(0, Math.min(1, value))
     }
 
     function setShowEdges(visible: boolean) {
@@ -135,7 +116,7 @@ export const useSceneStore = defineStore('scene', () => {
         modelLoadStatus[key] = { ...current, ...status }
     }
 
-    function requestLoadModel(payload: Omit<ModelLoadRequest, 'requestId'>) {
+    function requestLoadModel(payload: ModelLoadPayload) {
         const status = getModelLoadStatus(payload.type, payload.id)
         if (status.loaded || status.loading) return
         setModelLoadStatus(payload.type, payload.id, { loading: true })
@@ -166,15 +147,9 @@ export const useSceneStore = defineStore('scene', () => {
         coordinateOrigin.value = origin
     }
 
-    function locateTo(target: { type: string; id: string; name: string }) {
-        locateTarget.value = target
-    }
-
     return {
         selectedObject,
-        highlightedId,
         layerVisible,
-        opacity,
         showEdges,
         toolState,
         measurements,
@@ -183,11 +158,8 @@ export const useSceneStore = defineStore('scene', () => {
         loadRequest,
         stratumLayers,
         coordinateOrigin,
-        locateTarget,
         selectObject,
-        setHighlight,
         setLayerVisible,
-        setOpacity,
         setShowEdges,
         activateTool,
         setClipHeight,
@@ -202,6 +174,5 @@ export const useSceneStore = defineStore('scene', () => {
         registerStratumLayers,
         updateStratumLayer,
         setCoordinateOrigin,
-        locateTo,
     }
 })

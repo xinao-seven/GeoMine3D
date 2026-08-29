@@ -20,7 +20,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
-import PropertyPanel from '@/components/panels/PropertyPanel.vue'
+import PropertyPanel from '@/components/workspace/PropertyPanel.vue'
 import { useSceneStore } from '@/stores'
 const sceneStore = useSceneStore()
 const { selectedObject, showEdges } = storeToRefs(sceneStore)

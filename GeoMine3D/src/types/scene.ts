@@ -13,12 +13,6 @@ export interface LayerState {
   workingface: boolean
 }
 
-export interface OpacityState {
-  stratum: number
-  borehole: number
-  workingface: number
-}
-
 export interface StratumLayerControl {
   key: string
   modelId: string

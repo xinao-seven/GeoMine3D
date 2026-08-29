@@ -42,7 +42,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
-import BoreholeChart from '@/components/charts/BoreholeChart.vue'
+import BoreholeChart from '@/components/workspace/BoreholeChart.vue'
 import { useBoreholeStore, useSceneStore, useWorkspaceStore } from '@/stores'
 import type { WorkspaceDock } from '@/stores/workspaceStore'
 const store = useWorkspaceStore(); const sceneStore = useSceneStore(); const boreholeStore = useBoreholeStore()

@@ -23,8 +23,3 @@ export interface BoreholeDetail extends BoreholeItem {
   layers: BoreholeLayer[]
 }
 
-export interface BoreholeListQuery {
-  keyword?: string
-  min_depth?: number
-  max_depth?: number
-}

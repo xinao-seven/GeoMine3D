@@ -8,13 +8,13 @@ const routes = [
     {
         path: '/projects',
         name: 'ProjectCenter',
-        component: () => import('@/views/projects/ProjectCenter.vue'),
+        component: () => import('@/views/ProjectCenterView.vue'),
         meta: { title: '项目中心' },
     },
     {
         path: '/workspace/:projectId',
         name: 'GeoWorkspace',
-        component: () => import('@/views/workspace/GeoWorkspace.vue'),
+        component: () => import('@/views/GeoWorkspaceView.vue'),
         meta: { title: '三维地质工作台' },
     },
 ]
