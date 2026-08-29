@@ -272,3 +272,12 @@
 - 现象：`backend/apps`、`backend/config` 和 `backend/manage.py` 仍保留 Django 视图、配置与文件读取服务，容易与当前 FastAPI 启动入口混淆。
 - 处理：删除全部旧 Django 源文件和字节码缓存；保留 `backend/app`、Alembic、MySQL 配置及测试。独立的 `server` 数据服务目录未做任何修改。
 - 验证：仓库业务代码不再引用 Django 或 `manage.py`，FastAPI 测试通过，前端生产构建通过。
+
+## ISSUE-029：前端旧结构残留与根目录散落文件
+
+- 状态：已解决
+- 范围：前端清理 / 工程结构
+- 发现时间：2026-08-29
+- 现象：工作台重构完成后，`src/api/modules`、`src/components/charts|common|panels`、`src/views/analysis|*-management|workspace`、`src/workspace` 等旧目录已无文件但仍保留空目录；根目录散落 `test.js`、`retry.js`、`latest.js` 等临时脚本和两份面试准备 Markdown，`AGENTS.md`、`README.md`、`CLAUDE.md` 仍描述 Django 后端与旧版多页面结构。
+- 处理：删除全部空目录；临时脚本与个人笔记移入 gitignore 的 `archive/` 目录本地保存；按当前 FastAPI + 双视图（项目中心/工作台）结构同步更新 AGENTS.md、CLAUDE.md 和 README 的结构说明与功能表。
+- 验证：前端 `npm run build`（vue-tsc + vite）通过；`server/` 目录未做任何修改。

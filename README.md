@@ -39,9 +39,8 @@ GeoMine3D 是一个面向煤矿行业的**三维地质可视化分析平台原�
 | **图层管理** | 按类型控制显隐与透明度，支持地层子层的单独控制（显隐、颜色、透明度、边线） |
 | **三维分析工具** | 剖切工具（X/Y/Z 轴剖切、位置调节）、测量工具（两点距离）、标注工具（文本标签）、地层炸开工具 |
 | **钻孔可视化** | 从 Excel 解析钻孔分层数据，生成带地层颜色的三维柱状图，点击查看详情 |
-| **统计分析** | 4 种 ECharts 图表（地层厚度分布、钻孔深度分布、钻孔散点分布、地层频次统计），支持点击交互联动 |
-| **数据检索定位** | 钻孔/工作面关键字搜索，一键定位到三维场景中的对应位置 |
-| **管理页面** | 模型管理、钻孔管理、工作面管理三个数据管理页面，支持筛选、搜索与详情查看 |
+| **钻孔柱状图分析** | 底部分析 Dock 展示钻孔摘要（总深度、层数等指标）与 ECharts 地层柱状图，自适应尺寸 |
+| **项目中心** | 基于 MySQL 持久化的项目与模型资源列表，一键进入对应三维工作台 |
 
 ---
 
@@ -80,25 +79,19 @@ GeoMine3D/
 ├── GeoMine3D/                           # 前端项目
 │   ├── src/
 │   │   ├── api/                         # API 接口层
-│   │   │   ├── request.ts               # axios 实例与拦截器
-│   │   │   └── modules/                 # 各业务模块接口
+│   │   │   └── workspace.ts             # FastAPI /api/v1 统一接口模块
 │   │   ├── components/
-│   │   │   ├── common/                  # MainLayout、PageContainer
-│   │   │   ├── panels/                  # 图层面板、属性面板、搜索面板
-│   │   │   ├── charts/                  # 钻孔柱状图、统计图表
+│   │   │   ├── workspace/               # 工作台面板：资源树、属性、检查器、分析 Dock
 │   │   │   └── three/                   # 3D 场景画布组件
 │   │   ├── views/
-│   │   │   ├── dashboard/               # 三维分析主页面
-│   │   │   ├── model-management/        # 模型管理
-│   │   │   ├── borehole-management/     # 钻孔管理
-│   │   │   ├── workingface-management/  # 工作面管理
-│   │   │   └── analysis/               # 统计分析
+│   │   │   ├── ProjectCenterView.vue    # 项目中心 (/projects)
+│   │   │   └── GeoWorkspaceView.vue     # 三维地质工作台 (/workspace/:projectId)
 │   │   ├── three/                       # Three.js 引擎模块
 │   │   │   ├── core/                    # 场景/相机/渲染器/控制器/灯光
 │   │   │   ├── loaders/                 # 模型加载器
 │   │   │   ├── managers/                # 模型/图层/高亮/选择管理
 │   │   │   └── tools/                   # 剖切/测量/标注/炸开/坐标轴
-│   │   ├── stores/                      # Pinia 状态管理
+│   │   ├── stores/                      # Pinia 状态管理 (scene / borehole / workspace)
 │   │   ├── router/                      # 路由配置
 │   │   └── types/                       # TypeScript 类型定义
 │   └── package.json
