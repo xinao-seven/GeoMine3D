@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = 1024
     source_data_dir: Path = Path("../server/data")
     source_model_dir: Path = Path("../server/static/models")
+    frontend_dist_dir: Path = Path("../GeoMine3D/dist")
+    serve_frontend: bool = True
 
     @property
     def upload_path(self) -> Path:
@@ -45,6 +47,11 @@ class Settings(BaseSettings):
     @property
     def source_model_path(self) -> Path:
         path = self.source_model_dir
+        return path if path.is_absolute() else (BACKEND_DIR / path).resolve()
+
+    @property
+    def frontend_dist_path(self) -> Path:
+        path = self.frontend_dist_dir
         return path if path.is_absolute() else (BACKEND_DIR / path).resolve()
 
 

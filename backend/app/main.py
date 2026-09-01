@@ -1,9 +1,11 @@
 import time
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.router import api_router
@@ -54,3 +56,26 @@ app.mount(settings.model_public_prefix, StaticFiles(directory=settings.upload_pa
 @app.get("/health", tags=["system"])
 async def health() -> dict[str, str]:
     return {"status": "ok", "service": settings.app_name, "environment": settings.app_env}
+
+
+# Host the built frontend (GeoMine3D/dist) so the whole service is reachable
+# through this single port on the LAN. Must stay after all API routes so the
+# catch-all never shadows /api, /docs, /uploads or /health.
+if settings.serve_frontend:
+    _frontend_dist = settings.frontend_dist_path
+    if _frontend_dist.is_dir():
+        if (_frontend_dist / "assets").is_dir():
+            app.mount(
+                "/assets",
+                StaticFiles(directory=_frontend_dist / "assets"),
+                name="frontend-assets",
+            )
+
+        @app.get("/{full_path:path}", include_in_schema=False, response_model=None)
+        async def spa_fallback(full_path: str) -> FileResponse | JSONResponse:
+            if full_path.startswith(("api/", "uploads/", "docs", "openapi.json")):
+                return JSONResponse({"code": 404, "message": "Not Found", "data": None}, status_code=404)
+            candidate = (_frontend_dist / full_path).resolve()
+            if full_path and candidate.is_file() and candidate.is_relative_to(_frontend_dist):
+                return FileResponse(candidate)
+            return FileResponse(_frontend_dist / "index.html")
