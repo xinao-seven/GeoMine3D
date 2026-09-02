@@ -61,12 +61,15 @@ function buildOption(borehole: BoreholeDetail) {
                     const layer = layers[layerIdx]
                     const y0 = api.coord([0, layer.topDepth])
                     const y1 = api.coord([0, layer.bottomDepth])
+                    // 柱体只占网格宽度的一半并居中，避免看起来太"胖"
+                    const barWidth = params.coordSys.width * 0.5
+                    const barX = params.coordSys.x + (params.coordSys.width - barWidth) / 2
                     return {
                         type: 'rect',
                         shape: {
-                            x: params.coordSys.x + 10,
+                            x: barX,
                             y: y0[1],
-                            width: params.coordSys.width - 20,
+                            width: barWidth,
                             height: Math.max(1, y1[1] - y0[1]),
                         },
                         style: {

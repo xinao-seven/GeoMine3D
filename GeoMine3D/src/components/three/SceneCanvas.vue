@@ -69,7 +69,7 @@
                             @click="setClipAxis('z')"
                         >Z</el-button>
                     </div>
-                    <span class="clip-label">位置 {{ toolState.clipHeight.toFixed(2) }}</span>
+                    <span class="clip-label">位置 {{ formatClipPosition }}</span>
                     <el-slider
                         :model-value="toolState.clipHeight"
                         :min="clipRange.min"
@@ -207,7 +207,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, onMounted, onUnmounted, onActivated, onDeactivated, watch } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, onActivated, onDeactivated, watch } from 'vue'
 import * as THREE from 'three'
 import { storeToRefs } from 'pinia'
 import { DropLoader } from '@/three/loaders/DropLoader'
@@ -242,6 +242,7 @@ const workspaceStore = useWorkspaceStore()
 const {
     layerVisible,
     loadRequest,
+    unloadRequest,
     showEdges,
     stratumLayers,
     coordinateOrigin,
@@ -255,6 +256,18 @@ const canvasRef = ref<HTMLCanvasElement>()
 const fileInputRef = ref<HTMLInputElement>()
 const clipRange = ref({ min: -1000, max: 1000 })
 const clipStep = ref(1)
+
+// 剖切滑块操作的是场景局部坐标，标签换算回原始投影坐标显示：
+// 世界X=东向偏移、世界Y=20倍夸张高程偏移、世界Z=负的北向偏移
+const formatClipPosition = computed(() => {
+    const value = toolState.value.clipHeight
+    const origin = coordinateOrigin.value
+    if (!origin) return value.toFixed(2)
+    if (toolState.value.clipAxis === 'x') return (origin.x + value).toFixed(2)
+    if (toolState.value.clipAxis === 'y') return (origin.z + value / 20).toFixed(2)
+    return (origin.y - value).toFixed(2)
+})
+
 const rotateXAxisEnabled = ref(true)
 const stratumExploded = ref(false)
 const outlineEnabled = ref(false)
@@ -301,6 +314,7 @@ function animate() {
     controlsManager.update()
     annotationTool?.update()
     boundingBoxTool?.update()
+    measureTool?.update()
     lightManager.updateFromCamera(cameraManager.camera)
     rendererManager.render(sceneManager.scene, cameraManager.camera)
     axisGizmoTool?.render()
@@ -439,6 +453,28 @@ async function loadAllBoreholeModels(boreholes: BoreholeItem[]) {
         }
         await loadBoreholeModel(borehole, i, origin)
         sceneStore.setModelLoadStatus('borehole', borehole.id, { loaded: true, loading: false })
+    }
+}
+
+// 从场景中移除模型并同步清理状态、图层树与拾取目标。
+function unloadModelByRequest(req: { type: 'stratum' | 'borehole' | 'workingface'; id: string }) {
+    if (req.type === 'borehole') {
+        for (const model of modelManager.getModelsByType('borehole')) {
+            modelManager.removeModel(model.id)
+            sceneStore.clearLoadStatus('borehole', model.id)
+        }
+    } else {
+        modelManager.removeModel(req.id)
+        sceneStore.clearLoadStatus(req.type, req.id)
+        if (req.type === 'stratum') {
+            sceneStore.removeStratumLayersByModel(req.id)
+        }
+    }
+    sceneStore.selectObject(null)
+    refreshSelectionPickTargets()
+    boundingBoxTool?.refresh()
+    if (toolState.value.clipEnabled) {
+        syncToolRuntimeState()
     }
 }
 
@@ -930,7 +966,7 @@ async function initScene() {
         padding: 12,
     })
 
-    boundingBoxTool = new BoundingBoxTool(sceneManager.scene, modelManager, cameraManager.camera, canvasRef.value)
+    boundingBoxTool = new BoundingBoxTool(sceneManager.scene, modelManager, cameraManager.camera, canvasRef.value, () => coordinateOrigin.value)
 
     syncToolRuntimeState()
     startAnimate()
@@ -961,6 +997,7 @@ watch(coordinateOrigin, (origin) => {
             alignProjectedModel(model.object)
         }
     }
+    boundingBoxTool?.refresh()
 })
 
 watch(() => toolState.value.clipHeight, (height) => {
@@ -988,6 +1025,12 @@ watch(loadRequest, (req) => {
     }
 })
 
+watch(unloadRequest, (req) => {
+    if (req) {
+        unloadModelByRequest(req)
+    }
+})
+
 // ==================== Lifecycle ====================
 
 onMounted(() => { initScene() })
@@ -1011,6 +1054,7 @@ onDeactivated(() => {
 
 onUnmounted(() => {
     sceneStore.activateTool(null)
+    sceneStore.resetSceneSession()
     stopAnimate()
     resizeObserver?.disconnect()
     clipTool?.dispose()
