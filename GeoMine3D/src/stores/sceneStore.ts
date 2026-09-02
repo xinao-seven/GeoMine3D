@@ -10,10 +10,10 @@ import type {
     MeasurementRecord,
 } from '@/types'
 
-type ModelType = 'stratum' | 'borehole' | 'workingface'
+type ModelType = 'stratum' | 'borehole' | 'workingface' | 'roadway'
 
 export type ModelLoadPayload = {
-    type: 'stratum' | 'workingface'
+    type: 'stratum' | 'workingface' | 'roadway'
     id: string
     name: string
     model: ModelItem
@@ -26,7 +26,7 @@ export type ModelLoadPayload = {
 
 export type ModelLoadRequest = ModelLoadPayload & { requestId: number }
 
-export type ModelUnloadRequest = { type: 'stratum' | 'borehole' | 'workingface'; id: string; requestId: number }
+export type ModelUnloadRequest = { type: 'stratum' | 'borehole' | 'workingface' | 'roadway'; id: string; requestId: number }
 
 export const useSceneStore = defineStore('scene', () => {
     // 当前在三维场景中被选中的对象（用于属性面板展示）
@@ -36,11 +36,12 @@ export const useSceneStore = defineStore('scene', () => {
         stratum: true,
         borehole: true,
         workingface: true,
+        roadway: true,
     })
 
     // 地层边缘线显示开关
     const showEdges = ref(false)
-    // 工具运行状态（剖切/测量/标注）
+    // 工具运行状态（剖切/测量/标注/炸开）
     const toolState = reactive<ToolState>({
         clipEnabled: false,
         clipHeight: 0,
@@ -48,6 +49,8 @@ export const useSceneStore = defineStore('scene', () => {
         clipKeepLower: true,
         measureEnabled: false,
         annotationEnabled: false,
+        // 地层炸开间距,单位为世界显示单位
+        explodeGap: 1000,
     })
     // 测量结果列表（历史记录）
     const measurements = ref<MeasurementRecord[]>([])
@@ -95,6 +98,10 @@ export const useSceneStore = defineStore('scene', () => {
         toolState.clipKeepLower = keepLower
     }
 
+    function setExplodeGap(gap: number) {
+        toolState.explodeGap = gap
+    }
+
     function addMeasurement(record: MeasurementRecord) {
         measurements.value.push(record)
         lastMeasurementDistance.value = record.distance
@@ -130,12 +137,12 @@ export const useSceneStore = defineStore('scene', () => {
         }
     }
 
-    function requestUnloadModel(payload: { type: 'stratum' | 'borehole' | 'workingface'; id: string }) {
+    function requestUnloadModel(payload: { type: 'stratum' | 'borehole' | 'workingface' | 'roadway'; id: string }) {
         unloadRequest.value = { ...payload, requestId: Date.now() }
     }
 
     // 清除加载状态；不传参时清空全部（离开工作区时使用）
-    function clearLoadStatus(type?: 'stratum' | 'borehole' | 'workingface', id?: string) {
+    function clearLoadStatus(type?: 'stratum' | 'borehole' | 'workingface' | 'roadway', id?: string) {
         if (!type) {
             for (const key of Object.keys(modelLoadStatus)) delete modelLoadStatus[key]
             return
@@ -204,6 +211,7 @@ export const useSceneStore = defineStore('scene', () => {
         resetSceneSession,
         setClipAxis,
         setClipKeepLower,
+        setExplodeGap,
         addMeasurement,
         clearMeasurements,
         getModelKey,

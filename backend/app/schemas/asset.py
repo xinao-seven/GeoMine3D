@@ -4,7 +4,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
-ModelType = Literal["stratum", "working_face", "other"]
+ModelType = Literal["stratum", "working_face", "other", "roadway"]
 
 
 class ModelAssetCreate(BaseModel):

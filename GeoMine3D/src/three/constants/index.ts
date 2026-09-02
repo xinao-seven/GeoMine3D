@@ -18,4 +18,5 @@ export const OBJECT_TYPES = {
   STRATUM: 'stratum',
   BOREHOLE: 'borehole',
   WORKINGFACE: 'workingface',
+  ROADWAY: 'roadway',
 } as const

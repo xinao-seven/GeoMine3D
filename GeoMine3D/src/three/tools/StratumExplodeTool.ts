@@ -42,6 +42,13 @@ export class StratumExplodeTool {
         }
     }
 
+    // 设置炸开间距(世界显示单位),炸开状态下即时生效。
+    setGap(gap: number) {
+        if (!Number.isFinite(gap) || gap === this.gap) return
+        this.gap = gap
+        if (this.exploded) this.sync()
+    }
+
     // 获取当前是否处于炸开状态。
     isExploded() {
         return this.exploded
@@ -90,8 +97,10 @@ export class StratumExplodeTool {
             const key = String(mesh.userData?.id || `${modelId}::${mesh.uuid}`)
             if (!this.baseLocalPositions.has(key)) return
 
-            const layerIndex = Number(mesh.userData?.layerIndex)
-            const order = Number.isFinite(layerIndex) ? layerIndex : fallbackOrder
+            // 按包围盒中心的世界高度排序(底→顶),不依赖网格在文件中的节点顺序
+            mesh.updateWorldMatrix(true, false)
+            const box = new THREE.Box3().setFromObject(mesh)
+            const order = box.isEmpty() ? fallbackOrder : box.getCenter(new THREE.Vector3()).y
             layers.push({ mesh, key, order })
             fallbackOrder += 1
         })
@@ -105,16 +114,28 @@ export class StratumExplodeTool {
             const base = this.baseLocalPositions.get(layer.key)
             if (!base) return
 
-            const offset = this.exploded ? (index - centerOffset) * this.gap : 0
+            const offsetDisplay = this.exploded ? (index - centerOffset) * this.gap : 0
             if (!layer.mesh.parent) {
-                layer.mesh.position.set(base.x, base.y + offset, base.z)
+                layer.mesh.position.set(base.x, base.y + offsetDisplay, base.z)
                 return
             }
 
-            // 炸开始终沿“旋转后场景上方向”（世界 Y）进行位移。
+            // 炸开始终沿“旋转后场景上方向”（世界 Y）进行位移；
+            // gap 以世界显示单位定义，需按父节点沿该方向的世界缩放换算回局部单位
+            //（如 catalog 模型组带 scale.z=20 竖向夸张时，避免位移被放大）。
+            const parent = layer.mesh.parent
             const parentQuat = new THREE.Quaternion()
-            layer.mesh.parent.getWorldQuaternion(parentQuat)
+            parent.getWorldQuaternion(parentQuat)
             const localUp = this.worldUp.clone().applyQuaternion(parentQuat.invert()).normalize()
+
+            const e = parent.matrixWorld.elements
+            const worldStep = new THREE.Vector3(
+                e[0] * localUp.x + e[4] * localUp.y + e[8] * localUp.z,
+                e[1] * localUp.x + e[5] * localUp.y + e[9] * localUp.z,
+                e[2] * localUp.x + e[6] * localUp.y + e[10] * localUp.z,
+            )
+            const unitsPerDisplay = worldStep.length() || 1
+            const offset = offsetDisplay / unitsPerDisplay
 
             layer.mesh.position.set(
                 base.x + localUp.x * offset,

@@ -1,4 +1,4 @@
-export type SceneObjectType = 'stratum' | 'borehole' | 'workingface'
+export type SceneObjectType = 'stratum' | 'borehole' | 'workingface' | 'roadway'
 
 export interface SceneObject {
   id: string
@@ -11,6 +11,7 @@ export interface LayerState {
   stratum: boolean
   borehole: boolean
   workingface: boolean
+  roadway: boolean
 }
 
 export interface StratumLayerControl {
@@ -30,6 +31,7 @@ export interface ToolState {
   clipKeepLower: boolean
   measureEnabled: boolean
   annotationEnabled: boolean
+  explodeGap: number
 }
 
 export interface MeasurementRecord {

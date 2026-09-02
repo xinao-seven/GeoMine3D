@@ -3,7 +3,7 @@ export interface ModelBbox {
   max: [number, number, number]
 }
 
-export type ModelType = 'stratum' | 'borehole' | 'workingface'
+export type ModelType = 'stratum' | 'borehole' | 'workingface' | 'roadway'
 
 export interface ModelItem {
   id: string
@@ -15,6 +15,7 @@ export interface ModelItem {
   fileName: string
   fileUrl: string
   bbox?: ModelBbox
+  metadata?: Record<string, any>
 }
 
 export type ModelDetail = ModelItem

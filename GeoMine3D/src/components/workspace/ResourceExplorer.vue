@@ -41,12 +41,12 @@
             </template>
             <template v-else>
                 <section class="resource-group">
-                    <div class="source-note"><b>SERVER / STATIC / MODELS</b><span>已同步到数据库资源目录</span></div>
-                    <div class="group-title"><span>静态地质模型</span><b>{{ models.length }}</b></div>
+                    <div class="source-note"><b>MODEL PACKAGE / CATALOG</b><span>按交付包 catalog 逐层注册,单独加载</span></div>
+                    <div class="group-title"><span>地质模型(分层)</span><b>{{ models.length }}</b></div>
                     <div v-for="model in models" :key="model.id" class="resource-row" :class="{ 'is-loaded': modelStatus(model).loaded }">
                         <button class="resource-main" :disabled="modelStatus(model).loading || modelStatus(model).loaded" @click="loadModel(model)">
                             <span class="resource-symbol strata">M</span>
-                            <span class="resource-name"><strong>{{ model.name }}</strong><small>{{ model.model_type }}</small></span>
+                            <span class="resource-name"><strong>{{ model.name }}</strong><small>{{ model.metadata_json?.catalog_code || model.model_type }}</small></span>
                             <span class="load-state">{{ modelStatus(model).loaded ? '已加载' : modelStatus(model).loading ? '加载中' : '加载' }}</span>
                         </button>
                         <button v-if="modelStatus(model).loaded" class="remove-state" title="从场景移除" @click="removeModel(model)">移除</button>
@@ -82,6 +82,7 @@ const layerGroups = [
     { type: 'stratum' as const, label: '地层模型' },
     { type: 'borehole' as const, label: '钻孔' },
     { type: 'workingface' as const, label: '工作面' },
+    { type: 'roadway' as const, label: '巷道' },
 ]
 const tab = ref<'scene' | 'assets'>(route.params.projectId === 'local' ? 'scene' : 'assets')
 const selectedLayerKey = ref<string | null>(null)
@@ -103,22 +104,30 @@ async function loadResources() {
     } finally { loading.value = false }
 }
 
+type ResourceRenderType = 'stratum' | 'workingface' | 'roadway'
+
+function renderType(asset: ModelAssetRecord): ResourceRenderType {
+    if (asset.model_type === 'working_face') return 'workingface'
+    if (asset.model_type === 'roadway') return 'roadway'
+    return 'stratum'
+}
+
 function loadModel(asset: ModelAssetRecord) {
-    const type = asset.model_type === 'working_face' ? 'workingface' : 'stratum'
+    const type = renderType(asset)
     const model: ModelItem = {
         id: asset.id, name: asset.name, type, version: 'current', format: 'glb', description: '',
         fileName: `${asset.name}.glb`, fileUrl: workspaceApi.modelFileUrl(asset.id),
+        metadata: asset.metadata_json,
     }
     sceneStore.requestLoadModel({ type, id: model.id, name: model.name, model })
 }
 
 function modelStatus(asset: ModelAssetRecord) {
-    const type = asset.model_type === 'working_face' ? 'workingface' : 'stratum'
-    return sceneStore.getModelLoadStatus(type, asset.id)
+    return sceneStore.getModelLoadStatus(renderType(asset), asset.id)
 }
 
-function unloadType(asset: ModelAssetRecord): 'stratum' | 'workingface' {
-    return asset.model_type === 'working_face' ? 'workingface' : 'stratum'
+function unloadType(asset: ModelAssetRecord): ResourceRenderType {
+    return renderType(asset)
 }
 
 function removeModel(asset: ModelAssetRecord) {

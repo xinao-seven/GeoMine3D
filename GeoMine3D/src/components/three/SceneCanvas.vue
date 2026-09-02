@@ -32,6 +32,17 @@
                         {{ stratumExploded ? '还原' : '炸开' }}
                     </el-button>
                 </el-tooltip>
+                <div v-if="stratumExploded" class="explode-control">
+                    <span class="clip-label">间距 {{ toolState.explodeGap }}</span>
+                    <el-slider
+                        :model-value="toolState.explodeGap"
+                        :min="0"
+                        :max="5000"
+                        :step="50"
+                        size="small"
+                        @update:model-value="onExplodeGapChange"
+                    />
+                </div>
                 <el-tooltip :content="hoverEnabled ? '关闭悬停效果' : '开启悬停效果'" placement="bottom">
                     <el-button class="tool-btn" :class="{ active: hoverEnabled }" @click="toggleHoverEffect">
                         {{ hoverEnabled ? '悬停标签开' : '悬停标签关' }}
@@ -282,7 +293,6 @@ const annotationInputRef = ref()
 const annotationDraft = ref({ visible: false, index: 1, text: '', x: 0, y: 0, z: 0 })
 
 const BOREHOLE_VERTICAL_SCALE = 20
-const STRATUM_EXPLODE_GAP = 1000
 const dropLoader = new DropLoader()
 
 let sceneManager: SceneManager
@@ -394,11 +404,11 @@ function alignProjectedModel(object: THREE.Object3D) {
     object.userData.coordinateOrigin = { ...origin }
 }
 
-async function loadWorkingFaceModel(model: ModelItem) {
+async function loadWorkingFaceModel(model: ModelItem, renderType: 'workingface' | 'roadway' = 'workingface') {
     const workingFaceLoader = new WorkingFaceModelLoader()
     try {
         const object = await workingFaceLoader.load(model)
-        modelManager.addModel({ id: model.id, name: model.name, type: 'workingface', object })
+        modelManager.addModel({ id: model.id, name: model.name, type: renderType, object })
     } catch {
         addPlaceholderWorkingFace(model)
     }
@@ -457,7 +467,7 @@ async function loadAllBoreholeModels(boreholes: BoreholeItem[]) {
 }
 
 // 从场景中移除模型并同步清理状态、图层树与拾取目标。
-function unloadModelByRequest(req: { type: 'stratum' | 'borehole' | 'workingface'; id: string }) {
+function unloadModelByRequest(req: { type: 'stratum' | 'borehole' | 'workingface' | 'roadway'; id: string }) {
     if (req.type === 'borehole') {
         for (const model of modelManager.getModelsByType('borehole')) {
             modelManager.removeModel(model.id)
@@ -484,11 +494,12 @@ async function loadModelByRequest(req: ModelLoadRequest) {
         stratum: '地层',
         borehole: '钻孔',
         workingface: '工作面',
+        roadway: '巷道',
     }
     loadingText.value = `正在加载${typeLabel[req.type] || req.type}模型...`
     try {
         let preferImmediateFocus = false
-        let focusType: 'stratum' | 'borehole' | 'workingface' | null = null
+        let focusType: 'stratum' | 'borehole' | 'workingface' | 'roadway' | null = null
 
         if (req.type === 'stratum') {
             await loadStratumModel(req.model)
@@ -498,6 +509,11 @@ async function loadModelByRequest(req: ModelLoadRequest) {
         if (req.type === 'workingface') {
             await loadWorkingFaceModel(req.model)
             focusType = 'workingface'
+        }
+
+        if (req.type === 'roadway') {
+            await loadWorkingFaceModel(req.model, 'roadway')
+            focusType = 'roadway'
         }
 
         if (req.type === 'borehole') {
@@ -633,7 +649,7 @@ async function loadDroppedGLB(file: File) {
 
 // ==================== Camera ====================
 
-function fitCameraToType(type: 'stratum' | 'borehole' | 'workingface' | null, immediate = false) {
+function fitCameraToType(type: 'stratum' | 'borehole' | 'workingface' | 'roadway' | null, immediate = false) {
     const models = type !== null
         ? modelManager.getModelsByType(type)
         : modelManager.getAllModels()
@@ -736,6 +752,10 @@ function registerStratumLayersFromObject(object: THREE.Object3D, modelId: string
 function toggleStratumExplode() {
     if (!stratumExplodeTool) return
     stratumExploded.value = stratumExplodeTool.toggle()
+}
+
+function onExplodeGapChange(value: number | undefined) {
+    sceneStore.setExplodeGap(typeof value === 'number' ? value : 0)
 }
 
 
@@ -904,7 +924,7 @@ async function initScene() {
     )
     measureTool = new MeasureTool(sceneManager.scene, cameraManager.camera, canvasRef.value)
     annotationTool = new AnnotationTool(sceneManager.scene, cameraManager.camera, canvasRef.value)
-    stratumExplodeTool = new StratumExplodeTool(modelManager, { gap: STRATUM_EXPLODE_GAP })
+    stratumExplodeTool = new StratumExplodeTool(modelManager, { gap: toolState.value.explodeGap })
 
     if (toolState.value.clipHeight !== 0) {
         clipTool.setHeight(toolState.value.clipHeight)
@@ -978,6 +998,7 @@ watch(layerVisible, (val) => {
     layerManager.setLayerVisible('stratum', val.stratum)
     layerManager.setLayerVisible('borehole', val.borehole)
     layerManager.setLayerVisible('workingface', val.workingface)
+    layerManager.setLayerVisible('roadway', val.roadway)
 }, { deep: true })
 
 watch(showEdges, (visible) => {
@@ -1004,6 +1025,10 @@ watch(() => toolState.value.clipHeight, (height) => {
     if (clipTool && Math.abs(clipTool.getHeight() - height) > 1e-6) {
         clipTool.setHeight(height)
     }
+})
+
+watch(() => toolState.value.explodeGap, (gap) => {
+    stratumExplodeTool?.setGap(gap)
 })
 
 watch(
@@ -1152,6 +1177,11 @@ onUnmounted(() => {
 
 .clip-control {
     width: 180px;
+    padding: 0 2px;
+}
+
+.explode-control {
+    width: 150px;
     padding: 0 2px;
 }
 

@@ -37,7 +37,18 @@ export class StratumModelLoader {
     }
 
     // 加载地层模型并为每个网格注入渲染样式与业务元数据。
+    // catalog 交付包模型携带 color_hex / local_coordinates / vertical_scale 元数据:
+    // 单层模型直接使用地层配色与名称,局部高程按建议比例做竖向夸张(仅显示);
+    // 合并模型通过 layer_colors / layer_names 按 mesh 名(L01…)映射每层样式。
     async load(model: ModelItem): Promise<THREE.Group> {
+        const meta: Record<string, any> = model.metadata ?? {}
+        const catalogColor = typeof meta.color_hex === 'string' && meta.color_hex
+            ? new THREE.Color(meta.color_hex)
+            : null
+        const layerColors: Record<string, string> = meta.layer_colors ?? {}
+        const layerNames: Record<string, string> = meta.layer_names ?? {}
+        const verticalScale = typeof meta.vertical_scale === 'number' ? meta.vertical_scale : 1
+
         return new Promise((resolve, reject) => {
             this.loader.load(
                 model.fileUrl,
@@ -62,7 +73,11 @@ export class StratumModelLoader {
                         const originalMaterial = Array.isArray(mesh.material)
                             ? mesh.material[0]
                             : mesh.material
-                        const layerColor = this.generateLayerColor(index)
+                        const meshCode = (mesh.name || '').trim().toUpperCase()
+                        const mappedColor = typeof layerColors[meshCode] === 'string' && layerColors[meshCode]
+                            ? new THREE.Color(layerColors[meshCode])
+                            : null
+                        const layerColor = mappedColor ?? catalogColor ?? this.generateLayerColor(index)
 
                         const lambertMaterial = new THREE.MeshLambertMaterial({
                             color: layerColor,
@@ -92,7 +107,10 @@ export class StratumModelLoader {
                         edgeLines.visible = false
                         mesh.add(edgeLines)
 
-                        const layerName = mesh.name?.trim() || `${model.name}_layer_${meshIndex + 1}`
+                        const layerName = layerNames[meshCode]
+                            || (meshes.length === 1
+                                ? model.name
+                                : (mesh.name?.trim() || `${model.name}_layer_${meshIndex + 1}`))
                         mesh.userData = {
                             id: `${model.id}::${meshIndex}`,
                             name: layerName,
@@ -103,10 +121,13 @@ export class StratumModelLoader {
                             layerName,
                             edgeLines,
                         }
-                        // mesh.scale.z = 2
                         meshIndex += 1
                     })
-                    
+
+                    if (meta.local_coordinates && verticalScale !== 1) {
+                        group.scale.z = verticalScale
+                    }
+
                     resolve(group)
                 },
                 undefined,

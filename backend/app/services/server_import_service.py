@@ -68,14 +68,16 @@ class ServerDataImportService:
         self.session = session
         self.data_root = settings.source_data_path
         self.model_root = settings.source_model_path
+        self.model_catalog_path = settings.source_model_catalog_path
 
     async def run(self, project_name: str) -> dict[str, Any]:
         self._validate_sources()
         locations = self._read_locations()
         strata = self._read_strata()
-        project = await self._upsert_project(project_name, locations)
+        catalog = self._read_model_catalog()
+        project = await self._upsert_project(project_name, locations, catalog)
         borehole_summary = await self._upsert_boreholes(project, locations, strata)
-        model_count = await self._upsert_models(project)
+        model_count = await self._upsert_models(project, catalog)
         working_face_count = await self._upsert_working_faces(project)
 
         summary = {
@@ -87,7 +89,7 @@ class ServerDataImportService:
         self.session.add(
             ImportRun(
                 project_id=project.id,
-                source="server/data + server/static/models",
+                source="server/data + web_package/catalog.json",
                 status="completed",
                 summary_json=summary,
             )
@@ -100,7 +102,7 @@ class ServerDataImportService:
             self.data_root / "location" / "钻孔位置.xlsx",
             self.data_root / "boreholes" / "地层汇总.xlsx",
             self.data_root / "workingfaces.json",
-            self.model_root,
+            self.model_catalog_path,
         )
         missing = [str(path) for path in required if not path.exists()]
         if missing:
@@ -141,14 +143,30 @@ class ServerDataImportService:
             )
         return grouped
 
+    def _read_model_catalog(self) -> dict[str, Any]:
+        return json.loads(self.model_catalog_path.read_text(encoding="utf-8"))
+
     async def _upsert_project(
-        self, project_name: str, locations: dict[str, dict[str, Any]]
+        self,
+        project_name: str,
+        locations: dict[str, dict[str, Any]],
+        catalog: dict[str, Any],
     ) -> Project:
         project = await self.session.scalar(select(Project).where(Project.name == project_name))
-        coordinates = list(locations.values())
-        origin_x = sum(item["x"] for item in coordinates) / len(coordinates)
-        origin_y = sum(item["y"] for item in coordinates) / len(coordinates)
-        origin_z = sum(item["z"] for item in coordinates) / len(coordinates)
+        # 场景基准优先采用模型交付包的 origin_restore,保证钻孔与模型在同一坐标系原点上。
+        restore = catalog.get("origin_restore") or {}
+        if restore.get("x_origin_m") is not None:
+            origin_x = float(restore["x_origin_m"])
+            origin_y = float(restore["y_origin_m"])
+            origin_z = float(restore["z_origin_m"])
+        else:
+            coordinates = list(locations.values())
+            origin_x = sum(item["x"] for item in coordinates) / len(coordinates)
+            origin_y = sum(item["y"] for item in coordinates) / len(coordinates)
+            origin_z = sum(item["z"] for item in coordinates) / len(coordinates)
+        z_scale = (
+            restore.get("display_recommendation", {}).get("z_scale")
+        )
         if project is None:
             project = Project(name=project_name)
             self.session.add(project)
@@ -157,8 +175,8 @@ class ServerDataImportService:
         project.origin_x = origin_x
         project.origin_y = origin_y
         project.origin_z = origin_z
-        # 现有静态模型生成流程已对高程使用 20 倍夸张，钻孔必须采用同一比例。
-        project.vertical_scale = 20
+        # 模型与钻孔统一按交付包建议比例做竖向夸张。
+        project.vertical_scale = float(z_scale) if z_scale else 20
         await self.session.flush()
         return project
 
@@ -222,10 +240,15 @@ class ServerDataImportService:
             "zero_thickness_segments": zero_thickness,
         }
 
-    async def _upsert_models(self, project: Project) -> int:
-        metadata_path = self.data_root / "models_meta.json"
-        metadata_rows = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else []
-        metadata_by_file = {item.get("fileName"): item for item in metadata_rows}
+    async def _upsert_models(self, project: Project, catalog: dict[str, Any]) -> int:
+        """按交付包 catalog.json 逐层注册模型资产,不在 catalog 中的旧资产一并清除。"""
+        package_dir = self.model_catalog_path.parent
+        package_name = package_dir.name
+        restore = catalog.get("origin_restore") or {}
+        vertical_scale = restore.get("display_recommendation", {}).get("z_scale")
+        layers = catalog.get("layers") or []
+        catalog_rel_paths: set[str] = set()
+
         existing_rows = await self.session.scalars(
             select(ModelAsset).where(ModelAsset.project_id == project.id)
         )
@@ -234,45 +257,151 @@ class ServerDataImportService:
             for item in existing_rows
             if item.metadata_json.get("source_file")
         }
-        model_paths = sorted(self.model_root.rglob("*.glb"))
 
-        for path in model_paths:
-            relative_path = path.relative_to(self.model_root).as_posix()
-            metadata = metadata_by_file.get(path.name, {})
+        for layer in layers:
+            code = str(layer.get("code") or "").strip()
+            if not code:
+                continue
+            glb_path = package_dir / f"{code}.glb"
+            if not glb_path.is_file():
+                raise AppError(
+                    "IMPORT_SOURCE_MISSING",
+                    f"catalog 中的模型文件不存在: {glb_path}",
+                )
+            relative_path = self._package_relative_path(glb_path)
+            catalog_rel_paths.add(relative_path)
+
             asset = existing.get(relative_path)
             if asset is None:
-                asset = ModelAsset(project_id=project.id, name=metadata.get("name") or path.stem)
+                asset = ModelAsset(project_id=project.id, name=layer.get("name_cn") or code)
                 self.session.add(asset)
-            asset.name = metadata.get("name") or path.stem
-            asset.model_type = metadata.get("type") or "stratum"
+            asset.name = layer.get("name_cn") or code
+            asset.model_type = "stratum"
             asset.status = "ready"
             asset.metadata_json = {
-                "source": "server/static/models",
+                "source": package_name,
                 "source_file": relative_path,
-                "description": metadata.get("description"),
+                "catalog_code": code,
+                "layer_index": layer.get("index"),
+                "color_hex": layer.get("color_hex"),
                 "format": "glb",
-                "bbox": metadata.get("bbox"),
+                "bbox": layer.get("bounds_local"),
+                "stats": layer.get("stats"),
+                "lods": layer.get("lods") or [],
+                "local_coordinates": True,
+                "vertical_scale": vertical_scale,
             }
             await self.session.flush()
+            await self._assign_asset_version(asset, glb_path, relative_path)
 
-            version = await self.session.scalar(
-                select(ModelVersion).where(
-                    ModelVersion.model_id == asset.id,
-                    ModelVersion.version == 1,
-                )
-            )
-            if version is None:
-                version = ModelVersion(model_id=asset.id, version=1)
-                self.session.add(version)
-            version.file_path = relative_path
-            version.storage_scope = "server_static"
-            version.file_size = path.stat().st_size
-            version.content_hash = file_sha256(path)
-            version.draco_compressed = False
+        combined_path = package_dir / "model_combined.glb"
+        if combined_path.is_file():
+            relative_path = self._package_relative_path(combined_path)
+            catalog_rel_paths.add(relative_path)
+            layer_colors = {
+                str(layer.get("code")): layer.get("color_hex")
+                for layer in layers
+                if layer.get("code")
+            }
+            layer_names = {
+                str(layer.get("code")): layer.get("name_cn")
+                for layer in layers
+                if layer.get("code")
+            }
+            asset = existing.get(relative_path)
+            if asset is None:
+                asset = ModelAsset(project_id=project.id, name="完整地层模型")
+                self.session.add(asset)
+            asset.name = "完整地层模型"
+            asset.model_type = "stratum"
+            asset.status = "ready"
+            asset.metadata_json = {
+                "source": package_name,
+                "source_file": relative_path,
+                "catalog_code": "COMBINED",
+                "combined": True,
+                "layer_colors": layer_colors,
+                "layer_names": layer_names,
+                "format": "glb",
+                "local_coordinates": True,
+                "vertical_scale": vertical_scale,
+            }
             await self.session.flush()
-            asset.current_version_id = version.id
+            await self._assign_asset_version(asset, combined_path, relative_path)
 
-        return len(model_paths)
+        # 井巷工程模型(巷道 + 工作面),与地层同一局部坐标系,注册为独立可加载资源。
+        workings = catalog.get("workings") or {}
+        workings_specs = (
+            ("roadways", "巷道模型", "roadway"),
+            ("working_faces", "工作面模型", "working_face"),
+        )
+        for section, asset_name, model_type in workings_specs:
+            info = workings.get(section) or {}
+            file_name = str(info.get("file") or f"{section}.glb")
+            glb_path = package_dir / file_name
+            if not glb_path.is_file():
+                raise AppError(
+                    "IMPORT_SOURCE_MISSING",
+                    f"catalog 中的模型文件不存在: {glb_path}",
+                )
+            relative_path = self._package_relative_path(glb_path)
+            catalog_rel_paths.add(relative_path)
+
+            asset = existing.get(relative_path)
+            if asset is None:
+                asset = ModelAsset(project_id=project.id, name=asset_name)
+                self.session.add(asset)
+            asset.name = asset_name
+            asset.model_type = model_type
+            asset.status = "ready"
+            asset.metadata_json = {
+                "source": package_name,
+                "source_file": relative_path,
+                "catalog_code": section.upper(),
+                "format": "glb",
+                "color_hex": info.get("default_color"),
+                "local_coordinates": True,
+                "vertical_scale": vertical_scale,
+                "stats": info,
+            }
+            await self.session.flush()
+            await self._assign_asset_version(asset, glb_path, relative_path)
+
+        for source_file, asset in existing.items():
+            if source_file not in catalog_rel_paths:
+                await self.session.delete(asset)
+
+        return len(catalog_rel_paths)
+
+    def _package_relative_path(self, glb_path: Path) -> str:
+        try:
+            return glb_path.relative_to(self.model_root).as_posix()
+        except ValueError as exc:
+            raise AppError(
+                "IMPORT_CATALOG_OUTSIDE_MODEL_ROOT",
+                f"catalog 目录必须位于模型根目录 {self.model_root} 之下: {glb_path.parent}",
+                status_code=500,
+            ) from exc
+
+    async def _assign_asset_version(
+        self, asset: ModelAsset, glb_path: Path, relative_path: str
+    ) -> None:
+        version = await self.session.scalar(
+            select(ModelVersion).where(
+                ModelVersion.model_id == asset.id,
+                ModelVersion.version == 1,
+            )
+        )
+        if version is None:
+            version = ModelVersion(model_id=asset.id, version=1)
+            self.session.add(version)
+        version.file_path = relative_path
+        version.storage_scope = "server_static"
+        version.file_size = glb_path.stat().st_size
+        version.content_hash = file_sha256(glb_path)
+        version.draco_compressed = False
+        await self.session.flush()
+        asset.current_version_id = version.id
 
     async def _upsert_working_faces(self, project: Project) -> int:
         rows = json.loads((self.data_root / "workingfaces.json").read_text(encoding="utf-8"))

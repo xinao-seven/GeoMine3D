@@ -18,7 +18,7 @@ export interface ModelAssetRecord {
     id: string
     project_id: string
     name: string
-    model_type: 'stratum' | 'working_face' | 'other'
+    model_type: 'stratum' | 'working_face' | 'roadway' | 'other'
     status: string
     current_version_id: string | null
     metadata_json: Record<string, any>

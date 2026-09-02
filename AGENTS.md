@@ -75,8 +75,10 @@ server/                     # Preserved legacy data service and source assets (d
 
 | File | Location |
 |------|----------|
-| Model metadata | `server/data/models_meta.json` |
+| Model package catalog | `server/static/models/web_package/catalog.json` |
 | Working face data | `server/data/workingfaces.json` |
 | Borehole strata | `server/data/boreholes/*.xlsx` |
 | Borehole coordinates | `server/data/location/钻孔位置.xlsx` |
-| .glb models | `server/static/models/` |
+| .glb models | `server/static/models/web_package/`（L01–L10 分层、model_combined、roadways、working_faces） |
+
+Models are registered from `web_package/catalog.json` (no static-directory scan); the project origin and vertical scale (20×) come from the catalog `origin_restore`, so boreholes and models share one datum.
