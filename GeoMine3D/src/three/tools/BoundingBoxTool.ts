@@ -27,6 +27,8 @@ export class BoundingBoxTool {
     private camera: THREE.Camera
     private domElement: HTMLElement
     private getOrigin: CoordinateOriginGetter | null
+    /** 当前生效的竖向夸张倍数(用于把世界高程换回真实高程) */
+    private getVerticalScale: (() => number) | null
     private group: THREE.Group
     private enabled = false
     private resources: Array<THREE.Material | THREE.Texture | THREE.BufferGeometry> = []
@@ -38,12 +40,14 @@ export class BoundingBoxTool {
         camera: THREE.Camera,
         domElement: HTMLElement,
         getOrigin?: CoordinateOriginGetter,
+        getVerticalScale?: () => number,
     ) {
         this.scene = scene
         this.modelManager = modelManager
         this.camera = camera
         this.domElement = domElement
         this.getOrigin = getOrigin ?? null
+        this.getVerticalScale = getVerticalScale ?? null
         this.group = new THREE.Group()
         this.group.name = 'boundingBox'
         this.group.visible = false
@@ -109,6 +113,9 @@ export class BoundingBoxTool {
         const center = box.getCenter(new THREE.Vector3())
         const { min, max } = box
 
+        // 当前生效的竖向夸张倍数:包围盒是世界空间量,需除回它才是真实高程
+        const scaleZ = this.getVerticalScale?.() || 20
+
         // 白色线框包围盒
         const boxGeo = new THREE.BoxGeometry(size.x, size.y, size.z)
         const edgesGeo = new THREE.EdgesGeometry(boxGeo)
@@ -140,15 +147,15 @@ export class BoundingBoxTool {
         const edges: EdgeConfig[] = [
             { end: new THREE.Vector3(max.x, min.y, min.z), off: xEdgeOff, axis: 'X', divisor: 1 },
             { end: new THREE.Vector3(min.x, max.y, min.z), off: yEdgeOff, axis: 'Y', divisor: 1 },
-            { end: new THREE.Vector3(min.x, min.y, max.z), off: zEdgeOff, axis: 'Z', divisor: 20 },
+            { end: new THREE.Vector3(min.x, min.y, max.z), off: zEdgeOff, axis: 'Z', divisor: scaleZ },
         ]
 
         // 为每个轴坐标分量建立提取函数：有项目原点时直接换算成原始投影坐标
-        // X 轴 = 东向；Y 边 = 高程（场景值已含 20 倍夸张）；Z 边 = 北向（场景内取反）
+        // X 轴 = 东向；Y 边 = 高程（场景值已含竖向夸张）；Z 边 = 北向（场景内取反）
         const projOrigin = this.getOrigin?.() ?? null
         const getters: Array<(v: THREE.Vector3) => number> = [
             (v) => (projOrigin ? projOrigin.x + v.x : v.x),
-            (v) => (projOrigin ? projOrigin.z + v.y / 20 : v.y / 20),
+            (v) => (projOrigin ? projOrigin.z + v.y / scaleZ : v.y / scaleZ),
             (v) => (projOrigin ? projOrigin.y - v.z : Math.abs(v.z)),
         ]
 

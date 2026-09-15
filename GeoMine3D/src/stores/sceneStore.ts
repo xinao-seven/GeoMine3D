@@ -68,6 +68,13 @@ export const useSceneStore = defineStore('scene', () => {
     const stratumLayers = ref<StratumLayerControl[]>([])
     // 数据库项目的投影坐标原点；用于让真实坐标模型与钻孔使用同一局部坐标系。
     const coordinateOrigin = ref<{ x: number; y: number; z: number; verticalScale: number } | null>(null)
+    /**
+     * 全场景竖向夸张倍数(显示层)。
+     * 基准值来自项目/catalog 的 vertical_scale(通常 20),这里存的是**当前生效值**;
+     * 实际只作为乘在 geoRoot 上的倍率 = verticalScale / 基准值。
+     * 沉陷位移作用在几何空间,会被同一倍率一起放大。
+     */
+    const verticalScale = ref(20)
 
     function selectObject(obj: SceneObject | null) {
         selectedObject.value = obj
@@ -187,6 +194,22 @@ export const useSceneStore = defineStore('scene', () => {
 
     function setCoordinateOrigin(origin: { x: number; y: number; z: number; verticalScale: number } | null) {
         coordinateOrigin.value = origin
+        // 项目自带建议值:用户尚未手动调过时,跟随项目基准
+        if (origin && !verticalScaleTouched.value) verticalScale.value = origin.verticalScale
+    }
+
+    /** 是否已手动调整过(避免项目加载后覆盖用户刚才的设置) */
+    const verticalScaleTouched = ref(false)
+
+    function setVerticalScale(value: number) {
+        const v = Number.isFinite(value) ? Math.min(200, Math.max(1, value)) : 20
+        verticalScale.value = v
+        verticalScaleTouched.value = true
+    }
+
+    function resetVerticalScale() {
+        verticalScale.value = coordinateOrigin.value?.verticalScale ?? 20
+        verticalScaleTouched.value = false
     }
 
     return {
@@ -201,6 +224,9 @@ export const useSceneStore = defineStore('scene', () => {
         unloadRequest,
         stratumLayers,
         coordinateOrigin,
+        verticalScale,
+        setVerticalScale,
+        resetVerticalScale,
         selectObject,
         setLayerVisible,
         setShowEdges,

@@ -19,7 +19,6 @@
             <div class="viewport-shell">
                 <div class="viewport-ruler top-ruler"></div><div class="viewport-ruler left-ruler"></div>
                 <SceneCanvas />
-                <SettlementPanel />
                 <div class="viewport-badge"><i></i> WEBGL / PERSPECTIVE</div>
             </div>
             <InspectorPanel v-if="rightVisible" class="right-dock" />
@@ -48,7 +47,6 @@ import SceneCanvas from '@/components/three/SceneCanvas.vue'
 import ResourceExplorer from '@/components/workspace/ResourceExplorer.vue'
 import InspectorPanel from '@/components/workspace/InspectorPanel.vue'
 import AnalysisDock from '@/components/workspace/AnalysisDock.vue'
-import SettlementPanel from '@/components/workspace/SettlementPanel.vue'
 import { workspaceApi, type ProjectRecord } from '@/api/workspace'
 import { useSceneStore, useWorkspaceStore } from '@/stores'
 

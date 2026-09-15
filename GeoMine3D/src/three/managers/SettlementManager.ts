@@ -58,6 +58,23 @@ interface MeshState {
     baseColors: Float32Array | null
 }
 
+/**
+ * 单个 mesh 未能绑定位移场的原因。
+ *
+ * 存在的理由:以前这里只有一句 console.warn,用户侧只能看到“未绑定到地层”,
+ * 却不知道究竟是没数据、层号没认出来、还是顶点数不匹配。现在把它结构化,
+ * 由工具箱原样展示出来。
+ */
+export interface SettlementBindIssue {
+    mesh: string
+    layerCode: string
+    reason: string
+    /** 位移场里的顶点个数(展示用) */
+    expected?: number
+    /** GLB 里的顶点个数(展示用) */
+    actual?: number
+}
+
 const DEFAULT_BASE_URL = '/static/models/settlement'
 
 export class SettlementManager {
@@ -74,13 +91,25 @@ export class SettlementManager {
     /** 着色归一化的参考量(真实尺度,夸大倍数在分子分母上抵消) */
     private _maxDzReal = 1
     private _maxMagReal = 1
+    private issues: SettlementBindIssue[] = []
 
     constructor(baseUrl: string = DEFAULT_BASE_URL) {
         this.baseUrl = baseUrl
     }
 
-    get loaded() { return this.index !== null }
+    /** 只拉了索引(几 KB),尚未拉位移数据 */
+    get indexLoaded() { return this.index !== null }
+    /**
+     * 位移数据是否就绪。
+     *
+     * 注意:这里**不能**用 `index !== null` 判断。页面挂载时会预取索引
+     * (为了在启用前就显示最大沉降等读数),若把“有索引”当成“已就绪”,
+     * 启用时就会跳过 4.4 MB 数据的加载,最终表现为“已加载地层却提示未绑定”。
+     */
+    get loaded() { return this.offsetBlob !== null }
     get meta(): SettlementIndex | null { return this.index }
+    /** 上一次 attach 的逐条结果,供 UI 展示“为什么没绑上” */
+    get lastIssues(): SettlementBindIssue[] { return this.issues }
     get time() { return this._t }
     get exaggeration() { return this._exaggeration }
     get colorMode() { return this._colorMode }
@@ -89,23 +118,14 @@ export class SettlementManager {
     get maxDzReal() { return this._maxDzReal }
     get maxMagReal() { return this._maxMagReal }
 
-    /** 拉取位移场(一次即可,几 MB) */
-    async load(): Promise<SettlementIndex> {
+    /** 拉取索引(仅几 KB)。用于在尚未启用时就能显示最大沉降等元信息 */
+    async loadIndex(): Promise<SettlementIndex> {
         if (this.index) return this.index
-        const [idxResp, binResp] = await Promise.all([
-            // cache: 'no-store' —— 位移场会随数据重导而变;而且该 URL 历史上曾被
-            // SPA 兜底路由以 200 + HTML 应答并被浏览器启发式缓存,
-            // 导致后端修好后前端仍拿到旧 HTML。必须绕过缓存。
-            fetch(`${this.baseUrl}/vertex_offsets.index.json`, { cache: 'no-store' }),
-            fetch(`${this.baseUrl}/vertex_offsets.bin`, { cache: 'no-store' }),
-        ])
+        const idxResp = await fetch(`${this.baseUrl}/vertex_offsets.index.json`,
+            { cache: 'no-store' })
         if (!idxResp.ok) {
             throw new Error(
                 `位移场索引 HTTP ${idxResp.status}：${this.baseUrl}/vertex_offsets.index.json`)
-        }
-        if (!binResp.ok) {
-            throw new Error(
-                `位移场数据 HTTP ${binResp.status}：${this.baseUrl}/vertex_offsets.bin`)
         }
         // 常见坑：后端未挂载 /static 时会被 SPA 兜底路由接管，返回 index.html。
         // 这类响应 res.ok 为 true，必须靠 content-type 识别，否则会报难以理解的 JSON 解析错误。
@@ -118,7 +138,20 @@ export class SettlementManager {
                 '若地址栏直接打开该 URL 是正常 JSON，说明浏览器缓存了旧的失败响应，' +
                 '请 Ctrl+Shift+R 强刷。否则请确认后端已挂载 /static/models（backend/app/main.py）并重启。')
         }
-        const index = (await idxResp.json()) as SettlementIndex
+        this.index = (await idxResp.json()) as SettlementIndex
+        return this.index
+    }
+
+    /** 拉取位移场数据(一次即可,约 4 MB) */
+    async load(): Promise<SettlementIndex> {
+        const index = this.index ?? await this.loadIndex()
+        if (this.offsetBlob) return index
+
+        const binResp = await fetch(`${this.baseUrl}/vertex_offsets.bin`, { cache: 'no-store' })
+        if (!binResp.ok) {
+            throw new Error(
+                `位移场数据 HTTP ${binResp.status}：${this.baseUrl}/vertex_offsets.bin`)
+        }
         this.offsetBlob = await binResp.arrayBuffer()
         if (this.offsetBlob.byteLength < 12) {
             throw new Error('位移场二进制文件异常（长度不足），请检查文件是否完整。')
@@ -129,7 +162,6 @@ export class SettlementManager {
                 new Float32Array(this.offsetBlob, layer.byteOffset, layer.count * 3),
             )
         }
-        this.index = index
         return index
     }
 
@@ -141,8 +173,18 @@ export class SettlementManager {
         // 否则新增一层模型时会重新挂载全量,把“已变形后的位置”当成新基线,越拉越远。
         const existing = new Map<THREE.Mesh, MeshState>(this.states.map(s => [s.mesh, s]))
         const next: MeshState[] = []
+        this.issues = []
         this._maxDzReal = 1
         this._maxMagReal = 1
+        if (!this.offsetBlob) {
+            // 只拉了索引、位移数据未到时会走到这里。必须显式报出,
+            // 否则现场表现就是“地层已加载但提示未绑定”。
+            this.issues.push({
+                mesh: '-', layerCode: '-',
+                reason: '位移场数据尚未加载(仅拉取了索引),请关闭后重新启用沉陷对比。',
+            })
+            return 0
+        }
         const models = modelManager.getAllModels().filter(m => m.type === 'stratum')
         for (const model of models) {
             const code = String((model.object.userData?.modelData as any)?.metadata?.catalog_code ?? '')
@@ -197,15 +239,26 @@ export class SettlementManager {
                     }
                 }
                 if (!offset) {
-                    console.warn(
-                        `[Settlement] 无法为 mesh「${mesh.name || `#${i}`}」` +
-                        `(catalog_code=${code || '无'}, 顶点数 ${posAttr.count}) 匹配位移场,跳过`)
+                    const expected = this.offsetByLayer.get(layerCode)?.length
+                    this.issues.push({
+                        mesh: mesh.name || `#${i}`,
+                        layerCode: layerCode || '(未识别)',
+                        reason: layerCode
+                            ? '位移场里没有该层的位移数据'
+                            : '未能从 catalog_code / mesh 名 / 顶点数识别出层号',
+                        expected: expected ? expected / 3 : undefined,
+                        actual: posAttr.count,
+                    })
                     return
                 }
                 if (offset.length !== posAttr.count * 3) {
-                    console.warn(
-                        `[Settlement] ${layerCode} 位移长度 ${offset.length / 3} 与顶点数 ` +
-                        `${posAttr.count} 不匹配,跳过(mesh #${i})`)
+                    this.issues.push({
+                        mesh: mesh.name || `#${i}`,
+                        layerCode,
+                        reason: '位移个数与顶点数不一致(位移场与这份 GLB 可能不是一对)',
+                        expected: offset.length / 3,
+                        actual: posAttr.count,
+                    })
                     return
                 }
                 const base = new Float32Array(posAttr.array as ArrayLike<number>)
@@ -253,6 +306,7 @@ export class SettlementManager {
     detach() {
         this.restoreBase()
         this.states = []
+        this.issues = []
         this._t = 0
         this._appliedMaxDz = 0
         this._maxDzReal = 1

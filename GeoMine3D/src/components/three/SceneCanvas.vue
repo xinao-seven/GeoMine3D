@@ -2,180 +2,8 @@
     <div ref="containerRef" class="scene-canvas" @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop">
         <canvas ref="canvasRef" class="canvas" />
 
-        <div class="tools-bar">
-            <div class="tools-group">
-                <input ref="fileInputRef" type="file" accept=".glb" style="display:none" @change="onFileSelected">
-                <el-tooltip content="加载本地 .glb 模型" placement="bottom">
-                    <el-button class="tool-btn" :disabled="isLoading" @click="fileInputRef?.click()">
-                        <el-icon>
-                            <Plus />
-                        </el-icon>
-                        <span>加载模型</span>
-                    </el-button>
-                </el-tooltip>
-            </div>
-
-            <div class="tools-divider" />
-
-            <div class="tools-group">
-                <el-tooltip content="重置视角" placement="bottom">
-                    <el-button class="tool-btn" @click="resetCamera">
-                        <el-icon>
-                            <RefreshRight />
-                        </el-icon>
-                        <span>重置视角</span>
-                    </el-button>
-                </el-tooltip>
-
-                <el-tooltip :content="stratumExploded ? '还原地层位置' : '炸开地层层位'" placement="bottom">
-                    <el-button class="tool-btn" :class="{ active: stratumExploded }" @click="toggleStratumExplode">
-                        {{ stratumExploded ? '还原' : '炸开' }}
-                    </el-button>
-                </el-tooltip>
-                <div v-if="stratumExploded" class="explode-control">
-                    <span class="clip-label">间距 {{ toolState.explodeGap }}</span>
-                    <el-slider
-                        :model-value="toolState.explodeGap"
-                        :min="0"
-                        :max="5000"
-                        :step="50"
-                        size="small"
-                        @update:model-value="onExplodeGapChange"
-                    />
-                </div>
-                <el-tooltip :content="hoverEnabled ? '关闭悬停效果' : '开启悬停效果'" placement="bottom">
-                    <el-button class="tool-btn" :class="{ active: hoverEnabled }" @click="toggleHoverEffect">
-                        {{ hoverEnabled ? '悬停标签开' : '悬停标签关' }}
-                    </el-button>
-                </el-tooltip>
-            </div>
-
-            <div class="tools-divider" />
-
-            <div class="tools-group">
-                <el-tooltip :content="toolState.clipEnabled ? '关闭剖切' : '开启剖切'" placement="bottom">
-                    <el-button class="tool-btn" :class="{ active: toolState.clipEnabled }" @click="toggleClipTool">
-                        <el-icon>
-                            <Scissor />
-                        </el-icon>
-                        <span>剖切</span>
-                    </el-button>
-                </el-tooltip>
-
-                <div v-if="toolState.clipEnabled" class="clip-control">
-                    <div class="clip-axis-row">
-                        <el-button
-                            class="axis-btn"
-                            :class="{ active: toolState.clipAxis === 'x' }"
-                            @click="setClipAxis('x')"
-                        >X</el-button>
-                        <el-button
-                            class="axis-btn"
-                            :class="{ active: toolState.clipAxis === 'y' }"
-                            @click="setClipAxis('y')"
-                        >Y</el-button>
-                        <el-button
-                            class="axis-btn"
-                            :class="{ active: toolState.clipAxis === 'z' }"
-                            @click="setClipAxis('z')"
-                        >Z</el-button>
-                    </div>
-                    <span class="clip-label">位置 {{ formatClipPosition }}</span>
-                    <el-slider
-                        :model-value="toolState.clipHeight"
-                        :min="clipRange.min"
-                        :max="clipRange.max"
-                        :step="clipStep"
-                        size="small"
-                        @update:model-value="onClipHeightChange"
-                    />
-                    <div class="clip-flags">
-                        <el-switch
-                            :model-value="toolState.clipKeepLower"
-                            inline-prompt
-                            active-text="留低"
-                            inactive-text="留高"
-                            @update:model-value="setClipKeepLower"
-                        />
-                    </div>
-                </div>
-            </div>
-
-            <div class="tools-divider" />
-
-            <div class="tools-group axis-toggle-group">
-                <span class="axis-toggle-label">旋转X</span>
-                <el-switch
-                    :model-value="rotateXAxisEnabled"
-                    inline-prompt
-                    active-text="开"
-                    inactive-text="关"
-                    @update:model-value="onRotateXAxisToggle"
-                />
-            </div>
-
-            <div class="tools-divider" />
-
-            <div class="tools-group">
-                <el-tooltip :content="outlineEnabled ? '关闭描边' : '开启描边'" placement="bottom">
-                    <el-button
-                        class="tool-btn"
-                        :class="{ active: outlineEnabled }"
-                        @click="toggleOutline"
-                    >
-                        <span>描边</span>
-                    </el-button>
-                </el-tooltip>
-            </div>
-
-            <div class="tools-divider" />
-
-            <div class="tools-group">
-                <el-tooltip :content="boundingBoxEnabled ? '关闭坐标盒' : '显示坐标盒'" placement="bottom">
-                    <el-button
-                        class="tool-btn"
-                        :class="{ active: boundingBoxEnabled }"
-                        @click="toggleBoundingBox"
-                    >
-                        <span>坐标盒</span>
-                    </el-button>
-                </el-tooltip>
-            </div>
-
-            <div class="tools-group">
-                <el-tooltip :content="toolState.measureEnabled ? '关闭测量' : '开启测量'" placement="bottom">
-                    <el-button class="tool-btn" :class="{ active: toolState.measureEnabled }" @click="toggleMeasureTool">
-                        <el-icon>
-                            <Aim />
-                        </el-icon>
-                        <span>测量</span>
-                    </el-button>
-                </el-tooltip>
-
-                <el-button class="tool-btn ghost" :disabled="!measurements.length" @click="clearMeasurements">
-                    清空
-                </el-button>
-            </div>
-
-            <div class="tools-group">
-                <el-tooltip :content="toolState.annotationEnabled ? '关闭标注' : '开启标注'" placement="bottom">
-                    <el-button
-                        class="tool-btn"
-                        :class="{ active: toolState.annotationEnabled }"
-                        @click="toggleAnnotationTool"
-                    >
-                        <el-icon>
-                            <EditPen />
-                        </el-icon>
-                        <span>标注</span>
-                    </el-button>
-                </el-tooltip>
-
-                <el-button class="tool-btn ghost" @click="clearAnnotations">
-                    清空
-                </el-button>
-            </div>
-        </div>
+        <!-- 工具箱:所有视口操作 + 沉陷对比统一收在此处(见 SceneToolbox.vue) -->
+        <SceneToolbox :groups="toolGroups" :initial="initialToolGroup" @tool="onToolEvent" />
 
         <div v-if="lastMeasurementDistance !== null" class="measure-chip">
             最近测量 {{ lastMeasurementDistance.toFixed(2) }} m
@@ -232,6 +60,9 @@ import { LayerManager } from '@/three/managers/LayerManager'
 import { HighlightManager } from '@/three/managers/HighlightManager'
 import { SelectionManager } from '@/three/managers/SelectionManager'
 import { SettlementManager } from '@/three/managers/SettlementManager'
+import type { SettlementIndex } from '@/three/managers/SettlementManager'
+import SceneToolbox from '@/components/three/SceneToolbox.vue'
+import type { ToolGroup } from '@/components/three/SceneToolbox.vue'
 import { StratumModelLoader } from '@/three/loaders/StratumModelLoader'
 import { BoreholeModelLoader } from '@/three/loaders/BoreholeModelLoader'
 import { WorkingFaceModelLoader } from '@/three/loaders/WorkingFaceModelLoader'
@@ -260,6 +91,7 @@ const {
     showEdges,
     stratumLayers,
     coordinateOrigin,
+    verticalScale,
     toolState,
     measurements,
     lastMeasurementDistance,
@@ -278,7 +110,8 @@ const formatClipPosition = computed(() => {
     const origin = coordinateOrigin.value
     if (!origin) return value.toFixed(2)
     if (toolState.value.clipAxis === 'x') return (origin.x + value).toFixed(2)
-    if (toolState.value.clipAxis === 'y') return (origin.z + value / 20).toFixed(2)
+    // 世界坐标 y 已是夸张后的高程,除回**当前生效**的竖向倍数才是真实高程
+    if (toolState.value.clipAxis === 'y') return (origin.z + value / verticalScale.value).toFixed(2)
     return (origin.y - value).toFixed(2)
 })
 
@@ -734,11 +567,18 @@ function syncSettlementBinding() {
             settlementManager.detach()
             settlementStore.boundLayers = 0
             settlementStore.boundVertices = 0
+            settlementStore.bindIssues = []
         }
         return
     }
     const count = settlementManager.attach(modelManager)
     settlementStore.boundLayers = count
+    settlementStore.bindIssues = settlementManager.lastIssues.slice(0, 4).map(it => ({
+        label: it.layerCode === '-' ? it.mesh : it.layerCode,
+        detail: it.expected !== undefined && it.actual !== undefined
+            ? `${it.reason}（位移 ${it.expected} / 顶点 ${it.actual}）`
+            : it.reason,
+    }))
     let verts = 0
     for (const model of modelManager.getModelsByType('stratum')) {
         model.object.traverse(child => {
@@ -750,7 +590,7 @@ function syncSettlementBinding() {
     settlementStore.boundVertices = verts
 }
 
-/** 首次启用时才拉取位移场(约 4 MB),避免无谓请求 */
+/** 首次启用时才拉取位移场数据(约 4 MB);索引很早就会先拉一次,用于面板展示元信息 */
 async function ensureSettlementField(): Promise<boolean> {
     if (!settlementManager) settlementManager = new SettlementManager()
     if (settlementManager.loaded) return true
@@ -758,12 +598,8 @@ async function ensureSettlementField(): Promise<boolean> {
     settlementStore.loadError = null
     try {
         const meta = await settlementManager.load()
+        applySettlementMeta(meta)
         settlementStore.fieldLoaded = true
-        settlementStore.maxSubsidenceM = meta.maxSubsidenceM
-        settlementStore.maxHorizontalM = meta.maxHorizontalM
-        settlementStore.displayZScale = meta.displayZScale
-        settlementStore.workingsFollow = meta.workingsFollowSettlement
-        settlementStore.generatedUtc = meta.generatedUtc
         return true
     } catch (err) {
         settlementStore.loadError = err instanceof Error ? err.message : String(err)
@@ -771,6 +607,24 @@ async function ensureSettlementField(): Promise<boolean> {
         return false
     } finally {
         settlementStore.loading = false
+    }
+}
+
+function applySettlementMeta(meta: SettlementIndex) {
+    settlementStore.maxSubsidenceM = meta.maxSubsidenceM
+    settlementStore.maxHorizontalM = meta.maxHorizontalM
+    settlementStore.displayZScale = meta.displayZScale
+    settlementStore.workingsFollow = meta.workingsFollowSettlement
+    settlementStore.generatedUtc = meta.generatedUtc
+}
+
+/** 只拉 4 KB 的索引,让面板在未启用时就能显示“最大沉降”等真实值 */
+async function prefetchSettlementMeta() {
+    if (!settlementManager) settlementManager = new SettlementManager()
+    try {
+        applySettlementMeta(await settlementManager.loadIndex())
+    } catch {
+        // 预取失败不提示,用户启用时会得到完整错误
     }
 }
 
@@ -935,6 +789,200 @@ function onClipHeightChange(value: number | undefined) {
     sceneStore.setClipHeight(typeof value === 'number' ? value : 0)
 }
 
+// ==================== 工具箱 ====================
+
+/** 默认展开的工具分组;可用 ?toolbox=settlement 直接打开某组(便于演示/截图) */
+const initialToolGroup = new URLSearchParams(location.search).get('toolbox') || 'strata'
+
+/** 项目/catalog 建议的竖向夸张基准(通常 20),作为滑块“默认”与倍率分母 */
+const baseVerticalScale = computed(
+    () => coordinateOrigin.value?.verticalScale || BOREHOLE_VERTICAL_SCALE,
+)
+
+/**
+ * 工具箱是纯展示组件,这里把所有视口操作的「状态 + 动作」汇总成一份描述。
+ * 好处:控件增删只改这一处,SceneToolbox 不需要知道任何三维逻辑;
+ * 也把原先贴在视口顶部的一长条按钮(会和其它浮层抢位置)收进一个竖向导航。
+ */
+const toolGroups = computed<ToolGroup[]>(() => [
+    {
+        key: 'model', label: '模型', icon: 'FolderOpened',
+        controls: [
+            { kind: 'action', label: '加载本地 .glb', icon: 'Plus', event: 'load-file',
+              primary: true, disabled: isLoading.value },
+            { kind: 'action', label: '重置视角', icon: 'RefreshRight', event: 'reset-camera' },
+            { kind: 'note', text: '也可以把 <b>.glb</b> 直接拖进场景加载。' },
+        ],
+    },
+    {
+        key: 'view', label: '视角', icon: 'View', engaged: rotateXAxisEnabled.value,
+        controls: [
+            { kind: 'action', label: '重置视角 / 适配全场景', icon: 'RefreshRight', event: 'reset-camera' },
+            { kind: 'switch', label: '旋转 X 轴（高程朝上）', value: rotateXAxisEnabled.value, event: 'rotate-x' },
+            { kind: 'note', text: '关闭后 X 轴水平、Z 轴朝上（三维软件习惯）。' },
+        ],
+    },
+    {
+        key: 'scale', label: '竖向比例', icon: 'ScaleToOriginal',
+        engaged: Math.abs(verticalScale.value - baseVerticalScale.value) > 1e-6,
+        controls: [
+            { kind: 'slider', label: '竖向夸张倍数', value: verticalScale.value,
+              display: `${verticalScale.value}×`, min: 1, max: 120, step: 1,
+              event: 'vertical-scale' },
+            { kind: 'segment', label: '快速设定', value: String(verticalScale.value),
+              options: [{ value: '1', label: '1×' }, { value: String(baseVerticalScale.value), label: '默认' },
+                        { value: '50', label: '50×' }, { value: '100', label: '100×' }],
+              event: 'vertical-scale-preset' },
+            { kind: 'stats', items: [
+                { label: '真实米制', value: '1 : 1' },
+                { label: '当前竖向', value: `${verticalScale.value}×` },
+                { label: '平面方向', value: '不变' },
+            ] },
+            { kind: 'note', text: '只拉高竖向，X/Y 不受影响。' +
+                '分层、钻孔、井巷与<b>沉陷位移</b>会同步缩放（位移作用在几何空间，' +
+                '跟随父节点比例）。设回 <b>' + baseVerticalScale.value + '×</b> 即为数据推荐值。' },
+        ],
+    },
+    {
+        key: 'strata', label: '地层', icon: 'Files', engaged: stratumExploded.value,
+        controls: [
+            { kind: 'switch', label: stratumExploded.value ? '炸开中（关闭则还原）' : '炸开层位',
+              value: stratumExploded.value, event: 'explode' },
+            { kind: 'slider', label: '炸开间距', value: toolState.value.explodeGap,
+              display: String(toolState.value.explodeGap), min: 0, max: 5000, step: 50,
+              event: 'explode-gap', disabled: !stratumExploded.value },
+            { kind: 'switch', label: '显示地层边缘线', value: showEdges.value, event: 'show-edges' },
+        ],
+    },
+    {
+        key: 'clip', label: '剖切', icon: 'Scissor', engaged: toolState.value.clipEnabled,
+        controls: [
+            { kind: 'switch', label: '启用剖切', value: toolState.value.clipEnabled, event: 'clip' },
+            { kind: 'segment', label: '剖切轴', value: toolState.value.clipAxis,
+              options: [{ value: 'x', label: 'X' }, { value: 'y', label: 'Y' }, { value: 'z', label: 'Z' }],
+              event: 'clip-axis', disabled: !toolState.value.clipEnabled },
+            { kind: 'slider', label: '位置', value: toolState.value.clipHeight,
+              display: formatClipPosition.value, min: clipRange.value.min, max: clipRange.value.max,
+              step: clipStep.value, event: 'clip-height', disabled: !toolState.value.clipEnabled },
+            { kind: 'segment', label: '保留', value: toolState.value.clipKeepLower ? 'lower' : 'upper',
+              options: [{ value: 'lower', label: '下半' }, { value: 'upper', label: '上半' }],
+              event: 'clip-keep', disabled: !toolState.value.clipEnabled },
+        ],
+    },
+    {
+        key: 'display', label: '显示', icon: 'MagicStick',
+        engaged: hoverEnabled.value || outlineEnabled.value || boundingBoxEnabled.value,
+        controls: [
+            { kind: 'switch', label: '悬停标签', value: hoverEnabled.value, event: 'hover' },
+            { kind: 'switch', label: '描边', value: outlineEnabled.value, event: 'outline' },
+            { kind: 'switch', label: '坐标盒', value: boundingBoxEnabled.value, event: 'bounding-box' },
+        ],
+    },
+    {
+        key: 'measure', label: '测量', icon: 'Aim', engaged: toolState.value.measureEnabled,
+        controls: [
+            { kind: 'switch', label: '启用测量', value: toolState.value.measureEnabled, event: 'measure' },
+            { kind: 'readout', label: '最近测量',
+              value: lastMeasurementDistance.value === null
+                  ? '—' : `${lastMeasurementDistance.value.toFixed(2)} m` },
+            { kind: 'readout', label: '历史记录', value: `${measurements.value.length} 条` },
+            { kind: 'action', label: '清空测量', icon: 'Delete', event: 'clear-measurements',
+              disabled: !measurements.value.length },
+            { kind: 'note', text: '开启后在场景中依次点击两点即可量距。' },
+        ],
+    },
+    {
+        key: 'annotation', label: '标注', icon: 'EditPen', engaged: toolState.value.annotationEnabled,
+        controls: [
+            { kind: 'switch', label: '启用标注', value: toolState.value.annotationEnabled, event: 'annotation' },
+            { kind: 'action', label: '清空标注', icon: 'Delete', event: 'clear-annotations' },
+            { kind: 'note', text: '开启后点击场景中的点位即可输入标注文字。' },
+        ],
+    },
+    {
+        key: 'settlement', label: '沉陷', icon: 'Odometer', engaged: settlementStore.enabled,
+        controls: [
+            { kind: 'switch', label: '启用沉陷对比', value: settlementStore.enabled, event: 'settlement-toggle',
+              disabled: settlementStore.loading },
+            { kind: 'slider', label: '变形进程（0=沉陷前）', value: settlementStore.timePercent,
+              display: `${settlementStore.timePercent}%`, min: 0, max: 100, step: 1,
+              event: 'settlement-time', disabled: !settlementStore.enabled },
+            { kind: 'slider', label: '沉陷夸大（纯显示）', value: settlementStore.exaggeration,
+              display: `${settlementStore.exaggeration}×`, min: 1, max: 50, step: 1,
+              event: 'settlement-exaggeration', disabled: !settlementStore.enabled },
+            { kind: 'segment', label: '着色', value: settlementStore.colorMode,
+              options: [{ value: 'original', label: '地层' }, { value: 'dz', label: '沉降' },
+                        { value: 'magnitude', label: '位移' }],
+              event: 'settlement-color', disabled: !settlementStore.enabled },
+            { kind: 'action', label: '沉陷前（t=0）', event: 'settlement-before',
+              disabled: !settlementStore.enabled },
+            { kind: 'action', label: '沉陷后（t=1）', event: 'settlement-after',
+              disabled: !settlementStore.enabled },
+            { kind: 'stats', items: [
+                { label: '最大沉降', value: `${settlementStore.maxSubsidenceM.toFixed(2)} m` },
+                { label: '最大水平', value: `${settlementStore.maxHorizontalM.toFixed(2)} m` },
+                { label: '绑定层数', value: String(settlementStore.boundLayers) },
+            ] },
+            { kind: 'note',
+              text: '数据为真实米制。场景竖向 <b>' + verticalScale.value + '×</b>' +
+                    '，再叠加沉陷夸大 <b>' + settlementStore.exaggeration + '×</b>' +
+                    '，竖向上共放大约 <b>' + (verticalScale.value * settlementStore.exaggeration) + '×</b>。' +
+                    (settlementStore.workingsFollow ? '' : ' 巷道与工作面<b>不随沉陷移动</b>。') },
+            ...(settlementStore.enabled && !settlementStore.boundLayers
+                ? [{ kind: 'note' as const,
+                     text: settlementStore.bindIssues.length
+                         ? '未绑定到地层：' + settlementStore.bindIssues
+                             .map(i => `<b>${i.label}</b> ${i.detail}`).join('；')
+                         : '尚未绑定到地层：请先加载地层模型。',
+                     warn: true }]
+                : []),
+            ...(settlementStore.enabled && settlementStore.boundLayers && settlementStore.bindIssues.length
+                ? [{ kind: 'note' as const,
+                     text: '部分层未绑定：' + settlementStore.bindIssues
+                         .map(i => `<b>${i.label}</b> ${i.detail}`).join('；'),
+                     warn: true }]
+                : []),
+            ...(settlementStore.loadError
+                ? [{ kind: 'note' as const, text: settlementStore.loadError, warn: true }]
+                : []),
+        ],
+    },
+])
+
+function onToolEvent(event: string, payload?: any) {
+    switch (event) {
+        case 'load-file': fileInputRef.value?.click(); break
+        case 'reset-camera': resetCamera(); break
+        case 'rotate-x': onRotateXAxisToggle(payload); break
+        case 'explode': toggleStratumExplode(); break
+        case 'explode-gap': onExplodeGapChange(payload); break
+        case 'show-edges': sceneStore.setShowEdges(Boolean(payload)); break
+        case 'clip': toggleClipTool(); break
+        case 'clip-axis': setClipAxis(payload); break
+        case 'clip-height': onClipHeightChange(payload); break
+        case 'clip-keep': setClipKeepLower(payload === 'lower'); break
+        case 'hover': toggleHoverEffect(); break
+        case 'outline': toggleOutline(); break
+        case 'bounding-box': toggleBoundingBox(); break
+        case 'measure': toggleMeasureTool(); break
+        case 'clear-measurements': clearMeasurements(); break
+        case 'annotation': toggleAnnotationTool(); break
+        case 'clear-annotations': clearAnnotations(); break
+        case 'settlement-toggle':
+            settlementStore.enabled = Boolean(payload)
+            // 关闭时要清掉“未绑定”的旧原因,否则再次开启会闪现上一次的提示
+            if (!settlementStore.enabled) settlementStore.bindIssues = []
+            break
+        case 'settlement-time': settlementStore.timePercent = Number(payload); break
+        case 'settlement-exaggeration': settlementStore.exaggeration = Number(payload); break
+        case 'settlement-color': settlementStore.colorMode = payload; break
+        case 'settlement-before': settlementStore.time = 0; break
+        case 'settlement-after': settlementStore.time = 1; break
+        case 'vertical-scale': sceneStore.setVerticalScale(Number(payload)); break
+        case 'vertical-scale-preset': sceneStore.setVerticalScale(Number(payload)); break
+    }
+}
+
 function setClipAxis(axis: 'x' | 'y' | 'z') {
     sceneStore.setClipAxis(axis)
 }
@@ -1059,10 +1107,24 @@ async function initScene() {
         padding: 12,
     })
 
-    boundingBoxTool = new BoundingBoxTool(sceneManager.scene, modelManager, cameraManager.camera, canvasRef.value, () => coordinateOrigin.value)
+    boundingBoxTool = new BoundingBoxTool(sceneManager.scene, modelManager, cameraManager.camera, canvasRef.value,
+        () => coordinateOrigin.value, () => verticalScale.value)
 
     syncToolRuntimeState()
     startAnimate()
+    // 预取沉陷元信息(仅 4 KB),使工具箱里未启用时也能显示真实的最大沉降等读数
+    void prefetchSettlementMeta()
+
+    // 开发期调试句柄:便于在浏览器控制台/自动化脚本里检查场景状态
+    // (例:__geomine.sceneManager.geoRoot.scale.z)
+    if (import.meta.env.DEV) {
+        ;(window as any).__geomine = {
+            sceneManager, cameraManager, rendererManager, modelManager,
+            get settlementManager() { return settlementManager },
+            get settlement() { return settlementStore },
+            get scene() { return sceneStore },
+        }
+    }
 }
 
 // ==================== Watchers ====================
@@ -1115,6 +1177,20 @@ watch(
         if (toolState.value.clipEnabled) syncToolRuntimeState()
     },
 )
+
+// 竖向夸张：全场景统一乘在 geoRoot 上。
+// 各模型已自带基准倍数(metadata.vertical_scale, 通常 20),这里再乘一个倍率,
+// 所以一次调整能同时作用于分层、钻孔、井巷与沉陷位移,不会双重缩放。
+watch(verticalScale, (value) => {
+    const base = coordinateOrigin.value?.verticalScale || BOREHOLE_VERTICAL_SCALE
+    sceneManager?.setVerticalScaleMultiplier(value / base)
+    // 世界空间的范围与位移随比例变化
+    boundingBoxTool?.refresh()
+    stratumExplodeTool?.sync()
+    if (toolState.value.clipEnabled) syncToolRuntimeState()
+    // 刻意**不**自动重新取景:若相机随比例一起退后,模型看上去大小不变,
+    // 滑块就失去意义了。需要时用户点工具箱里的“重置视角”。
+})
 
 watch(() => toolState.value.clipHeight, (height) => {
     if (clipTool && Math.abs(clipTool.getHeight() - height) > 1e-6) {
@@ -1175,6 +1251,8 @@ onDeactivated(() => {
 onUnmounted(() => {
     sceneStore.activateTool(null)
     sceneStore.resetSceneSession()
+    // geoRoot 随画布销毁,竖向倍率也要回默认,否则下次进来状态不一致
+    sceneStore.resetVerticalScale()
     settlementManager?.restoreBase()
     settlementManager?.detach()
     settlementManager = null
@@ -1215,109 +1293,6 @@ onUnmounted(() => {
     height: 100%;
 }
 
-.tools-bar {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px;
-    border: 1px solid rgba(0, 200, 255, 0.28);
-    border-radius: 12px;
-    background: linear-gradient(135deg, rgba(10, 22, 40, 0.92), rgba(15, 36, 71, 0.8));
-    backdrop-filter: blur(8px);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
-}
-
-.tools-group {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.tools-divider {
-    width: 1px;
-    height: 28px;
-    background: rgba(138, 180, 212, 0.35);
-}
-
-.tool-btn {
-    min-width: 72px;
-    height: 34px;
-    border: 1px solid rgba(138, 180, 212, 0.35);
-    color: var(--color-text-primary);
-    background: rgba(19, 45, 85, 0.45);
-}
-
-.tool-btn span {
-    margin-left: 6px;
-    font-size: 12px;
-}
-
-.tool-btn.active {
-    border-color: rgba(0, 200, 255, 0.8);
-    color: #dff8ff;
-    background: linear-gradient(135deg, rgba(0, 200, 255, 0.25), rgba(16, 54, 102, 0.8));
-}
-
-.tool-btn.ghost {
-    min-width: 60px;
-}
-
-.axis-toggle-group {
-    gap: 6px;
-}
-
-.axis-toggle-label {
-    color: var(--color-text-secondary);
-    font-size: 12px;
-}
-
-.clip-control {
-    width: 180px;
-    padding: 0 2px;
-}
-
-.explode-control {
-    width: 150px;
-    padding: 0 2px;
-}
-
-.clip-axis-row {
-    display: flex;
-    gap: 6px;
-    margin-bottom: 6px;
-}
-
-.axis-btn {
-    min-width: 34px;
-    height: 24px;
-    border: 1px solid rgba(138, 180, 212, 0.35);
-    color: var(--color-text-secondary);
-    background: rgba(19, 45, 85, 0.35);
-    padding: 0;
-}
-
-.axis-btn.active {
-    color: #dff8ff;
-    border-color: rgba(0, 200, 255, 0.8);
-    background: rgba(0, 200, 255, 0.2);
-}
-
-.clip-label {
-    display: block;
-    margin-bottom: 4px;
-    color: var(--color-text-secondary);
-    font-size: 12px;
-}
-
-.clip-flags {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-top: 8px;
-}
 
 .measure-chip {
     position: absolute;
@@ -1349,71 +1324,6 @@ onUnmounted(() => {
 }
 
 @media (max-width: 900px) {
-    .tools-bar {
-        top: auto;
-        bottom: 12px;
-        right: 12px;
-        left: auto;
-        max-width: calc(100% - 24px);
-        padding: 6px;
-        gap: 6px;
-        flex-wrap: nowrap;
-        justify-content: flex-start;
-        overflow-x: auto;
-        overflow-y: hidden;
-        scrollbar-width: thin;
-        -webkit-overflow-scrolling: touch;
-    }
-
-    .tools-group {
-        width: auto;
-        justify-content: flex-start;
-        flex-shrink: 0;
-    }
-
-    .tools-divider {
-        display: block;
-        flex-shrink: 0;
-        height: 24px;
-    }
-
-    .tool-btn {
-        min-width: 58px;
-        height: 30px;
-        padding: 0 8px;
-    }
-
-    .tool-btn span {
-        margin-left: 4px;
-        font-size: 11px;
-    }
-
-    .axis-toggle-label {
-        white-space: nowrap;
-        font-size: 11px;
-    }
-
-    .clip-control {
-        width: 156px;
-    }
-
-    .clip-label {
-        margin-bottom: 2px;
-        font-size: 11px;
-    }
-
-    .clip-flags {
-        margin-top: 6px;
-    }
-
-    .tools-bar::-webkit-scrollbar {
-        height: 4px;
-    }
-
-    .tools-bar::-webkit-scrollbar-thumb {
-        background: rgba(138, 180, 212, 0.45);
-        border-radius: 999px;
-    }
 
     .measure-chip {
         top: auto;

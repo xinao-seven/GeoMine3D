@@ -34,6 +34,8 @@ export const useSettlementStore = defineStore('settlement', () => {
     /** 已绑定到几何的层数 / 顶点总数 */
     const boundLayers = ref(0)
     const boundVertices = ref(0)
+    /** 未绑定成功的原因(逐条),用于面板直接告知用户 */
+    const bindIssues = ref<Array<{ label: string; detail: string }>>([])
 
     /** 当前实际施加的最大竖向位移(模型单位,未乘显示 z 夸张) */
     const appliedMaxDz = ref(0)
@@ -55,6 +57,7 @@ export const useSettlementStore = defineStore('settlement', () => {
         appliedMaxDz.value = 0
         boundLayers.value = 0
         boundVertices.value = 0
+        bindIssues.value = []
     }
 
     function resetSession() {
@@ -80,6 +83,7 @@ export const useSettlementStore = defineStore('settlement', () => {
         generatedUtc,
         boundLayers,
         boundVertices,
+        bindIssues,
         appliedMaxDz,
         timePercent,
         visibleDropDisplayUnits,
