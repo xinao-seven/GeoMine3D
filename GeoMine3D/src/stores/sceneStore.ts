@@ -19,7 +19,8 @@ export type ModelLoadPayload = {
     model: ModelItem
 } | {
     type: 'borehole'
-    id: '__all__'
+    // '__all__' 表示整组加载/移除,其余值为单个钻孔 id
+    id: string
     name: string
     boreholeList: BoreholeItem[]
 }
