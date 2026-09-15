@@ -1,13 +1,24 @@
 {
-  "schema_version": "1.0",
-  "generated_utc": "2026-09-02T07:35:56.959028+00:00",
+  "schema_version": "1.0-refined",
+  "generated_utc": "2026-09-03T01:30:46.716220+00:00",
   "consumer": "three.js GLTFLoader(第6章可视化系统)",
+  "variant": "refined_14_layers(锚点-旋回-阈值细层化)",
+  "act_params": {
+    "tau_m": 0.5,
+    "coverage": 0.95,
+    "k_star": 4,
+    "coal_fill_m": 3.0,
+    "truncate_at": "4-2煤"
+  },
   "source": {
-    "npz": "E:\\code\\model-thesis-private\\experiments\\data\\chapters\\chapter04_uncertainty_order_projection\\model_visualization\\square_direct_ard_pinchout_surfaces.npz",
-    "npz_sha256": "50dfab158e1fb33fae2c18ae019ac8dadf888ffaa10cfabb8e918d16608fe496",
+    "npz": "E:\\code\\model-thesis-private\\experiments\\data\\chapters\\chapter04_uncertainty_order_projection\\model_visualization_refined\\square_direct_ard_pinchout_surfaces_refined.npz",
+    "npz_sha256": "78744bdf5c60ceee85da1970bce584ebc0337c1b82fe36a1ce2918369ff200cd",
+    "intervals_refined_csv": "E:\\code\\model-thesis-private\\data\\project_data\\merge\\intervals_refined.csv",
+    "intervals_refined_sha256": "bb41822c2bcd8d5bb38d4ab8cbe05fd1d56ad2f67a5626b07602b943c05a3450",
+    "strat_order_refined": "E:\\code\\model-thesis-private\\data\\project_data\\strat_order_refined.json",
     "builder": "src/modeling/prism_model_builder.py",
     "builder_sha256": "d71938aa192a9e794ba1bf5f941cb2ff3d93fd73672fe844f9978d54e5a21a03",
-    "git_commit": "f59d869"
+    "git_commit": "c98df6e"
   },
   "units": {
     "length": "m",
@@ -16,7 +27,7 @@
   "origin_restore": {
     "x_origin_m": 37428072.48500001,
     "y_origin_m": 4300144.084999999,
-    "z_origin_m": 1135.9872069831256,
+    "z_origin_m": 1149.980019146534,
     "formulas": {
       "x_global_m": "x_local + x_origin_m",
       "y_global_m": "y_local + y_origin_m",
@@ -24,21 +35,21 @@
     },
     "display_recommendation": {
       "z_scale": 20,
-      "note": "前端可用 mesh.scale.z = 20 做竖向夸张,恢复真实比例时除回"
+      "note": "前端可用 mesh.scale.z = 20 竖向夸张,恢复真实比例时除回"
     }
   },
   "grid": {
     "shared_nodes": 16641,
     "spacing_m": 100.0,
     "triangles_per_layer": 32768,
-    "interfaces": 11,
-    "geological_layers": 10,
+    "interfaces": 15,
+    "geological_layers": 14,
     "pinchout_threshold_m": 0.5
   },
   "attributes": {
-    "_thickness_m": "顶点所在节点的地层厚度(m,该层上下界面高程差)",
+    "_thickness_m": "顶点所在节点的地层厚度(m)",
     "_interface_std_mean_m": "顶点处上下界面GP标准差均值(m)",
-    "_node_index": "共享网格节点索引(用于与2D图层对齐)",
+    "_node_index": "共享网格节点索引(与第4章npz/沉陷偏移场对齐)",
     "_pinchout_node": "该节点是否为该层数值尖灭候选(1/0)"
   },
   "element_type_map": {
@@ -46,66 +57,180 @@
     "2": "pyramid(单顶点尖灭)",
     "3": "tetra(双顶点尖灭)"
   },
+  "edge_integrity": [
+    {
+      "layer": "L01",
+      "boundary_edges": 0,
+      "non_manifold_edges": 0,
+      "is_manifold": true,
+      "semantic_integral_rel_dev": 1.103613140010686e-10,
+      "note": ""
+    },
+    {
+      "layer": "L02",
+      "boundary_edges": 0,
+      "non_manifold_edges": 0,
+      "is_manifold": true,
+      "semantic_integral_rel_dev": 1.9454481032301882e-10,
+      "note": ""
+    },
+    {
+      "layer": "L03",
+      "boundary_edges": 0,
+      "non_manifold_edges": 1,
+      "is_manifold": false,
+      "semantic_integral_rel_dev": 2.190502359580306e-09,
+      "note": "尖灭相触(上下片零厚度贴合)非流形边,用户决策不修复;体积以解析公式与语义定向积分双重校验"
+    },
+    {
+      "layer": "L04",
+      "boundary_edges": 0,
+      "non_manifold_edges": 0,
+      "is_manifold": true,
+      "semantic_integral_rel_dev": 6.764452833286539e-11,
+      "note": ""
+    },
+    {
+      "layer": "L05",
+      "boundary_edges": 0,
+      "non_manifold_edges": 19,
+      "is_manifold": false,
+      "semantic_integral_rel_dev": 1.0058510022266718e-08,
+      "note": "尖灭相触(上下片零厚度贴合)非流形边,用户决策不修复;体积以解析公式与语义定向积分双重校验"
+    },
+    {
+      "layer": "L06",
+      "boundary_edges": 0,
+      "non_manifold_edges": 4,
+      "is_manifold": false,
+      "semantic_integral_rel_dev": 9.889933281023125e-10,
+      "note": "尖灭相触(上下片零厚度贴合)非流形边,用户决策不修复;体积以解析公式与语义定向积分双重校验"
+    },
+    {
+      "layer": "L07",
+      "boundary_edges": 0,
+      "non_manifold_edges": 18,
+      "is_manifold": false,
+      "semantic_integral_rel_dev": 1.328392188796511e-09,
+      "note": "尖灭相触(上下片零厚度贴合)非流形边,用户决策不修复;体积以解析公式与语义定向积分双重校验"
+    },
+    {
+      "layer": "L08",
+      "boundary_edges": 0,
+      "non_manifold_edges": 7,
+      "is_manifold": false,
+      "semantic_integral_rel_dev": 4.144818315919572e-10,
+      "note": "尖灭相触(上下片零厚度贴合)非流形边,用户决策不修复;体积以解析公式与语义定向积分双重校验"
+    },
+    {
+      "layer": "L09",
+      "boundary_edges": 0,
+      "non_manifold_edges": 7,
+      "is_manifold": false,
+      "semantic_integral_rel_dev": 1.9119437554955108e-09,
+      "note": "尖灭相触(上下片零厚度贴合)非流形边,用户决策不修复;体积以解析公式与语义定向积分双重校验"
+    },
+    {
+      "layer": "L10",
+      "boundary_edges": 0,
+      "non_manifold_edges": 0,
+      "is_manifold": true,
+      "semantic_integral_rel_dev": 7.723639447028385e-11,
+      "note": ""
+    },
+    {
+      "layer": "L11",
+      "boundary_edges": 0,
+      "non_manifold_edges": 0,
+      "is_manifold": true,
+      "semantic_integral_rel_dev": 2.3299251330394115e-09,
+      "note": ""
+    },
+    {
+      "layer": "L12",
+      "boundary_edges": 0,
+      "non_manifold_edges": 0,
+      "is_manifold": true,
+      "semantic_integral_rel_dev": 2.2904089683457226e-09,
+      "note": ""
+    },
+    {
+      "layer": "L13",
+      "boundary_edges": 0,
+      "non_manifold_edges": 0,
+      "is_manifold": true,
+      "semantic_integral_rel_dev": 2.583159260259192e-10,
+      "note": ""
+    },
+    {
+      "layer": "L14",
+      "boundary_edges": 0,
+      "non_manifold_edges": 3,
+      "is_manifold": false,
+      "semantic_integral_rel_dev": 6.693651652291049e-11,
+      "note": "尖灭相触(上下片零厚度贴合)非流形边,用户决策不修复;体积以解析公式与语义定向积分双重校验"
+    }
+  ],
   "layers": [
     {
       "index": 1,
       "code": "L01",
-      "name_cn": "风积砂",
+      "name_cn": "风积砂层",
       "color_hex": "#D9C7A3",
       "glb": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\L01.glb",
-        "bytes": 1841556,
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L01.glb",
+        "bytes": 1839988,
         "vertex_attributes_kept": true
       },
       "lods": [
         {
           "name": "lod50",
           "target_reduction": 0.5,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\lods\\L01_lod50.glb",
-          "bytes": 592120,
-          "vertices": 16427,
-          "triangles": 32854
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L01_lod50.glb",
+          "bytes": 591616,
+          "vertices": 16413,
+          "triangles": 32826
         },
         {
           "name": "lod80",
           "target_reduction": 0.8,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\lods\\L01_lod80.glb",
-          "bytes": 237264,
-          "vertices": 6570,
-          "triangles": 13140
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L01_lod80.glb",
+          "bytes": 237084,
+          "vertices": 6565,
+          "triangles": 13130
         }
       ],
       "vtu": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\vtu\\L01.vtu",
-        "bytes": 1668035
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L01.vtu",
+        "bytes": 1670045
       },
       "vertex_attributes_in_glb": true,
       "bounds_local": {
         "min": [
           -6400.0,
           -6400.0,
-          -22.649735
+          -35.284614
         ],
         "max": [
           6400.0,
           6400.0,
-          165.548927
+          152.201382
         ]
       },
       "stats": {
         "candidate_prisms": 32768,
-        "retained_prisms": 32364,
-        "deleted_prisms": 404,
-        "partial_pinchout_prisms": 176,
+        "retained_prisms": 32337,
+        "deleted_prisms": 431,
+        "partial_pinchout_prisms": 177,
         "elements": {
-          "wedge": 32188,
-          "pyramid": 94,
-          "tetra": 82
+          "wedge": 32160,
+          "pyramid": 97,
+          "tetra": 80
         },
-        "volume_m3": 3091090657.670924,
-        "mean_thickness_m": 18.871573465564882,
-        "surface_points": 32854,
-        "surface_cells": 65220
+        "volume_m3": 3268866454.8142414,
+        "mean_thickness_m": 19.94038013730523,
+        "surface_points": 32826,
+        "surface_cells": 65165
       }
     },
     {
@@ -114,312 +239,617 @@
       "name_cn": "土层",
       "color_hex": "#CDBB8C",
       "glb": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\L02.glb",
-        "bytes": 1855096,
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L02.glb",
+        "bytes": 1858804,
         "vertex_attributes_kept": true
       },
       "lods": [
         {
           "name": "lod50",
           "target_reduction": 0.5,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\lods\\L02_lod50.glb",
-          "bytes": 596452,
-          "vertices": 16546,
-          "triangles": 33096
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L02_lod50.glb",
+          "bytes": 597664,
+          "vertices": 16581,
+          "triangles": 33162
         },
         {
           "name": "lod80",
           "target_reduction": 0.8,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\lods\\L02_lod80.glb",
-          "bytes": 239004,
-          "vertices": 6617,
-          "triangles": 13238
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L02_lod80.glb",
+          "bytes": 239496,
+          "vertices": 6632,
+          "triangles": 13264
         }
       ],
       "vtu": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\vtu\\L02.vtu",
-        "bytes": 1679117
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L02.vtu",
+        "bytes": 1680634
       },
       "vertex_attributes_in_glb": true,
       "bounds_local": {
         "min": [
           -6400.0,
           -6400.0,
-          -23.296949
+          -35.497564
         ],
         "max": [
           6400.0,
           6400.0,
-          150.445817
+          135.250302
         ]
       },
       "stats": {
         "candidate_prisms": 32768,
-        "retained_prisms": 32587,
-        "deleted_prisms": 181,
-        "partial_pinchout_prisms": 121,
+        "retained_prisms": 32654,
+        "deleted_prisms": 114,
+        "partial_pinchout_prisms": 91,
         "elements": {
-          "wedge": 32466,
-          "pyramid": 63,
-          "tetra": 58
+          "wedge": 32563,
+          "pyramid": 52,
+          "tetra": 39
         },
-        "volume_m3": 4265385947.9779797,
-        "mean_thickness_m": 26.12717184762038,
-        "surface_points": 33095,
-        "surface_cells": 65685
+        "volume_m3": 4254535253.5076885,
+        "mean_thickness_m": 26.06930574407816,
+        "surface_points": 33162,
+        "surface_cells": 65817
       }
     },
     {
       "index": 3,
       "code": "L03",
-      "name_cn": "上部砂岩层",
-      "color_hex": "#D98C5F",
+      "name_cn": "第4旋回泥岩层",
+      "color_hex": "#8C6D5A",
       "glb": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\L03.glb",
-        "bytes": 1793124,
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L03.glb",
+        "bytes": 165844,
         "vertex_attributes_kept": true
       },
       "lods": [
         {
           "name": "lod50",
           "target_reduction": 0.5,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\lods\\L03_lod50.glb",
-          "bytes": 576528,
-          "vertices": 15992,
-          "triangles": 31990
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L03_lod50.glb",
+          "bytes": 53488,
+          "vertices": 1470,
+          "triangles": 2926
         },
         {
           "name": "lod80",
           "target_reduction": 0.8,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\lods\\L03_lod80.glb",
-          "bytes": 231032,
-          "vertices": 6395,
-          "triangles": 12796
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L03_lod80.glb",
+          "bytes": 21880,
+          "vertices": 592,
+          "triangles": 1170
         }
       ],
       "vtu": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\vtu\\L03.vtu",
-        "bytes": 1637697
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L03.vtu",
+        "bytes": 147811
       },
       "vertex_attributes_in_glb": true,
       "bounds_local": {
         "min": [
-          -6400.0,
-          -6400.0,
-          -46.71631
+          -5800.0,
+          -1000.0,
+          -32.120105
         ],
         "max": [
+          1900.0,
           6400.0,
-          6400.0,
-          85.391976
+          64.864088
         ]
       },
       "stats": {
         "candidate_prisms": 32768,
-        "retained_prisms": 31524,
-        "deleted_prisms": 1244,
-        "partial_pinchout_prisms": 523,
+        "retained_prisms": 2906,
+        "deleted_prisms": 29862,
+        "partial_pinchout_prisms": 366,
         "elements": {
-          "wedge": 31001,
-          "pyramid": 278,
-          "tetra": 245
+          "wedge": 2540,
+          "pyramid": 164,
+          "tetra": 202
         },
-        "volume_m3": 3649121853.7564306,
-        "mean_thickness_m": 22.236717636883288,
-        "surface_points": 31988,
-        "surface_cells": 63519
+        "volume_m3": 23609939.321617275,
+        "mean_thickness_m": 0.14232839459054625,
+        "surface_points": 2934,
+        "surface_cells": 5834
       }
     },
     {
       "index": 4,
       "code": "L04",
-      "name_cn": "砂岩泥岩混层",
-      "color_hex": "#8C6D5A",
+      "name_cn": "第4旋回砂岩层",
+      "color_hex": "#D98C5F",
       "glb": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\L04.glb",
-        "bytes": 1832512,
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L04.glb",
+        "bytes": 1115960,
         "vertex_attributes_kept": true
       },
       "lods": [
         {
           "name": "lod50",
           "target_reduction": 0.5,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\lods\\L04_lod50.glb",
-          "bytes": 589148,
-          "vertices": 16328,
-          "triangles": 32706
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L04_lod50.glb",
+          "bytes": 358896,
+          "vertices": 9950,
+          "triangles": 19896
         },
         {
           "name": "lod80",
           "target_reduction": 0.8,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\lods\\L04_lod80.glb",
-          "bytes": 235912,
-          "vertices": 6516,
-          "triangles": 13082
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L04_lod80.glb",
+          "bytes": 144008,
+          "vertices": 3981,
+          "triangles": 7958
         }
       ],
       "vtu": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\vtu\\L04.vtu",
-        "bytes": 1667304
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L04.vtu",
+        "bytes": 1018343
       },
       "vertex_attributes_in_glb": true,
       "bounds_local": {
         "min": [
           -6400.0,
           -6400.0,
-          -61.300795
+          -32.790098
         ],
         "max": [
+          6200.0,
           6400.0,
-          6400.0,
-          75.753903
+          71.726585
         ]
       },
       "stats": {
         "candidate_prisms": 32768,
-        "retained_prisms": 32206,
-        "deleted_prisms": 562,
-        "partial_pinchout_prisms": 544,
+        "retained_prisms": 19716,
+        "deleted_prisms": 13052,
+        "partial_pinchout_prisms": 1287,
         "elements": {
-          "wedge": 31662,
-          "pyramid": 314,
-          "tetra": 230
+          "wedge": 18429,
+          "pyramid": 645,
+          "tetra": 642
         },
-        "volume_m3": 2487151744.5389066,
-        "mean_thickness_m": 15.11911614101369,
-        "surface_points": 32682,
-        "surface_cells": 64914
+        "volume_m3": 385778542.5589092,
+        "mean_thickness_m": 2.3363380325384653,
+        "surface_points": 19898,
+        "surface_cells": 39616
       }
     },
     {
       "index": 5,
       "code": "L05",
-      "name_cn": "中部砂岩层",
-      "color_hex": "#E2B66A",
+      "name_cn": "第3旋回泥岩层",
+      "color_hex": "#8C6D5A",
       "glb": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\L05.glb",
-        "bytes": 1820492,
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L05.glb",
+        "bytes": 505860,
         "vertex_attributes_kept": true
       },
       "lods": [
         {
           "name": "lod50",
           "target_reduction": 0.5,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\lods\\L05_lod50.glb",
-          "bytes": 585344,
-          "vertices": 16239,
-          "triangles": 32478
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L05_lod50.glb",
+          "bytes": 162932,
+          "vertices": 4568,
+          "triangles": 8948
         },
         {
           "name": "lod80",
           "target_reduction": 0.8,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\lods\\L05_lod80.glb",
-          "bytes": 234556,
-          "vertices": 6495,
-          "triangles": 12990
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L05_lod80.glb",
+          "bytes": 66272,
+          "vertices": 1883,
+          "triangles": 3578
         }
       ],
       "vtu": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\vtu\\L05.vtu",
-        "bytes": 1659531
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L05.vtu",
+        "bytes": 439569
       },
       "vertex_attributes_in_glb": true,
       "bounds_local": {
         "min": [
           -6400.0,
           -6400.0,
-          -86.563854
+          -35.271839
         ],
         "max": [
+          6200.0,
           6400.0,
-          6400.0,
-          75.753903
+          66.287879
         ]
       },
       "stats": {
         "candidate_prisms": 32768,
-        "retained_prisms": 32023,
-        "deleted_prisms": 745,
-        "partial_pinchout_prisms": 181,
+        "retained_prisms": 8876,
+        "deleted_prisms": 23892,
+        "partial_pinchout_prisms": 1622,
         "elements": {
-          "wedge": 31842,
-          "pyramid": 98,
-          "tetra": 83
+          "wedge": 7254,
+          "pyramid": 604,
+          "tetra": 1018
         },
-        "volume_m3": 3631243372.595768,
-        "mean_thickness_m": 22.113374126732,
-        "surface_points": 32478,
-        "surface_cells": 64504
+        "volume_m3": 37625289.34178751,
+        "mean_thickness_m": 0.22791053719737173,
+        "surface_points": 9043,
+        "surface_cells": 17832
       }
     },
     {
       "index": 6,
       "code": "L06",
-      "name_cn": "煤顶泥岩层",
-      "color_hex": "#7A8793",
+      "name_cn": "第3旋回砂岩层",
+      "color_hex": "#D98C5F",
       "glb": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\L06.glb",
-        "bytes": 1284188,
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L06.glb",
+        "bytes": 1535672,
         "vertex_attributes_kept": true
       },
       "lods": [
         {
           "name": "lod50",
           "target_reduction": 0.5,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\lods\\L06_lod50.glb",
-          "bytes": 412968,
-          "vertices": 11452,
-          "triangles": 22900
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L06_lod50.glb",
+          "bytes": 493768,
+          "vertices": 13689,
+          "triangles": 27396
         },
         {
           "name": "lod80",
           "target_reduction": 0.8,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\lods\\L06_lod80.glb",
-          "bytes": 165648,
-          "vertices": 4582,
-          "triangles": 9160
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L06_lod80.glb",
+          "bytes": 197880,
+          "vertices": 5470,
+          "triangles": 10958
         }
       ],
       "vtu": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\vtu\\L06.vtu",
-        "bytes": 1140152
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L06.vtu",
+        "bytes": 1401470
       },
       "vertex_attributes_in_glb": true,
       "bounds_local": {
         "min": [
           -6400.0,
           -6400.0,
-          -88.118593
+          -43.007138
         ],
         "max": [
           6400.0,
           6400.0,
-          41.25206
+          65.93963
         ]
       },
       "stats": {
         "candidate_prisms": 32768,
-        "retained_prisms": 22431,
-        "deleted_prisms": 10337,
-        "partial_pinchout_prisms": 720,
+        "retained_prisms": 27019,
+        "deleted_prisms": 5749,
+        "partial_pinchout_prisms": 846,
         "elements": {
-          "wedge": 21711,
-          "pyramid": 359,
-          "tetra": 361
+          "wedge": 26173,
+          "pyramid": 439,
+          "tetra": 407
         },
-        "volume_m3": 203943495.65689665,
-        "mean_thickness_m": 1.2524570354624927,
-        "surface_points": 22902,
-        "surface_cells": 45332
+        "volume_m3": 911585243.1584432,
+        "mean_thickness_m": 5.577186556019665,
+        "surface_points": 27388,
+        "surface_cells": 54418
       }
     },
     {
       "index": 7,
       "code": "L07",
+      "name_cn": "第2旋回泥岩层",
+      "color_hex": "#8C6D5A",
+      "glb": {
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L07.glb",
+        "bytes": 1456920,
+        "vertex_attributes_kept": true
+      },
+      "lods": [
+        {
+          "name": "lod50",
+          "target_reduction": 0.5,
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L07_lod50.glb",
+          "bytes": 468460,
+          "vertices": 12988,
+          "triangles": 25988
+        },
+        {
+          "name": "lod80",
+          "target_reduction": 0.8,
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L07_lod80.glb",
+          "bytes": 187764,
+          "vertices": 5191,
+          "triangles": 10394
+        }
+      ],
+      "vtu": {
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L07.vtu",
+        "bytes": 1321559
+      },
+      "vertex_attributes_in_glb": true,
+      "bounds_local": {
+        "min": [
+          -6400.0,
+          -6400.0,
+          -43.883054
+        ],
+        "max": [
+          6400.0,
+          6400.0,
+          58.813472
+        ]
+      },
+      "stats": {
+        "candidate_prisms": 32768,
+        "retained_prisms": 25629,
+        "deleted_prisms": 7139,
+        "partial_pinchout_prisms": 1519,
+        "elements": {
+          "wedge": 24110,
+          "pyramid": 734,
+          "tetra": 785
+        },
+        "volume_m3": 289832026.5183406,
+        "mean_thickness_m": 1.7613998547161533,
+        "surface_points": 25983,
+        "surface_cells": 51624
+      }
+    },
+    {
+      "index": 8,
+      "code": "L08",
+      "name_cn": "第2旋回砂岩层",
+      "color_hex": "#D98C5F",
+      "glb": {
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L08.glb",
+        "bytes": 1758580,
+        "vertex_attributes_kept": true
+      },
+      "lods": [
+        {
+          "name": "lod50",
+          "target_reduction": 0.5,
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L08_lod50.glb",
+          "bytes": 565368,
+          "vertices": 15660,
+          "triangles": 31392
+        },
+        {
+          "name": "lod80",
+          "target_reduction": 0.8,
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L08_lod80.glb",
+          "bytes": 226316,
+          "vertices": 6242,
+          "triangles": 12556
+        }
+      ],
+      "vtu": {
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L08.vtu",
+        "bytes": 1614968
+      },
+      "vertex_attributes_in_glb": true,
+      "bounds_local": {
+        "min": [
+          -6400.0,
+          -6400.0,
+          -65.513791
+        ],
+        "max": [
+          6400.0,
+          6400.0,
+          59.088949
+        ]
+      },
+      "stats": {
+        "candidate_prisms": 32768,
+        "retained_prisms": 30917,
+        "deleted_prisms": 1851,
+        "partial_pinchout_prisms": 1140,
+        "elements": {
+          "wedge": 29777,
+          "pyramid": 621,
+          "tetra": 519
+        },
+        "volume_m3": 2777458331.8138037,
+        "mean_thickness_m": 16.90546772152181,
+        "surface_points": 31357,
+        "surface_cells": 62314
+      }
+    },
+    {
+      "index": 9,
+      "code": "L09",
+      "name_cn": "第1旋回泥岩层",
+      "color_hex": "#8C6D5A",
+      "glb": {
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L09.glb",
+        "bytes": 1737068,
+        "vertex_attributes_kept": true
+      },
+      "lods": [
+        {
+          "name": "lod50",
+          "target_reduction": 0.5,
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L09_lod50.glb",
+          "bytes": 558444,
+          "vertices": 15457,
+          "triangles": 31018
+        },
+        {
+          "name": "lod80",
+          "target_reduction": 0.8,
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L09_lod80.glb",
+          "bytes": 223424,
+          "vertices": 6151,
+          "triangles": 12406
+        }
+      ],
+      "vtu": {
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L09.vtu",
+        "bytes": 1591822
+      },
+      "vertex_attributes_in_glb": true,
+      "bounds_local": {
+        "min": [
+          -6400.0,
+          -6400.0,
+          -73.23452
+        ],
+        "max": [
+          6400.0,
+          6400.0,
+          55.874186
+        ]
+      },
+      "stats": {
+        "candidate_prisms": 32768,
+        "retained_prisms": 30553,
+        "deleted_prisms": 2215,
+        "partial_pinchout_prisms": 1550,
+        "elements": {
+          "wedge": 29003,
+          "pyramid": 843,
+          "tetra": 707
+        },
+        "volume_m3": 648743755.012025,
+        "mean_thickness_m": 3.948690953259306,
+        "surface_points": 30966,
+        "surface_cells": 61576
+      }
+    },
+    {
+      "index": 10,
+      "code": "L10",
+      "name_cn": "第1旋回砂岩层",
+      "color_hex": "#D98C5F",
+      "glb": {
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L10.glb",
+        "bytes": 1834384,
+        "vertex_attributes_kept": true
+      },
+      "lods": [
+        {
+          "name": "lod50",
+          "target_reduction": 0.5,
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L10_lod50.glb",
+          "bytes": 589812,
+          "vertices": 16363,
+          "triangles": 32726
+        },
+        {
+          "name": "lod80",
+          "target_reduction": 0.8,
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L10_lod80.glb",
+          "bytes": 236360,
+          "vertices": 6545,
+          "triangles": 13090
+        }
+      ],
+      "vtu": {
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L10.vtu",
+        "bytes": 1674689
+      },
+      "vertex_attributes_in_glb": true,
+      "bounds_local": {
+        "min": [
+          -6400.0,
+          -6400.0,
+          -99.87148
+        ],
+        "max": [
+          6400.0,
+          6400.0,
+          59.299365
+        ]
+      },
+      "stats": {
+        "candidate_prisms": 32768,
+        "retained_prisms": 32254,
+        "deleted_prisms": 514,
+        "partial_pinchout_prisms": 154,
+        "elements": {
+          "wedge": 32100,
+          "pyramid": 78,
+          "tetra": 76
+        },
+        "volume_m3": 4568095906.93718,
+        "mean_thickness_m": 27.80911555885601,
+        "surface_points": 32726,
+        "surface_cells": 64982
+      }
+    },
+    {
+      "index": 11,
+      "code": "L11",
+      "name_cn": "煤顶泥岩层",
+      "color_hex": "#7A8793",
+      "glb": {
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L11.glb",
+        "bytes": 1348420,
+        "vertex_attributes_kept": true
+      },
+      "lods": [
+        {
+          "name": "lod50",
+          "target_reduction": 0.5,
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L11_lod50.glb",
+          "bytes": 433600,
+          "vertices": 12025,
+          "triangles": 24046
+        },
+        {
+          "name": "lod80",
+          "target_reduction": 0.8,
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L11_lod80.glb",
+          "bytes": 173892,
+          "vertices": 4811,
+          "triangles": 9618
+        }
+      ],
+      "vtu": {
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L11.vtu",
+        "bytes": 1200177
+      },
+      "vertex_attributes_in_glb": true,
+      "bounds_local": {
+        "min": [
+          -6400.0,
+          -6400.0,
+          -100.92896
+        ],
+        "max": [
+          6400.0,
+          6400.0,
+          27.49483
+        ]
+      },
+      "stats": {
+        "candidate_prisms": 32768,
+        "retained_prisms": 23606,
+        "deleted_prisms": 9162,
+        "partial_pinchout_prisms": 986,
+        "elements": {
+          "wedge": 22620,
+          "pyramid": 494,
+          "tetra": 492
+        },
+        "volume_m3": 214797688.10880136,
+        "mean_thickness_m": 1.3177020617455915,
+        "surface_points": 24049,
+        "surface_cells": 47656
+      }
+    },
+    {
+      "index": 12,
+      "code": "L12",
       "name_cn": "煤3-1",
       "color_hex": "#333333",
       "glb": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\L07.glb",
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L12.glb",
         "bytes": 1865484,
         "vertex_attributes_kept": true
       },
@@ -427,35 +857,35 @@
         {
           "name": "lod50",
           "target_reduction": 0.5,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\lods\\L07_lod50.glb",
-          "bytes": 599808,
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L12_lod50.glb",
+          "bytes": 599812,
           "vertices": 16642,
           "triangles": 33280
         },
         {
           "name": "lod80",
           "target_reduction": 0.8,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\lods\\L07_lod80.glb",
-          "bytes": 240380,
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L12_lod80.glb",
+          "bytes": 240384,
           "vertices": 6658,
           "triangles": 13312
         }
       ],
       "vtu": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\vtu\\L07.vtu",
-        "bytes": 1632742
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L12.vtu",
+        "bytes": 1633920
       },
       "vertex_attributes_in_glb": true,
       "bounds_local": {
         "min": [
           -6400.0,
           -6400.0,
-          -90.938573
+          -103.728807
         ],
         "max": [
           6400.0,
           6400.0,
-          41.273891
+          27.454659
         ]
       },
       "stats": {
@@ -468,213 +898,188 @@
           "pyramid": 0,
           "tetra": 0
         },
-        "volume_m3": 519928379.4435374,
-        "mean_thickness_m": 3.168361462059487,
+        "volume_m3": 516437066.808811,
+        "mean_thickness_m": 3.147718820165734,
         "surface_points": 33282,
         "surface_cells": 66048
       }
     },
     {
-      "index": 8,
-      "code": "L08",
-      "name_cn": "下部砂岩层（一）",
+      "index": 13,
+      "code": "L13",
+      "name_cn": "直接底层",
       "color_hex": "#C98E5B",
       "glb": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\L08.glb",
-        "bytes": 1858636,
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L13.glb",
+        "bytes": 1865488,
         "vertex_attributes_kept": true
       },
       "lods": [
         {
           "name": "lod50",
           "target_reduction": 0.5,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\lods\\L08_lod50.glb",
-          "bytes": 597616,
-          "vertices": 16581,
-          "triangles": 33158
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L13_lod50.glb",
+          "bytes": 599812,
+          "vertices": 16642,
+          "triangles": 33280
         },
         {
           "name": "lod80",
           "target_reduction": 0.8,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\lods\\L08_lod80.glb",
-          "bytes": 239484,
-          "vertices": 6633,
-          "triangles": 13262
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L13_lod80.glb",
+          "bytes": 240384,
+          "vertices": 6658,
+          "triangles": 13312
         }
       ],
       "vtu": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\vtu\\L08.vtu",
-        "bytes": 1655448
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L13.vtu",
+        "bytes": 1664270
       },
       "vertex_attributes_in_glb": true,
       "bounds_local": {
         "min": [
           -6400.0,
           -6400.0,
-          -127.075802
+          -139.497407
         ],
         "max": [
           6400.0,
           6400.0,
-          37.895701
+          24.32469
         ]
       },
       "stats": {
         "candidate_prisms": 32768,
-        "retained_prisms": 32669,
-        "deleted_prisms": 99,
-        "partial_pinchout_prisms": 41,
+        "retained_prisms": 32768,
+        "deleted_prisms": 0,
+        "partial_pinchout_prisms": 0,
         "elements": {
-          "wedge": 32628,
-          "pyramid": 20,
-          "tetra": 21
+          "wedge": 32768,
+          "pyramid": 0,
+          "tetra": 0
         },
-        "volume_m3": 2176683764.6170034,
-        "mean_thickness_m": 13.256864175741399,
-        "surface_points": 33160,
-        "surface_cells": 65828
+        "volume_m3": 2228903680.3290854,
+        "mean_thickness_m": 13.582834380296868,
+        "surface_points": 33282,
+        "surface_cells": 66048
       }
     },
     {
-      "index": 9,
-      "code": "L09",
-      "name_cn": "下部泥岩砂岩混合层",
+      "index": 14,
+      "code": "L14",
+      "name_cn": "下伏岩层",
       "color_hex": "#8D7465",
       "glb": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\L09.glb",
-        "bytes": 1795028,
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L14.glb",
+        "bytes": 1843076,
         "vertex_attributes_kept": true
       },
       "lods": [
         {
           "name": "lod50",
           "target_reduction": 0.5,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\lods\\L09_lod50.glb",
-          "bytes": 577168,
-          "vertices": 16013,
-          "triangles": 32022
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L14_lod50.glb",
+          "bytes": 592600,
+          "vertices": 16437,
+          "triangles": 32884
         },
         {
           "name": "lod80",
           "target_reduction": 0.8,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\lods\\L09_lod80.glb",
-          "bytes": 231312,
-          "vertices": 6406,
-          "triangles": 12808
+          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L14_lod80.glb",
+          "bytes": 237420,
+          "vertices": 6571,
+          "triangles": 13152
         }
       ],
       "vtu": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\vtu\\L09.vtu",
-        "bytes": 1621161
+        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L14.vtu",
+        "bytes": 1658904
       },
       "vertex_attributes_in_glb": true,
       "bounds_local": {
         "min": [
           -6400.0,
           -6400.0,
-          -130.830421
+          -142.252305
         ],
         "max": [
           6400.0,
           6400.0,
-          35.543021
+          22.398125
         ]
       },
       "stats": {
         "candidate_prisms": 32768,
-        "retained_prisms": 31663,
-        "deleted_prisms": 1105,
-        "partial_pinchout_prisms": 308,
+        "retained_prisms": 32403,
+        "deleted_prisms": 365,
+        "partial_pinchout_prisms": 168,
         "elements": {
-          "wedge": 31355,
-          "pyramid": 159,
-          "tetra": 149
+          "wedge": 32235,
+          "pyramid": 90,
+          "tetra": 78
         },
-        "volume_m3": 1230497187.2886784,
-        "mean_thickness_m": 7.4878705743891985,
-        "surface_points": 32024,
-        "surface_cells": 63688
-      }
-    },
-    {
-      "index": 10,
-      "code": "L10",
-      "name_cn": "下部砂岩层（二）",
-      "color_hex": "#D3A45F",
-      "glb": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\L10.glb",
-        "bytes": 1732528,
-        "vertex_attributes_kept": true
-      },
-      "lods": [
-        {
-          "name": "lod50",
-          "target_reduction": 0.5,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\lods\\L10_lod50.glb",
-          "bytes": 557080,
-          "vertices": 15455,
-          "triangles": 30906
-        },
-        {
-          "name": "lod80",
-          "target_reduction": 0.8,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\lods\\L10_lod80.glb",
-          "bytes": 223284,
-          "vertices": 6183,
-          "triangles": 12362
-        }
-      ],
-      "vtu": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\vtu\\L10.vtu",
-        "bytes": 1563024
-      },
-      "vertex_attributes_in_glb": true,
-      "bounds_local": {
-        "min": [
-          -6400.0,
-          -6400.0,
-          -130.362023
-        ],
-        "max": [
-          6400.0,
-          6400.0,
-          35.535093
-        ]
-      },
-      "stats": {
-        "candidate_prisms": 32768,
-        "retained_prisms": 30491,
-        "deleted_prisms": 2277,
-        "partial_pinchout_prisms": 253,
-        "elements": {
-          "wedge": 30238,
-          "pyramid": 132,
-          "tetra": 121
-        },
-        "volume_m3": 2137182651.9899468,
-        "mean_thickness_m": 13.016495806736385,
-        "surface_points": 30908,
-        "surface_cells": 61400
+        "volume_m3": 3054559531.559458,
+        "mean_thickness_m": 18.625238539241312,
+        "surface_points": 32879,
+        "surface_cells": 65289
       }
     }
   ],
   "combined_glb": {
-    "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package\\model_combined.glb",
-    "bytes": 17676484
+    "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\model_combined.glb",
+    "bytes": 20461876
+  },
+  "z20_models": {
+    "scale_z": 20.0,
+    "dir": "z20/",
+    "files_bytes": {
+      "L01_z20.glb": 1839984,
+      "L02_z20.glb": 1858800,
+      "L03_z20.glb": 165844,
+      "L04_z20.glb": 1115960,
+      "L05_z20.glb": 505860,
+      "L06_z20.glb": 1535672,
+      "L07_z20.glb": 1456920,
+      "L08_z20.glb": 1758580,
+      "L09_z20.glb": 1737068,
+      "L10_z20.glb": 1834376,
+      "L11_z20.glb": 1348420,
+      "L12_z20.glb": 1865480,
+      "L13_z20.glb": 1865484,
+      "L14_z20.glb": 1843076,
+      "model_combined_z20.glb": 20461856
+    },
+    "note": "20倍竖向缩放副本(几何=真实尺度 z×20,顶点属性不变),显示端直接加载免缩放;根目录 GLB 为原始尺寸"
+  },
+  "workings_glb": {
+    "roadways.glb": {
+      "bytes": 8446492,
+      "source": "copied from web_package (chapter06)",
+      "z_datum_fix_20260915": "顶点z平移-13.9928m,使z_local严格基于本包z_origin_m"
+    },
+    "working_faces.glb": {
+      "bytes": 639648,
+      "source": "copied from web_package (chapter06)",
+      "z_datum_fix_20260915": "顶点z平移-13.9928m,使z_local严格基于本包z_origin_m"
+    }
   },
   "totals": {
     "pass": true,
-    "total_points": 315373,
-    "total_cells": 626138,
-    "total_volume_m3": 23392229055.53607,
-    "candidate_prisms": 327680,
-    "retained_prisms": 310726,
-    "deleted_prisms": 16954,
-    "partial_pinchout_prisms": 2867
+    "total_points": 369775,
+    "total_cells": 734219,
+    "total_volume_m3": 23180828709.79019,
+    "manifold_layers": 7,
+    "pinch_contact_layers": 7,
+    "candidate_prisms": 458752,
+    "retained_prisms": 364406,
+    "deleted_prisms": 94346,
+    "partial_pinchout_prisms": 9906
   },
   "build_performance": {
-    "delaunay_seconds": 0.10577449999982491,
-    "layer_build_seconds": 2.6793211000040174,
-    "total_seconds": 7.53167724609375
+    "delaunay_seconds": 0.08795610000379384,
+    "layer_build_seconds": 2.9874463999876752,
+    "total_seconds": 16.046515226364136
   }
 }

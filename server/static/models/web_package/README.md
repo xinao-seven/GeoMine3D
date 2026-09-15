@@ -1,53 +1,58 @@
-# 第5章模型交付包(Three.js 接入说明)
+# 细层化(14层)地质模型交付包 web_package_refined
 
-由 `experiments/scripts/chapter05/build_chapter05_web_package.py` 生成,几何与论文正式模型逐数一致
-(体元分类、表面规模、非流形分布、总体积均通过回归断言)。所有顶点为**局部米制坐标,不含任何旋转**:
-X=东向、Y=北向、Z=局部高程(真实高程 − z_origin_m)。全局坐标恢复与竖向夸张参数见
-`catalog.json` 的 `origin_restore` 字段。
+> 由 `experiments/scripts/chapter05/build_chapter05_web_package_refined.py` 自动生成,与原10层包 `../web_package/` 完全隔离,请勿混用两包的同名文件。
 
-## 文件清单
+## 层序(自上而下,14层/15界面)
 
-- `L01.glb` … `L10.glb`:分层表面网格。顶点带自定义属性(`_thickness_m`、
-  `_interface_std_mean_m`、`_node_index`、`_pinchout_node`)与顶点色,three.js 可直接用于主题着色与点选查询。
-- `lods/L*_lod50.glb`、`L*_lod80.glb`:减面 50% / 80% 的视觉 LOD,仅带顶点色,不携带属性。
-- `vtu/L*.vtu`:显式体网格(wedge/pyramid/tetra + 单元属性 volume_m3、thickness_* 等),
-  供 ParaView 或体网格消费,three.js 不直接使用。
-- `model_combined.glb`:10 层合并场景(节点名 L01–L10),便于快速预览。
-- `catalog.json`:元数据总表——坐标恢复公式、逐层名称/配色/统计/包围盒、属性字典、LOD 清单、
-  回归断言结果与构建耗时。前端应数据驱动地读取本文件组织场景。
+| 代码 | 层名 | 颜色 | 体积(百万m³) |
+|---|---|---|---|
+| L01 | 风积砂层 | #D9C7A3 | 3,268.9 |
+| L02 | 土层 | #CDBB8C | 4,254.5 |
+| L03 | 第4旋回泥岩层 | #8C6D5A | 23.6 |
+| L04 | 第4旋回砂岩层 | #D98C5F | 385.8 |
+| L05 | 第3旋回泥岩层 | #8C6D5A | 37.6 |
+| L06 | 第3旋回砂岩层 | #D98C5F | 911.6 |
+| L07 | 第2旋回泥岩层 | #8C6D5A | 289.8 |
+| L08 | 第2旋回砂岩层 | #D98C5F | 2,777.5 |
+| L09 | 第1旋回泥岩层 | #8C6D5A | 648.7 |
+| L10 | 第1旋回砂岩层 | #D98C5F | 4,568.1 |
+| L11 | 煤顶泥岩层 | #7A8793 | 214.8 |
+| L12 | 煤3-1 | #333333 | 516.4 |
+| L13 | 直接底层 | #C98E5B | 2,228.9 |
+| L14 | 下伏岩层 | #8D7465 | 3,054.6 |
 
-## three.js 最小接入示例
+## 来源链(可复现)
 
-```js
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { CatalogLoader } from './catalogReader.js'; // 自行实现 fetch catalog.json
+1. `experiments/scripts/chapter02/build_refined_strata.py`:原始岩性 → 锚点-旋回-阈值(ACT)细层标准柱(τ=0.5m, K*=4, 截断=4-2煤) → `data/project_data/merge/intervals_refined.csv`;2. `experiments/scripts/chapter04/build_refined_surfaces.py`:第3章共享趋势+逐界面ARD + 第4章逐节点保序投影+0.5m尖灭折叠 → 细层 npz(15界面×16641共享节点,100m方格,与原口径同网格,沉陷偏移场可按节点直接对接);
+3. 本脚本:向量化 TIN-GTP 建模 → 分层GLB/LOD/VTU。
 
-const loader = new GLTFLoader();
-// 若未来启用 Draco: loader.setDRACOLoader(new DRACOLoader().setDecoderPath('...'));
+## 坐标口径
 
-const catalog = await fetch('./catalog.json').then(r => r.json());
-for (const layer of catalog.layers) {
-  loader.load(layer.glb.path, (gltf) => {
-    const mesh = gltf.scene.children[0];
-    mesh.name = layer.code;                 // L01…
-    mesh.userData = { name_cn: layer.name_cn, color: layer.color_hex, stats: layer.stats };
-    // 竖向夸张(仅显示): mesh.scale.z = catalog.origin_restore.display_recommendation.z_scale;
-    scene.add(mesh);
-  });
-}
+- 局部米制坐标:`x_global = x_local + 37428072.485`,`y_global = y_local + 4300144.085`,`z_global = z_local + 1149.980`;- 与 `roadways.glb`/`working_faces.glb`(井巷工程,自原包复制)同坐标系,可直接同屏加载。
+
+## 双尺度模型(每次生成,固定产物)
+
+- **原始尺寸**:根目录 `model_combined.glb` 与 `L01.glb`–`L14.glb`(真实高程,米);
+- **20倍竖向缩放**:`z20/` 目录(几何 = 真实尺度 z×20,顶点属性不变),展示端直接加载、无需再缩放;
+- 井巷两个 GLB 为原始尺寸;与 z20 地层同屏时注意口径(建议显示端统一缩放)。
+
+## 顶点属性(GLB 内嵌)
+
+- `_thickness_m` 顶点处本层厚度;`_interface_std_mean_m` 上下界面GP标准差均值;
+- `_node_index` 共享网格节点索引(0..16640,与第4章npz/沉陷偏移场对齐);
+- `_pinchout_node` 该节点是否处于数值尖灭候选区。
+
+## 已知事项:尖灭相触非流形边(2026-09-03 决策:不修复)
+
+- 合计 7 个层存在非流形边(尖灭线两侧楔形体厚度收敛到零,上下两张曲面片在脊线上贴合,单边4面共享):
+  L03, L05, L06, L07, L08, L09, L14;
+- 这是零厚度接触的固有几何,不影响渲染/解析体积/体网格;受影响的仅是 vtk 自动定向下的表面积分(实测在尖灭层不可靠),因此本包的体积闭合校验改用**构建语义定向积分**(顶面朝上、底面朝下、侧面朝棱柱外侧),全部14层与解析体积相对偏差 < 1e-7(断言通过,实测~1e-10),并另验表面网格面片集与去重预期一致;非流形边逐层记录于 catalog.json 的 edge_integrity;
+- 完整机理与决策记录见 `experiments/reports/chapters/chapter05/refined_pipeline_report.md`。
+
+## 复现命令
+
+```powershell
+conda run -n model_env python experiments/scripts/chapter02/build_refined_strata.py
+conda run -n model_env python experiments/scripts/chapter04/build_refined_surfaces.py
+conda run -n model_env python experiments/scripts/chapter05/build_chapter05_web_package_refined.py
 ```
-
-## 坐标恢复
-
-- `x_global = x_local + x_origin_m`,`y_global = y_local + y_origin_m`,`z_global = z_local + z_origin_m`(数值见 catalog);
-- 显示端竖向夸张:`mesh.scale.z = 20`(GLB 内为局部高程,绕原点缩放不会产生整体抬升;恢复真实比例时除回);
-- **three.js 轴向约定**:数据为 Z 轴向上(glTF 规范默认 Y-up),两种处理任选其一——
-  `camera.up.set(0, 0, 1)`(不改数据,最简单),或把模型放入 `group.rotation.x = -Math.PI / 2` 的父组转换为 Y-up 世界。
-
-## 已知限制
-
-- Draco 压缩未启用(编码器在当前平台无法安装);单层 GLB 约 1.3–1.9 MB,加载无压力。
-  如需启用,three.js 端挂载 DRACOLoader 即可,导出端需换支持 KHR_draco_mesh_compression 的写出口。
-- L02/L03/L04 存在尖灭相触导致的非流形边(与论文表5-4一致),渲染正常,
-  但布尔运算与网格修复类处理前建议先做节点分裂修复(见 5.7.2 的改进计划)。
-- LOD 文件经减面处理,顶点属性不保留,仅用于远视角视觉分级。
