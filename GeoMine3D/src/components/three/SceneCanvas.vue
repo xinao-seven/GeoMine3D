@@ -231,6 +231,7 @@ import { ModelManager } from '@/three/managers/ModelManager'
 import { LayerManager } from '@/three/managers/LayerManager'
 import { HighlightManager } from '@/three/managers/HighlightManager'
 import { SelectionManager } from '@/three/managers/SelectionManager'
+import { SettlementManager } from '@/three/managers/SettlementManager'
 import { StratumModelLoader } from '@/three/loaders/StratumModelLoader'
 import { BoreholeModelLoader } from '@/three/loaders/BoreholeModelLoader'
 import { WorkingFaceModelLoader } from '@/three/loaders/WorkingFaceModelLoader'
@@ -241,6 +242,7 @@ import { StratumExplodeTool } from '@/three/tools/StratumExplodeTool'
 import { AxisGizmoTool } from '@/three/tools/AxisGizmoTool'
 import { BoundingBoxTool } from '@/three/tools/BoundingBoxTool'
 import { useSceneStore, useBoreholeStore, useWorkspaceStore } from '@/stores'
+import { useSettlementStore } from '@/stores/settlementStore'
 import type { ModelItem, BoreholeItem, StratumLayerControl } from '@/types'
 import type { ModelLoadRequest } from '@/stores/sceneStore'
 
@@ -249,6 +251,7 @@ import type { ModelLoadRequest } from '@/stores/sceneStore'
 const sceneStore = useSceneStore()
 const boreholeStore = useBoreholeStore()
 const workspaceStore = useWorkspaceStore()
+const settlementStore = useSettlementStore()
 
 const {
     layerVisible,
@@ -304,6 +307,7 @@ let modelManager: ModelManager
 let layerManager: LayerManager
 let highlightManager: HighlightManager
 let selectionManager: SelectionManager
+let settlementManager: SettlementManager | null = null
 let clipTool: ClipTool
 let measureTool: MeasureTool
 let annotationTool: AnnotationTool
@@ -370,6 +374,8 @@ async function loadStratumModel(model: ModelItem) {
     } catch {
         addPlaceholderStratum(model)
     }
+    // 新层加载后同步沉陷绑定(增量式:已绑定的层不会被重置基线)
+    syncSettlementBinding()
     layerManager.setLayerEdgesVisible('stratum', showEdges.value)
 }
 
@@ -469,15 +475,23 @@ async function loadAllBoreholeModels(boreholes: BoreholeItem[]) {
 // 从场景中移除模型并同步清理状态、图层树与拾取目标。
 function unloadModelByRequest(req: { type: 'stratum' | 'borehole' | 'workingface' | 'roadway'; id: string }) {
     if (req.type === 'borehole') {
-        for (const model of modelManager.getModelsByType('borehole')) {
+        // '__all__' 移除整组；否则只移除指定钻孔
+        const targets = req.id === '__all__'
+            ? modelManager.getModelsByType('borehole')
+            : [modelManager.getModel(req.id)].filter((item): item is NonNullable<typeof item> => Boolean(item))
+        for (const model of targets) {
             modelManager.removeModel(model.id)
             sceneStore.clearLoadStatus('borehole', model.id)
         }
+        if (req.id === '__all__') sceneStore.clearLoadStatus('borehole', '__all__')
     } else {
         modelManager.removeModel(req.id)
         sceneStore.clearLoadStatus(req.type, req.id)
         if (req.type === 'stratum') {
             sceneStore.removeStratumLayersByModel(req.id)
+            // 地层被移除后,沉陷位移场的绑定也要同步收缩(失效 mesh 会被自动修剪),
+            // 但在那之前必须把基线位置写回去,否则再加载会以变形位置为基线。
+            settlementManager?.restoreBase()
         }
     }
     sceneStore.selectObject(null)
@@ -486,6 +500,7 @@ function unloadModelByRequest(req: { type: 'stratum' | 'borehole' | 'workingface
     if (toolState.value.clipEnabled) {
         syncToolRuntimeState()
     }
+    syncSettlementBinding()
 }
 
 async function loadModelByRequest(req: ModelLoadRequest) {
@@ -700,6 +715,64 @@ function onRotateXAxisToggle(value: boolean | string | number) {
 }
 
 // ==================== Selection & Hover ====================
+
+// ==================== Settlement (沉陷对比) ====================
+
+/**
+ * 把位移场挂到当前已加载的地层几何上。
+ *
+ * 采用**几何变形**而不是双模型叠加 / shader 注入:
+ * - 本数据 67~70% 顶点沉陷前后严格共面,双模型同屏必现 z-fighting;
+ * - 本工程 HighlightManager/透明度面板会整块替换材质,shader 注入会丢;
+ * 改几何则与剖切/炸开/拾取/高亮/透明度全部兼容。
+ */
+function syncSettlementBinding() {
+    if (!settlementManager || !modelManager) return
+    if (!settlementStore.enabled) {
+        if (settlementManager.attachedCount) {
+            settlementManager.restoreBase()
+            settlementManager.detach()
+            settlementStore.boundLayers = 0
+            settlementStore.boundVertices = 0
+        }
+        return
+    }
+    const count = settlementManager.attach(modelManager)
+    settlementStore.boundLayers = count
+    let verts = 0
+    for (const model of modelManager.getModelsByType('stratum')) {
+        model.object.traverse(child => {
+            if ((child as THREE.Mesh).isMesh) {
+                verts += (child as THREE.Mesh).geometry.getAttribute('position')?.count ?? 0
+            }
+        })
+    }
+    settlementStore.boundVertices = verts
+}
+
+/** 首次启用时才拉取位移场(约 4 MB),避免无谓请求 */
+async function ensureSettlementField(): Promise<boolean> {
+    if (!settlementManager) settlementManager = new SettlementManager()
+    if (settlementManager.loaded) return true
+    settlementStore.loading = true
+    settlementStore.loadError = null
+    try {
+        const meta = await settlementManager.load()
+        settlementStore.fieldLoaded = true
+        settlementStore.maxSubsidenceM = meta.maxSubsidenceM
+        settlementStore.maxHorizontalM = meta.maxHorizontalM
+        settlementStore.displayZScale = meta.displayZScale
+        settlementStore.workingsFollow = meta.workingsFollowSettlement
+        settlementStore.generatedUtc = meta.generatedUtc
+        return true
+    } catch (err) {
+        settlementStore.loadError = err instanceof Error ? err.message : String(err)
+        settlementStore.enabled = false
+        return false
+    } finally {
+        settlementStore.loading = false
+    }
+}
 
 function refreshSelectionPickTargets() {
     if (!selectionManager || !modelManager) return
@@ -1021,6 +1094,28 @@ watch(coordinateOrigin, (origin) => {
     boundingBoxTool?.refresh()
 })
 
+// 沉陷对比:启用 → 拉位移场并绑定;参数变化 → 同步到几何
+watch(() => settlementStore.enabled, async (enabled) => {
+    if (!enabled) {
+        syncSettlementBinding()
+        return
+    }
+    const ok = await ensureSettlementField()
+    if (ok) syncSettlementBinding()
+})
+
+watch(
+    () => [settlementStore.time, settlementStore.exaggeration, settlementStore.colorMode] as const,
+    ([t, ex, mode]) => {
+        if (!settlementManager || !settlementStore.enabled) return
+        settlementManager.setExaggeration(ex)
+        settlementManager.setColorMode(mode)
+        settlementManager.setTime(t)
+        settlementStore.appliedMaxDz = settlementManager.appliedMaxDz
+        if (toolState.value.clipEnabled) syncToolRuntimeState()
+    },
+)
+
 watch(() => toolState.value.clipHeight, (height) => {
     if (clipTool && Math.abs(clipTool.getHeight() - height) > 1e-6) {
         clipTool.setHeight(height)
@@ -1080,6 +1175,10 @@ onDeactivated(() => {
 onUnmounted(() => {
     sceneStore.activateTool(null)
     sceneStore.resetSceneSession()
+    settlementManager?.restoreBase()
+    settlementManager?.detach()
+    settlementManager = null
+    settlementStore.resetSession()
     stopAnimate()
     resizeObserver?.disconnect()
     clipTool?.dispose()

@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>沉陷位移场 · 最小原型</title>
+
+<!--
+  ============================================================================
+  最小原型:原始模型 + 位移场 → 实时计算顶点位置
+  ============================================================================
+
+  这个文件只做一件事,用一句话说清:
+
+      几何只加载一份(沉陷前的原始 GLB),偏移是一份独立数据,
+      每个顶点一一对应;每一帧的顶点位置 = 原始位置 + 夸大 × 进度 × 偏移。
+
+  ── 为什么可以这么做 ──────────────────────────────────────────────────
+  因为**拓扑(三角形怎么连)和几何(顶点在哪)是两回事**。
+  沉陷只改变顶点在哪,不改变哪三个顶点构成一个三角形。
+  所以只要保证“第 i 个偏移”对应“第 i 个顶点”,就可以在运行时算,
+  完全不需要在服务器上重新导出一份变形后的模型。
+
+  ── 必须满足的唯一前提 ────────────────────────────────────────────────
+  偏移数组的顺序必须与 GLB 里 position 属性的顶点顺序**严格一一对应**。
+  这正是后端导出时记录 baseGlbSha256 的原因:位移场只对得上特定版本的基线 GLB。
+
+  ── 三个文件的分工 ────────────────────────────────────────────────────
+  web_package/L01.glb                   几何:32826 个顶点,沉陷前
+  settlement/vertex_offsets.bin         偏移:14 层首尾相接的 float32 三元组
+  settlement/vertex_offsets.index.json  索引:每层那一段从第几字节开始、多长
+
+  ── 打开方式 ──────────────────────────────────────────────────────────
+  http://localhost:5173/settlement-prototype.html   (vite dev,用本地 three)
+  http://localhost:8000/settlement-prototype.html   (后端服务 dist,three 走 CDN)
+  需要后端同时跑在 8000 端口,因为 /static/models 由后端提供。
+  可用参数覆盖:?layer=L05  ?base=<偏移基路径>  ?three=local|cdn
+  ============================================================================
+-->
+
+<!--
+  three.js 的引入方式在两个环境下不一样:
+    · vite dev server(5173):直接服务 /node_modules,用本地包,无需联网;
+    · 后端服务 dist(8000):没有 /node_modules,只能走 CDN。
+  所以这里用一段同步脚本按当前端口生成 importmap。
+  (importmap 必须在任何 module 脚本开始解析**之前**插入,所以这段不能是 async。)
+  注意:只能存在**一个** importmap,多写一个会导致 Chrome 报错。
+-->
+<script>
+  (function () {
+    var force = new URLSearchParams(location.search).get('three')
+    var useLocal = force ? force === 'local' : location.port !== '8000'
+    var base = useLocal
+      ? '/node_modules/three/'
+      : 'https://unpkg.com/three@0.183.2/'
+    var el = document.createElement('script')
+    el.type = 'importmap'
+    el.textContent = JSON.stringify({
+      imports: {
+        'three': base + 'build/three.module.js',
+        'three/addons/': base + 'examples/jsm/',
+      },
+    })
+    document.currentScript.parentNode.insertBefore(el, document.currentScript.nextSibling)
+    window.__THREE_SOURCE__ = base
+  })()
+</script>
+
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #101411;
+    font: 13px/1.6 "Microsoft YaHei", system-ui, sans-serif; color: #c9cec7; }
+  #view { position: fixed; inset: 0; }
+
+  .panel { position: fixed; top: 14px; left: 14px; width: 340px; padding: 14px 16px;
+    background: rgba(16,20,17,.93); border: 1px solid #2b322c;
+    backdrop-filter: blur(8px); border-radius: 4px; }
+  .panel h1 { margin: 0 0 2px; font-size: 14px; font-weight: 500; letter-spacing: .04em; }
+  .panel .sub { margin: 0 0 12px; font-size: 11px; color: #6b756d; }
+  .panel .sub code { color: #c38c4c; }
+
+  .row { display: flex; justify-content: space-between; align-items: baseline;
+    margin: 10px 0 3px; font-size: 11px; color: #8b948c; }
+  .row b { font: 12px Bahnschrift, Consolas, monospace; color: #c38c4c; }
+  input[type=range] { width: 100%; accent-color: #b17c3e; }
+
+  .check { display: flex; align-items: center; gap: 7px; margin-top: 12px;
+    font-size: 11px; color: #8b948c; cursor: pointer; }
+  .check input { accent-color: #b17c3e; }
+
+  pre { margin: 12px 0 0; padding: 9px 10px; background: #0b0f0c;
+    border: 1px solid #232a24; border-radius: 3px;
+    font: 11px/1.7 Consolas, "Courier New", monospace; color: #93a091;
+    white-space: pre-wrap; word-break: break-all; }
+  pre b { color: #d8c9a8; font-weight: 600; }
+  pre i { color: #6d7a6f; font-style: normal; }
+
+  #err { position: fixed; inset: 0; display: none; place-content: center;
+    padding: 40px; background: #101411; }
+  #err div { max-width: 620px; }
+  #err h2 { color: #cf7a5a; font-size: 15px; margin: 0 0 8px; }
+  #err pre { color: #b9beb7; }
+</style>
+</head>
+<body>
+
+<div id="view"></div>
+
+<div class="panel">
+  <h1>沉陷位移场 · 最小原型</h1>
+  <p class="sub">
+    单层 <code>L01</code>:<b style="color:#c38c4c">同一份几何</b> +
+    一份偏移数组,在顶点上做一次乘加。
+  </p>
+
+  <div class="row"><span>变形进度 t(0=沉陷前, 1=沉陷后)</span><b id="vT">1.00</b></div>
+  <input id="sT" type="range" min="0" max="1" step="0.01" value="1" />
+
+  <div class="row"><span>沉陷夸大 k(纯显示)</span><b id="vK">10×</b></div>
+  <input id="sK" type="range" min="1" max="50" step="1" value="10" />
+
+  <label class="check">
+    <input id="cGhost" type="checkbox" checked />
+    同时显示沉陷前的线框(便于对比)
+  </label>
+
+  <pre id="out">加载中…</pre>
+</div>
+
+<div id="err"><div>
+  <h2>加载失败</h2>
+  <p id="errEnv" style="color:#6b756d;font-size:11px;margin:0 0 10px"></p>
+  <pre id="errMsg"></pre>
+</div></div>
+
+<script type="module">
+import * as THREE from 'three'
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+
+// ===========================================================================
+// 0. 配置:原型用单层 L01,方便看清机制
+// ===========================================================================
+// 支持用 URL 参数覆盖,便于排查环境问题:
+//   /settlement-prototype.html?base=/static/models/settlement&layer=L05
+const QS            = new URLSearchParams(location.search)
+const LAYER         = QS.get('layer') || 'L01'
+const OFFSET_BASE   = QS.get('base') || '/static/models/settlement'
+const GLB_BASE      = QS.get('glbBase') || '/static/models/web_package'
+const GLB_URL       = `${GLB_BASE}/${LAYER}.glb`
+const Z_SCALE       = 20        // 场景竖向夸张(与正式工程一致:scale.z = 20)
+
+const $ = id => document.getElementById(id)
+const showError = msg => {
+  $('err').style.display = 'grid'
+  $('errEnv').textContent =
+    `页面地址 ${location.origin}${location.pathname} · 层 ${LAYER} · 偏移基路径 ${OFFSET_BASE}`
+  $('errMsg').textContent = String(msg)
+}
+
+// ===========================================================================
+// 1. 场景(与"沉陷"无关,可以跳过这段)
+// ===========================================================================
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+renderer.setSize(innerWidth, innerHeight)
+$('view').appendChild(renderer.domElement)
+
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x101411)
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 1, 500000)
+camera.position.set(0, 9000, 11000)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.maxDistance = 200000
+
+scene.add(new THREE.AmbientLight(0xffffff, 1.5))
+const dir1 = new THREE.DirectionalLight(0xffffff, 2.0); dir1.position.set(1, 1.4, 0.8)
+const dir2 = new THREE.DirectionalLight(0x88a8ff, 0.7); dir2.position.set(-1, 0.6, -1)
+scene.add(dir1, dir2)
+
+// 注意:竖向夸张不是改几何,而是给根节点一个 scale。
+// 位移作用在"几何坐标空间"里,所以这个 20 倍会**自动把位移一起放大**,
+// 这正是正式工程里"沉陷夸大与显示夸张共用同一系数"的意思。
+const root = new THREE.Group()
+root.scale.z = Z_SCALE
+scene.add(root)
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(innerWidth, innerHeight)
+})
+
+// ===========================================================================
+// 2. 加载位移场
+//    这部分就是"核心"的第一半。整个加载逻辑不到 20 行。
+// ===========================================================================
+
+/**
+ * 带诊断的 fetch。
+ *
+ * 为什么需要它:如果 /static 没被后端挂载(或被 SPA 兜底路由接管),
+ * 服务器会返回 HTTP 200 + 一段 HTML,此时 `res.json()` 会报
+ * "Unexpected token '<', \"<!doctype\"... is not valid JSON" ——
+ * 这种报错完全指不出真正的原因。所以必须自己查 content-type。
+ */
+async function fetchChecked(url, expect) {
+  const absolute = new URL(url, location.href).href
+  let res
+  try {
+    // cache: 'no-store' —— 静态资产会被重导,而且历史上这个 URL 曾被
+    // SPA 兜底路由以 200 + HTML 应答并被浏览器缓存,必须绕过缓存。
+    res = await fetch(url, { cache: 'no-store' })
+  } catch (err) {
+    throw new Error(
+      `网络请求失败:${absolute}\n${err.message}\n\n` +
+      `检查:后端是否在 8000 端口运行?dev server 是否把 /static 代理到 8000?`)
+  }
+  const ct = res.headers.get('content-type') || '(无)'
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} ${res.statusText}\nURL: ${absolute}\ncontent-type: ${ct}`)
+  }
+  if (expect && !ct.includes(expect)) {
+    throw new Error(
+      `返回的不是 ${expect},而是 «${ct}»\n` +
+      `URL: ${absolute}\n` +
+      `content-length: ${res.headers.get('content-length') || '(无)'}` +
+      `, age: ${res.headers.get('age') || '(无)'}` +
+      `, cache-control: ${res.headers.get('cache-control') || '(无)'}\n\n` +
+      `大多数情况下这表示该路径没被静态文件服务接管,而是落到了 SPA 兜底路由\n` +
+      `(返回了页面 HTML)。如果地址栏直接打开那个 URL 看到的是正常 JSON,\n` +
+      `那就是浏览器缓存了旧的失败响应 —— 请 Ctrl+Shift+R 强刷(或 DevTools\n` +
+      `Network 面板勾上 Disable cache)。请确认:\n` +
+      `  · 后端已按 backend/app/main.py 挂载 /static/models 并且已重启;\n` +
+      `  · 当前访问的端口(你现在是 ${location.origin})能拿到这些文件。`)
+  }
+  return res
+}
+
+/** 解析出来的位移场: { count, offsets: Float32Array(count*3), index, meta } */
+async function loadOffsets(layerCode) {
+  // 2.1 索引:告诉我们每层那一段在 .bin 里从哪开始、多长
+  const indexUrl = `${OFFSET_BASE}/vertex_offsets.index.json`
+  const index = await (await fetchChecked(indexUrl, 'json')).json()
+  const seg = index.layers.find(l => l.code === layerCode)
+  if (!seg) {
+    throw new Error(`索引里没有 ${layerCode};可用层:${
+      index.layers.map(l => l.code).join(', ')}`)
+  }
+
+  // 2.2 二进制:一次拉完整个 4.4 MB,然后**零拷贝**切出本层那一段
+  const buf = await (await fetchChecked(`${OFFSET_BASE}/vertex_offsets.bin`))
+    .arrayBuffer()
+  const offsets = new Float32Array(buf, seg.byteOffset, seg.count * 3)
+
+  return { count: seg.count, offsets, index, seg }
+}
+
+// ===========================================================================
+// 3. 加载几何,并把位移挂上去
+//    这是"核心"的第二半,也是唯一需要小心的地方。
+// ===========================================================================
+async function loadLayer() {
+  // 3.1 加载**原始** GLB —— 注意加载的是沉陷前的模型
+  const gltf = await new Promise((res, rej) =>
+    new GLTFLoader().load(GLB_URL, res,
+      undefined,
+      e => rej(new Error(
+        `GLB 加载失败:${new URL(GLB_URL, location.href).href}\n${
+          e && e.message ? e.message : e}`))))
+
+  // 找到网格(单层 GLB 里通常只有一个)
+  let mesh = null
+  gltf.scene.traverse(o => { if (o.isMesh && !mesh) mesh = o })
+  if (!mesh) throw new Error('GLB 里没有 Mesh')
+
+  const geom = mesh.geometry
+  const posAttr = geom.getAttribute('position')
+
+  // 3.2 拉位移场
+  const { count, offsets, index, seg } = await loadOffsets(LAYER)
+
+  // 3.3 ★ 最重要的校验:偏移个数必须与顶点数严格相等
+  //     这就是"第 i 个偏移 ↔ 第 i 个顶点"这个约定的守门人。
+  //     不等就说明位移场与这份 GLB 不是一对(例如模型重新导出过),
+  //     此时任何计算都是错的,必须直接报错而不是凑合。
+  if (offsets.length !== posAttr.count * 3) {
+    throw new Error(
+      `位移与顶点数不匹配:偏移 ${offsets.length / 3} 个,顶点 ${posAttr.count} 个。\n` +
+      `说明这份位移场不是针对该 GLB 生成的(应检查 baseGlbSha256)。`)
+  }
+
+  // 3.4 ★ 备份基线顶点。
+  //     这是整个方案能成立的前提:之后每次变形都是 base + k*offset,
+  //     而不是"在上一帧的结果上继续加",所以永远不会累积误差,
+  //     并且任何时刻都能精确回到沉陷前。
+  const base = new Float32Array(posAttr.array)
+
+  // 3.5 顶点属性用起来要顺手:告诉 three.js 位置会变
+  posAttr.setUsage(THREE.DynamicDrawUsage)
+
+  // 3.6 材质:标准 Lambert + 顶点色(GLB 自带 COLOR_0)
+  //     注意这里**没有任何 shader 改动** —— 位移是改几何,不是改材质。
+  const material = new THREE.MeshLambertMaterial({
+    vertexColors: true, side: THREE.DoubleSide,
+  })
+  mesh.material = material
+  mesh.frustumCulled = false        // 顶点会动,包围盒会变,先关掉剔除省事
+  root.add(mesh)
+
+  // 3.7 顺带做一个"沉陷前"的线框副本,用于肉眼对比。
+  //     它用的是同一份几何的拷贝,永远不动。
+  const ghost = new THREE.LineSegments(
+    new THREE.WireframeGeometry(geom.clone()),
+    new THREE.LineBasicMaterial({ color: 0x55665a, transparent: true, opacity: 0.35 }),
+  )
+  ghost.visible = true
+  root.add(ghost)
+
+  return { mesh, geom, posAttr, base, offsets, ghost, meta: index, seg }
+}
+
+// ===========================================================================
+// 4. 应用位移 —— 整个方案的核心就是这一个函数
+// ===========================================================================
+/**
+ * 把位移施加到几何上。
+ *
+ *      position[i] = base[i] + k * offset[i]        k = 夸大 × 进度
+ *
+ * 就是一个乘加,没有别的。370k 顶点约几毫秒。
+ */
+function applyOffsets(state, t, exaggeration) {
+  const { posAttr, base, offsets } = state
+  const arr = posAttr.array
+  const n = posAttr.count
+  const k = exaggeration * t          // ← 全部魔法就在这个乘积上
+
+  let maxDrop = 0
+  for (let v = 0; v < n; v++) {
+    const i3 = v * 3
+    arr[i3    ] = base[i3    ] + k * offsets[i3    ]
+    arr[i3 + 1] = base[i3 + 1] + k * offsets[i3 + 1]
+    arr[i3 + 2] = base[i3 + 2] + k * offsets[i3 + 2]
+    const drop = Math.abs(k * offsets[i3 + 2])
+    if (drop > maxDrop) maxDrop = drop
+  }
+
+  // ★ 顶点改完必须做这两件事:
+  posAttr.needsUpdate = true                  // 1) 通知 three.js 重新上传 GPU
+  state.geom.computeBoundingSphere()          // 2) 重算包围体,否则视锥剔除/相机取景会错
+  state.geom.computeBoundingBox()
+
+  return maxDrop
+}
+
+// ===========================================================================
+// 5. 串起来
+// ===========================================================================
+let state = null
+
+async function main() {
+  state = await loadLayer()
+
+  const t = Number($('sT').value)
+  const k = Number($('sK').value)
+  const maxDrop = applyOffsets(state, t, k)
+
+  // 相机自适应
+  const box = new THREE.Box3().setFromObject(root)
+  const size = box.getSize(new THREE.Vector3())
+  controls.target.copy(box.getCenter(new THREE.Vector3()))
+  camera.position.set(size.x * 0.9, size.y * 1.5, size.z * 2.2)
+  controls.update()
+
+  render()
+
+  // 交互:两个滑块都只改一个数,然后重跑 applyOffsets
+  $('sT').addEventListener('input', () => {
+    $('vT').textContent = Number($('sT').value).toFixed(2)
+    render()
+  })
+  $('sK').addEventListener('input', () => {
+    $('vK').textContent = `${$('sK').value}×`
+    render()
+  })
+  $('cGhost').addEventListener('change', () => {
+    state.ghost.visible = $('cGhost').checked
+    render()
+  })
+
+  function render() {
+    const t = Number($('sT').value)
+    const k = Number($('sK').value)
+    const maxDrop = applyOffsets(state, t, k)
+    const idx = state.meta
+    $('out').innerHTML =
+      `GLB 顶点数        <b>${state.posAttr.count.toLocaleString()}</b>\n` +
+      `偏移数组长度      <b>${(state.offsets.length / 3).toLocaleString()}</b>` +
+      `  <i>= 顶点数 ✓</i>\n` +
+      `本层位移段        <i>byteOffset ${state.seg.byteOffset.toLocaleString()},` +
+      ` ${(state.seg.byteLength / 1e6).toFixed(2)} MB</i>\n` +
+      `                      <i>(整包 ${(idx.layers.length)} 层,` +
+      ` 共 4.4 MB,一次拉完)</i>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `k = 夸大 × 进度   <b>${k} × ${t.toFixed(2)} = ${(k * t).toFixed(2)}</b>\n` +
+      `当前几何内下沉    <b>${maxDrop.toFixed(2)} m</b>` +
+      `  <i>(几何坐标空间)</i>\n` +
+      `屏幕上下沉        <b>${(maxDrop * Z_SCALE).toFixed(0)}</b>` +
+      `  <i>(× scale.z ${Z_SCALE})</i>\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `数据最大沉降      <b>${idx.maxSubsidenceM.toFixed(3)} m</b>\n` +
+      `数据最大水平位移  <b>${idx.maxHorizontalM.toFixed(3)} m</b>\n` +
+      `<i>three 来源 ${window.__THREE_SOURCE__} · 偏移基路径 ${OFFSET_BASE}</i>`
+  }
+}
+
+// 渲染循环
+;(function loop() {
+  requestAnimationFrame(loop)
+  controls.update()
+  renderer.render(scene, camera)
+})()
+
+main().catch(err => { console.error(err); showError(err.message || err) })
+</script>
+</body>
+</html>

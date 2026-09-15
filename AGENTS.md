@@ -61,6 +61,9 @@ server/                     # Preserved legacy data service and source assets (d
 - The primary frontend is the project center (`/projects`) and the `/workspace/:projectId` visualization workbench.
 - **Drag-and-drop** .glb files onto scene to load models.
 - FastAPI responses use the unified format `{code, message, data}` and expose OpenAPI docs at `/docs`.
+- 原始交付包静态目录：`backend/app/main.py` 将 `server/static/models` 挂载在 `/static/models`，
+  前端可直接取 `catalog` 资产与大体积固定数据集（如沉陷位移场 `/static/models/settlement/`）；
+  模型详情/版本下载仍走 `/api/v1/models/{id}/file`。
 
 ## Key Conventions
 
@@ -80,5 +83,6 @@ server/                     # Preserved legacy data service and source assets (d
 | Borehole strata | `server/data/boreholes/*.xlsx` |
 | Borehole coordinates | `server/data/location/钻孔位置.xlsx` |
 | .glb models | `server/static/models/web_package/`（L01–L10 分层、model_combined、roadways、working_faces） |
+| 沉陷位移场 | `server/static/models/settlement/`（vertex_offsets.bin/.index.json，前端单模型变形用） |
 
 Models are registered from `web_package/catalog.json` (no static-directory scan); the project origin and vertical scale (20×) come from the catalog `origin_restore`, so boreholes and models share one datum.

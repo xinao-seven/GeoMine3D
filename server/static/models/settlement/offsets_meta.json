@@ -1,0 +1,208 @@
+{
+  "schema_version": "1.0-settlement-offsets",
+  "generated_utc": "2026-09-15T08:54:51.313549+00:00",
+  "source": {
+    "offset_file": "D:\\code\\model\\experiments\\data\\chapters\\chapter05\\settlement\\offsets_simulated_bowl.npz",
+    "offset_sha256": "6b65e2043072a5c38118d657f297d6b9a570e3874e167b296aa175a371422250",
+    "offset_note": "全场一致(所有界面共用同一偏移场)",
+    "dz_scale_applied": 1.0,
+    "base_package": "experiments\\models\\chapters\\chapter05\\web_package_refined",
+    "base_package_catalog_sha256": "ec39c66799ad8acd5588d638c37f15ce94f2b96fc71058083aa0651bb8116337",
+    "surface_npz_sha256": "78744bdf5c60ceee85da1970bce584ebc0337c1b82fe36a1ce2918369ff200cd"
+  },
+  "convention": {
+    "unit": "m",
+    "dz_sign": "negative = subsidence (downward)",
+    "dz_scale": "data layer is real metres; exaggeration is display-only",
+    "node_order": "node_index = iy*129 + ix",
+    "vertex_offsets": "vertex_offsets.npz 内每个数组形状 (n_vertices,3),顺序与**基线包**对应层 GLB 的顶点顺序相同;用法:position + t * offset,t∈[0,1]"
+  },
+  "statistics": {
+    "max_subsidence_m": 3.1985573155389795,
+    "mean_subsidence_m": 0.9521129845727067,
+    "max_uplift_m": 0.0,
+    "max_horizontal_m": 0.8959999996648168,
+    "nodes_with_offset": 4160,
+    "nodes_total": 16641,
+    "goaf_inside_mean_abs_dz_m": 0.3627534475483014,
+    "goaf_outside_mean_abs_dz_m": 0.22731105521965575
+  },
+  "checks": [
+    {
+      "code": "C1",
+      "title": "形状合法",
+      "pass": true,
+      "severity": "hard",
+      "detail": "dx/dy/dz = (15, 16641) / (15, 16641) / (15, 16641);应为 (16641,) 或 (15,16641)"
+    },
+    {
+      "code": "C2",
+      "title": "无 NaN / Inf",
+      "pass": true,
+      "severity": "hard",
+      "detail": "异常值 0 个"
+    },
+    {
+      "code": "C3",
+      "title": "node_index 完整且无重复",
+      "pass": true,
+      "severity": "hard",
+      "detail": "长度 16641,重复 0,范围 [0, 16640];要求严格 0..16640"
+    },
+    {
+      "code": "C4",
+      "title": "无三角形翻转(水平位移不过大)",
+      "pass": true,
+      "severity": "hard",
+      "detail": "无翻转;面积比 min=0.9985 (0.5 以下提示临近翻转)"
+    },
+    {
+      "code": "C5",
+      "title": "量级合理",
+      "pass": true,
+      "severity": "warn",
+      "detail": "|dz|max=3.199 m,|(dx,dy)|max=0.896 m;期望 [0.001, 200.0] m 且水平 < 50.0 m"
+    },
+    {
+      "code": "C6",
+      "title": "符号以沉降为主",
+      "pass": true,
+      "severity": "warn",
+      "detail": "dz>0(隆起)占比 0.00%;阈值 5%"
+    },
+    {
+      "code": "C7",
+      "title": "域边界处 dz ≈ 0",
+      "pass": true,
+      "severity": "warn",
+      "detail": "边界节点 |dz|max=0.000 m(阈值 0.5 m)。若采空区超出模型域则边界非 0 属正常,见 handoff README 第六节"
+    },
+    {
+      "code": "C8",
+      "title": "空间连续(无孤立跳点)",
+      "pass": true,
+      "severity": "warn",
+      "detail": "相邻节点 |Δdz|max=0.138 m,|Δ水平|max=0.077 m;阈值 5.0/5.0 m per 100 m"
+    },
+    {
+      "code": "C9",
+      "title": "盆地中心位于采空区范围内",
+      "pass": true,
+      "severity": "warn",
+      "detail": "最大沉降节点 node_index=9618,局部坐标 (800, 1000);在采空区多边形内"
+    }
+  ],
+  "assertions": [
+    {
+      "name": "基线包源曲面一致",
+      "pass": true,
+      "detail": "npz sha256 78744bdf5c60 vs 基线包记录 78744bdf5c60"
+    },
+    {
+      "name": "z 原点与源曲面一致",
+      "pass": true,
+      "detail": "基线包 z0=1149.980019147,源曲面 corrected 均值=1149.980019147"
+    },
+    {
+      "name": "x/y 原点与源曲面一致",
+      "pass": true,
+      "detail": "基线包 (37428072.485, 4300144.085)"
+    },
+    {
+      "name": "偏移 node_index 严格对齐",
+      "pass": true,
+      "detail": "0..16640"
+    },
+    {
+      "name": "二次建模未重新剖分",
+      "pass": true,
+      "detail": "model.triangulation is None"
+    },
+    {
+      "name": "三角形索引与基线逐一相同",
+      "pass": true,
+      "detail": "32768 个三角形完全一致"
+    },
+    {
+      "name": "无三角形翻转",
+      "pass": true,
+      "detail": "翻转 0 个"
+    },
+    {
+      "name": "变形后无负厚度",
+      "pass": true,
+      "detail": "最小层厚 0.0000 m"
+    },
+    {
+      "name": "体元计数与基线一致",
+      "pass": true,
+      "detail": "逐层 retained/deleted/partial 与基线相同"
+    },
+    {
+      "name": "体积偏差在水平收敛可解释范围内",
+      "pass": true,
+      "detail": "最大相对偏差 6.526e-05(水平位移使平面三角形面积变化,体积随之变化属几何必然;阈值 2%)"
+    },
+    {
+      "name": "导出 z 为局部基准且与基线包重叠",
+      "pass": true,
+      "detail": "沉陷包 z∈[-142.25, 152.20] vs 基线包 z∈[-142.25, 152.20](旧版此处为 1096.9~1302.2)"
+    },
+    {
+      "name": "回读 GLB 的 z 范围与写出时一致",
+      "pass": true,
+      "detail": "回读 z∈[-142.25, 152.20]"
+    },
+    {
+      "name": "井巷 roadways.glb 与基线包逐字节相同",
+      "pass": true,
+      "detail": "不随沉陷移动(独立系统);md5 与基线包一致;不做任何 z 平移"
+    },
+    {
+      "name": "井巷 working_faces.glb 与基线包逐字节相同",
+      "pass": true,
+      "detail": "不随沉陷移动(独立系统);md5 与基线包一致;不做任何 z 平移"
+    },
+    {
+      "name": "位移场可精确重建沉陷后坐标(逐层)",
+      "pass": true,
+      "detail": "最大偏差 6.16e-07 m(最差层 L01);这意味着顶点数不一致时仍可由基线包重建"
+    }
+  ],
+  "files": {
+    "canonical": {
+      "path": "experiments\\data\\chapters\\chapter05\\settlement\\settlement_offsets\\settlement_offsets.npz",
+      "sha256": "2404cc889cf386aa793d9abb025aaa44e63caece7df2b1db82e074ba2102fd7e",
+      "shape": {
+        "dx": [
+          15,
+          16641
+        ]
+      },
+      "layout": "node_index / base_z / dx / dy / dz(存档与第三方用)"
+    },
+    "per_vertex": {
+      "path": "experiments\\data\\chapters\\chapter05\\settlement\\settlement_offsets\\vertex_offsets.npz",
+      "sha256": "e26b8eae6b17ad55d1a6ded3f3c1597216dc8e7c6c89a9a9c5c592708e0a953b",
+      "layout": "L01..L14 → (n_vertices,3) float32(前端直用)",
+      "base_glb_sha256": {
+        "L01": "d314eb6ac49dd2e5d9eb8b116c44052d0dc6510be400ac7026a1646e6eaae7aa",
+        "L02": "33bd8bfd760fcd577cdec743f294fe3e51d835504945b6e984db42f76c860415",
+        "L03": "6c12bda640b0bb497c3a32984462b8f56b71493f4ab15afe85ad0ab26a135417",
+        "L04": "979b5c4d857c4e9d287f5f6fd1ea7765aa7ee336de682970e8a7eef2882a0dbe",
+        "L05": "4900715843ad9befb880e76f068ef6c0c2456466b5c03c0ef9b1dcc9beda7fe5",
+        "L06": "72db3aaf943ac8c5cc3076afe798dcf3cea17698fe84abf0b879398c22b39891",
+        "L07": "4e220d5cc743ca2947f9a80166dcfc744d6f43f8a4998515ddf95d32925344a5",
+        "L08": "c66ab7917966677f153b08ed64a429b4094221f8ea22347206293896ebf73956",
+        "L09": "2925e2ca950c43441666027768272eb25a814ba2933d8e6f2b3a0dfd51536cec",
+        "L10": "05062f6fcc25a23d3216adf6b4fb01dd1b21a12f33e311c446fd31831770fa74",
+        "L11": "c8daa5fcba24c9d1247249b492ac569f29ba4603db8952d04f6c3b5901c36048",
+        "L12": "a727691e7fe5fd44314deee1678cc45d5d32d54ae0cc967ff0d5b8794d947a6d",
+        "L13": "b4f657c8b6ee416821ec84383824f5fa5032d55f7a088c099a3a5e6d48191c9d",
+        "L14": "124e4a8f887854ffdf661cd736e68062039283a0bdf9c56309cd2a901c142a88"
+      }
+    }
+  },
+  "workings_moves": false,
+  "package_dir": "experiments\\models\\chapters\\chapter05\\settlement_package_v2"
+}

@@ -1,0 +1,134 @@
+{
+  "schemaVersion": "1.0-settlement-vertex-offsets",
+  "generatedUtc": "2026-09-15T08:54:51.261746+00:00",
+  "layout": "每个层一段连续 float32 三元组(dx,dy,dz);顺序与基线包对应层 GLB 顶点顺序相同;用法:position + exaggeration * t * offset",
+  "dtype": "float32",
+  "byteOrder": "little-endian",
+  "components": 3,
+  "unit": "m",
+  "dzSign": "negative = subsidence",
+  "originRestore": {
+    "x": 37428072.48500001,
+    "y": 4300144.084999999,
+    "z": 1149.980019146534
+  },
+  "displayZScale": 20.0,
+  "maxSubsidenceM": 3.1985573155389795,
+  "maxHorizontalM": 0.8959999996648168,
+  "basePackage": {
+    "relativeDir": "experiments\\models\\chapters\\chapter05\\web_package_refined",
+    "catalogSha256": "ec39c66799ad8acd5588d638c37f15ce94f2b96fc71058083aa0651bb8116337"
+  },
+  "settledPackage": "experiments\\models\\chapters\\chapter05\\settlement_package_v2",
+  "workingsFollowSettlement": false,
+  "layers": [
+    {
+      "code": "L01",
+      "count": 32826,
+      "byteOffset": 0,
+      "byteLength": 393912,
+      "baseGlbSha256": "d314eb6ac49dd2e5d9eb8b116c44052d0dc6510be400ac7026a1646e6eaae7aa"
+    },
+    {
+      "code": "L02",
+      "count": 33162,
+      "byteOffset": 393912,
+      "byteLength": 397944,
+      "baseGlbSha256": "33bd8bfd760fcd577cdec743f294fe3e51d835504945b6e984db42f76c860415"
+    },
+    {
+      "code": "L03",
+      "count": 2934,
+      "byteOffset": 791856,
+      "byteLength": 35208,
+      "baseGlbSha256": "6c12bda640b0bb497c3a32984462b8f56b71493f4ab15afe85ad0ab26a135417"
+    },
+    {
+      "code": "L04",
+      "count": 19898,
+      "byteOffset": 827064,
+      "byteLength": 238776,
+      "baseGlbSha256": "979b5c4d857c4e9d287f5f6fd1ea7765aa7ee336de682970e8a7eef2882a0dbe"
+    },
+    {
+      "code": "L05",
+      "count": 9043,
+      "byteOffset": 1065840,
+      "byteLength": 108516,
+      "baseGlbSha256": "4900715843ad9befb880e76f068ef6c0c2456466b5c03c0ef9b1dcc9beda7fe5"
+    },
+    {
+      "code": "L06",
+      "count": 27388,
+      "byteOffset": 1174356,
+      "byteLength": 328656,
+      "baseGlbSha256": "72db3aaf943ac8c5cc3076afe798dcf3cea17698fe84abf0b879398c22b39891"
+    },
+    {
+      "code": "L07",
+      "count": 25983,
+      "byteOffset": 1503012,
+      "byteLength": 311796,
+      "baseGlbSha256": "4e220d5cc743ca2947f9a80166dcfc744d6f43f8a4998515ddf95d32925344a5"
+    },
+    {
+      "code": "L08",
+      "count": 31357,
+      "byteOffset": 1814808,
+      "byteLength": 376284,
+      "baseGlbSha256": "c66ab7917966677f153b08ed64a429b4094221f8ea22347206293896ebf73956"
+    },
+    {
+      "code": "L09",
+      "count": 30966,
+      "byteOffset": 2191092,
+      "byteLength": 371592,
+      "baseGlbSha256": "2925e2ca950c43441666027768272eb25a814ba2933d8e6f2b3a0dfd51536cec"
+    },
+    {
+      "code": "L10",
+      "count": 32726,
+      "byteOffset": 2562684,
+      "byteLength": 392712,
+      "baseGlbSha256": "05062f6fcc25a23d3216adf6b4fb01dd1b21a12f33e311c446fd31831770fa74"
+    },
+    {
+      "code": "L11",
+      "count": 24049,
+      "byteOffset": 2955396,
+      "byteLength": 288588,
+      "baseGlbSha256": "c8daa5fcba24c9d1247249b492ac569f29ba4603db8952d04f6c3b5901c36048"
+    },
+    {
+      "code": "L12",
+      "count": 33282,
+      "byteOffset": 3243984,
+      "byteLength": 399384,
+      "baseGlbSha256": "a727691e7fe5fd44314deee1678cc45d5d32d54ae0cc967ff0d5b8794d947a6d"
+    },
+    {
+      "code": "L13",
+      "count": 33282,
+      "byteOffset": 3643368,
+      "byteLength": 399384,
+      "baseGlbSha256": "b4f657c8b6ee416821ec84383824f5fa5032d55f7a088c099a3a5e6d48191c9d"
+    },
+    {
+      "code": "L14",
+      "count": 32879,
+      "byteOffset": 4042752,
+      "byteLength": 394548,
+      "baseGlbSha256": "124e4a8f887854ffdf661cd736e68062039283a0bdf9c56309cd2a901c142a88"
+    }
+  ],
+  "statistics": {
+    "max_subsidence_m": 3.1985573155389795,
+    "mean_subsidence_m": 0.9521129845727067,
+    "max_uplift_m": 0.0,
+    "max_horizontal_m": 0.8959999996648168,
+    "nodes_with_offset": 4160,
+    "nodes_total": 16641,
+    "goaf_inside_mean_abs_dz_m": 0.3627534475483014,
+    "goaf_outside_mean_abs_dz_m": 0.22731105521965575
+  }
+}
