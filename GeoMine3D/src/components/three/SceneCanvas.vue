@@ -89,6 +89,7 @@ const {
     loadRequest,
     unloadRequest,
     showEdges,
+    groupOpacity,
     stratumLayers,
     coordinateOrigin,
     verticalScale,
@@ -374,6 +375,8 @@ async function loadModelByRequest(req: ModelLoadRequest) {
         sceneManager.removeGrid()
         refreshSelectionPickTargets()
         sceneStore.setModelLoadStatus(req.type, req.id, { loaded: true, loading: false })
+        // 新加载的模型同步套用所属图层的整体透明度
+        applyGroupOpacityToModels()
 
         if (focusType) {
             fitCameraToType(focusType, preferImmediateFocus)
@@ -696,13 +699,15 @@ function applyStratumLayerControl(control: StratumLayerControl) {
         if (key !== control.key) return
 
         mesh.visible = control.visible
+        // 整体透明度作为系数叠在单元透明度之上,两级滑块互不覆盖
+        const opacity = Math.min(1, Math.max(0.05, control.opacity * groupOpacity.value.stratum))
         const mats = highlightManager.getEditableMaterials(mesh)
         for (const mat of mats as any[]) {
             if (mat.color) {
                 mat.color.set(control.color)
             }
-            mat.transparent = control.opacity < 1
-            mat.opacity = control.opacity
+            mat.transparent = opacity < 1
+            mat.opacity = opacity
             mat.needsUpdate = true
         }
         const edgeLines = (mesh as any).userData?.edgeLines
@@ -710,6 +715,14 @@ function applyStratumLayerControl(control: StratumLayerControl) {
             edgeLines.visible = showEdges.value && control.visible
         }
     })
+}
+
+/** 对钻孔/工作面/巷道按图层整体透明度刷新材质(地层走 applyStratumLayerControl) */
+function applyGroupOpacityToModels() {
+    if (!layerManager) return
+    layerManager.setLayerOpacity('borehole', groupOpacity.value.borehole)
+    layerManager.setLayerOpacity('workingface', groupOpacity.value.workingface)
+    layerManager.setLayerOpacity('roadway', groupOpacity.value.roadway)
 }
 
 // ==================== Tools ====================
@@ -1186,6 +1199,14 @@ watch(showEdges, (visible) => {
 
 watch(stratumLayers, (layers) => {
     for (const layer of layers) {
+        applyStratumLayerControl(layer)
+    }
+}, { deep: true })
+
+// 一级图层整体透明度:钻孔/工作面/巷道直接刷材质,地层复用单元控制逻辑
+watch(groupOpacity, () => {
+    applyGroupOpacityToModels()
+    for (const layer of stratumLayers.value) {
         applyStratumLayerControl(layer)
     }
 }, { deep: true })

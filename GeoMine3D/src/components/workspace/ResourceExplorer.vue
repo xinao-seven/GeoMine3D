@@ -20,49 +20,63 @@
                 <small>{{ sceneTotal }} 个单元</small>
             </div>
 
-            <template v-for="group in sceneGroups" :key="group.type">
+            <section v-for="group in sceneGroups" :key="group.type" class="tree-group">
                 <div class="tree-layer">
+                    <button class="group-toggle" type="button" @click="toggleGroup(panelKey('scene', group.type))">
+                        <span class="group-caret" :class="{ collapsed: collapsed[panelKey('scene', group.type)] }">⌄</span>
+                        <span class="layer-dot" :class="group.type"></span>
+                        <span class="group-label">{{ group.label }}</span>
+                        <b>{{ group.count }}</b>
+                    </button>
                     <button class="eye-button" :class="{ visible: layerVisible[group.type] }"
                         @click="sceneStore.setLayerVisible(group.type, !layerVisible[group.type])"><el-icon>
                             <View />
                         </el-icon></button>
-                    <span class="layer-dot" :class="group.type"></span>
-                    <span>{{ group.label }}</span>
-                    <b>{{ group.count }}</b>
                 </div>
 
-                <!-- 地层:逐层材质控制 -->
-                <div v-if="group.type === 'stratum' && stratumLayers.length" class="strata-tree">
-                    <div v-for="item in stratumLayers" :key="item.key" class="strata-row"
-                        :class="{ active: selectedLayerKey === item.key }">
-                        <button class="layer-eye" :title="item.visible ? '隐藏' : '显示'"
-                            @click="sceneStore.updateStratumLayer(item.key, { visible: !item.visible })"><el-icon>
-                                <View />
-                            </el-icon></button>
-                        <button class="layer-select" @click="selectedLayerKey = item.key">
-                            <i :style="{ background: item.color }"></i><span>{{ item.layerName }}</span><small>{{
-                                item.visible ? 'ON' : 'OFF' }}</small>
-                        </button>
+                <div v-show="!collapsed[panelKey('scene', group.type)]" class="group-body">
+                    <div class="group-opacity">
+                        <span>整体透明度</span>
+                        <el-slider class="opacity-slider" :model-value="opacityPercent(group.type)"
+                            :show-tooltip="false" size="small" :min="5"
+                            @input="onOpacityInput(group.type, $event)" />
+                        <b>{{ opacityPercent(group.type) }}%</b>
                     </div>
-                    <div v-if="selectedLayer" class="layer-editor">
-                        <div class="editor-heading"><span>{{ selectedLayer.layerName }}</span><small>单元材质</small></div>
-                        <label><span>颜色</span><el-color-picker :model-value="selectedLayer.color" size="small"
-                                @change="setSelectedLayerColor" /></label>
-                        <label><span>透明度</span><b>{{ Math.round(selectedLayer.opacity * 100) }}%</b></label>
-                        <el-slider :model-value="selectedLayer.opacity * 100" :show-tooltip="false"
-                            @input="setSelectedLayerOpacity" />
-                    </div>
-                </div>
 
-                <!-- 其余类型:列出已加载的模型 -->
-                <div v-else-if="group.items.length" class="scene-children">
-                    <div v-for="item in group.items" :key="item.key" class="scene-child">
-                        <i :style="{ background: item.color }"></i>
-                        <span :title="item.label">{{ item.label }}</span>
-                        <button class="scene-child-remove" title="从场景移除" @click="item.remove()">移除</button>
+                    <!-- 地层:逐层材质控制 -->
+                    <div v-if="group.type === 'stratum' && stratumLayers.length" class="strata-tree">
+                        <div v-for="item in stratumLayers" :key="item.key" class="strata-row"
+                            :class="{ active: selectedLayerKey === item.key }">
+                            <button class="layer-eye" :title="item.visible ? '隐藏' : '显示'"
+                                @click="sceneStore.updateStratumLayer(item.key, { visible: !item.visible })"><el-icon>
+                                    <View />
+                                </el-icon></button>
+                            <button class="layer-select" @click="selectedLayerKey = item.key">
+                                <i :style="{ background: item.color }"></i><span>{{ item.layerName }}</span><small>{{
+                                    item.visible ? 'ON' : 'OFF' }}</small>
+                            </button>
+                        </div>
+                        <div v-if="selectedLayer" class="layer-editor">
+                            <div class="editor-heading"><span>{{ selectedLayer.layerName }}</span><small>单元材质</small></div>
+                            <label><span>颜色</span><el-color-picker :model-value="selectedLayer.color" size="small"
+                                    @change="setSelectedLayerColor" /></label>
+                            <label><span>透明度</span><b>{{ Math.round(selectedLayer.opacity * 100) }}%</b></label>
+                            <el-slider :model-value="selectedLayer.opacity * 100" :show-tooltip="false"
+                                @input="setSelectedLayerOpacity" />
+                        </div>
                     </div>
+
+                    <!-- 其余类型:列出已加载的模型 -->
+                    <div v-else-if="group.items.length" class="scene-children">
+                        <div v-for="item in group.items" :key="item.key" class="scene-child">
+                            <i :style="{ background: item.color }"></i>
+                            <span :title="item.label">{{ item.label }}</span>
+                            <button class="scene-child-remove" title="从场景移除" @click="item.remove()">移除</button>
+                        </div>
+                    </div>
+                    <p v-else class="empty-copy">场景中暂无{{ group.label }}</p>
                 </div>
-            </template>
+            </section>
 
             <div class="scene-options">
                 <label><span>显示地层边缘</span><el-switch :model-value="showEdges" size="small"
@@ -85,13 +99,14 @@
                 </div>
 
                 <section v-for="group in modelGroups" :key="group.key" class="resource-group">
-                    <button class="group-title" type="button" @click="toggleGroup(group.key)">
-                        <span class="group-caret" :class="{ collapsed: collapsed[group.key] }">⌄</span>
+                    <button class="group-title" type="button" @click="toggleGroup(panelKey('asset', group.key))">
+                        <span class="group-caret"
+                            :class="{ collapsed: collapsed[panelKey('asset', group.key)] }">⌄</span>
                         <span class="group-dot" :class="group.key"></span>
                         <span class="group-label">{{ group.label }}</span>
                         <b>{{ group.items.length }}</b>
                     </button>
-                    <div v-show="!collapsed[group.key]" class="group-body">
+                    <div v-show="!collapsed[panelKey('asset', group.key)]" class="group-body">
                         <div v-for="model in group.items" :key="model.id" class="resource-row"
                             :class="{ 'is-loaded': modelStatus(model).loaded }">
                             <button class="resource-main"
@@ -112,25 +127,28 @@
                 </section>
 
                 <section class="resource-group">
-                    <button class="group-title" type="button" @click="toggleGroup('borehole')">
-                        <span class="group-caret" :class="{ collapsed: collapsed.borehole }">⌄</span>
+                    <button class="group-title" type="button" @click="toggleGroup(panelKey('asset', 'borehole'))">
+                        <span class="group-caret"
+                            :class="{ collapsed: collapsed[panelKey('asset', 'borehole')] }">⌄</span>
                         <span class="group-dot borehole"></span>
                         <span class="group-label">钻孔模型</span>
                         <b>{{ boreholes.length }}</b>
                     </button>
-                    <div v-show="!collapsed.borehole" class="group-body">
+                    <div v-show="!collapsed[panelKey('asset', 'borehole')]" class="group-body">
                         <div class="group-toolbar">
                             <input v-model="boreholeKeyword" class="group-search" placeholder="筛选孔号 / 名称" />
                             <button class="ghost-button" type="button" @click="showBoreholeList = !showBoreholeList">{{
                                 showBoreholeList ? '收起' : '展开' }}</button>
                         </div>
-                        <button class="resource-row" type="button" :disabled="!boreholes.length"
-                            @click="boreholesLoaded ? removeAllBoreholes() : loadAllBoreholes()">
-                            <span class="resource-symbol borehole">B</span>
-                            <span class="resource-name"><strong>全部钻孔</strong><small>{{ loadedBoreholeCount }} / {{
-                                    boreholes.length }} 个孔位已加载</small></span>
-                            <span class="load-state">{{ boreholesLoaded ? '移除全部' : '加载全部' }}</span>
-                        </button>
+                        <div class="resource-row" :class="{ 'is-disabled': !boreholes.length }">
+                            <button class="resource-main" :disabled="!boreholes.length"
+                                @click="boreholesLoaded ? removeAllBoreholes() : loadAllBoreholes()">
+                                <span class="resource-symbol borehole">B</span>
+                                <span class="resource-name"><strong>全部钻孔</strong><small>{{ loadedBoreholeCount }} /
+                                        {{ boreholes.length }} 个孔位已加载</small></span>
+                                <span class="load-state">{{ boreholesLoaded ? '移除全部' : '加载全部' }}</span>
+                            </button>
+                        </div>
                         <template v-if="showBoreholeList || boreholeKeyword">
                             <div v-for="item in filteredBoreholes" :key="item.id" class="resource-row"
                                 :class="{ 'is-loaded': isBoreholeLoaded(item.id) }">
@@ -184,7 +202,7 @@ const ASSET_GROUPS: AssetGroupDef[] = [
 const route = useRoute()
 const router = useRouter()
 const sceneStore = useSceneStore()
-const { layerVisible, showEdges, stratumLayers } = storeToRefs(sceneStore)
+const { layerVisible, showEdges, stratumLayers, groupOpacity } = storeToRefs(sceneStore)
 
 const tab = ref<'scene' | 'assets'>(route.params.projectId === 'local' ? 'scene' : 'assets')
 const selectedLayerKey = ref<string | null>(null)
@@ -231,6 +249,21 @@ function byName(a: ModelAssetRecord, b: ModelAssetRecord) {
 
 function toggleGroup(key: string) {
     collapsed[key] = !collapsed[key]
+}
+
+/** 折叠面板 key 加作用域前缀,避免“场景/资源”两个页签里同名分组互相干扰 */
+function panelKey(scope: 'scene' | 'asset', key: string) {
+    return `${scope}:${key}`
+}
+
+// ==================== 图层整体透明度 ====================
+
+function opacityPercent(type: SceneType) {
+    return Math.round((groupOpacity.value[type] ?? 1) * 100)
+}
+
+function onOpacityInput(type: SceneType, value: number | number[]) {
+    if (typeof value === 'number') sceneStore.setGroupOpacity(type, value / 100)
 }
 
 function subtitle(asset: ModelAssetRecord) {
@@ -493,6 +526,14 @@ onMounted(loadResources)
     color: #956b3d;
 }
 
+.tree-group {
+    border-bottom: 1px solid #232923;
+}
+
+.tree-group .tree-layer {
+    border-bottom: 0;
+}
+
 .tree-layer {
     height: 39px;
     display: flex;
@@ -501,6 +542,26 @@ onMounted(loadResources)
     border-bottom: 1px solid #252b26;
     color: #aab1aa;
     font-size: 11px;
+}
+
+.group-toggle {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-size: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.group-toggle:hover {
+    color: #c3c8c1;
 }
 
 .tree-layer b {
@@ -725,7 +786,9 @@ onMounted(loadResources)
 }
 
 .resource-group {
-    margin-bottom: 18px;
+    margin-bottom: 10px;
+    border: 1px solid #262d27;
+    background: #151a16;
 }
 
 .group-title {
@@ -733,7 +796,7 @@ onMounted(loadResources)
     display: flex;
     align-items: center;
     gap: 7px;
-    padding: 7px 3px;
+    padding: 9px 9px 7px;
     border: 0;
     border-bottom: 1px solid #2b322c;
     background: transparent;
@@ -795,7 +858,57 @@ onMounted(loadResources)
 }
 
 .group-body {
-    padding-top: 2px;
+    padding: 2px 8px 8px;
+}
+
+/* ---------- 一级分组的整体透明度滑块 ---------- */
+.group-opacity {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 0 3px;
+    color: #6f7971;
+    font-size: 10px;
+}
+
+.group-opacity>span {
+    flex: none;
+    letter-spacing: .05em;
+}
+
+.group-opacity>b {
+    flex: none;
+    min-width: 30px;
+    text-align: right;
+    font: 9px Bahnschrift, sans-serif;
+    color: #bd8950;
+}
+
+.opacity-slider {
+    flex: 1;
+    min-width: 0;
+}
+
+.opacity-slider :deep(.el-slider__runway) {
+    height: 3px;
+    margin: 6px 0;
+    background: #2c332d;
+}
+
+.opacity-slider :deep(.el-slider__bar) {
+    height: 3px;
+    background: #a9764a;
+}
+
+.opacity-slider :deep(.el-slider__button-wrapper) {
+    top: -16px;
+}
+
+.opacity-slider :deep(.el-slider__button) {
+    width: 10px;
+    height: 10px;
+    border-color: #c49154;
+    background: #1b201c;
 }
 
 .group-toolbar {
@@ -839,8 +952,12 @@ onMounted(loadResources)
     width: 100%;
     display: flex;
     align-items: center;
+    border: 0;
     border-top: 1px solid #272d28;
+    background: transparent;
     color: #bfc5bd;
+    font: inherit;
+    text-align: left;
 }
 
 .resource-row:hover {
@@ -849,6 +966,11 @@ onMounted(loadResources)
 }
 
 .resource-row:disabled {
+    cursor: default;
+    opacity: .62;
+}
+
+.resource-row.is-disabled .resource-main {
     cursor: default;
     opacity: .62;
 }
@@ -926,6 +1048,7 @@ onMounted(loadResources)
     min-width: 0;
     display: flex;
     flex-direction: column;
+    
 }
 
 .resource-name strong {

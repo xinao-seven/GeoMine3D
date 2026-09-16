@@ -12,6 +12,9 @@ import type {
 
 type ModelType = 'stratum' | 'borehole' | 'workingface' | 'roadway'
 
+/** 可按类型整体调整透明度的图层 */
+export type LayerType = ModelType
+
 export type ModelLoadPayload = {
     type: 'stratum' | 'workingface' | 'roadway'
     id: string
@@ -42,6 +45,13 @@ export const useSceneStore = defineStore('scene', () => {
 
     // 地层边缘线显示开关
     const showEdges = ref(false)
+    // 各一级图层的整体不透明度系数(0.05~1);1 表示保持模型自身材质不透明度
+    const groupOpacity = reactive<Record<LayerType, number>>({
+        stratum: 1,
+        borehole: 1,
+        workingface: 1,
+        roadway: 1,
+    })
     // 工具运行状态（剖切/测量/标注/炸开）
     const toolState = reactive<ToolState>({
         clipEnabled: false,
@@ -86,6 +96,17 @@ export const useSceneStore = defineStore('scene', () => {
 
     function setShowEdges(visible: boolean) {
         showEdges.value = visible
+    }
+
+    /** 设置某个一级图层的整体透明度(入参为 0.05~1 的系数) */
+    function setGroupOpacity(type: LayerType, value: number) {
+        const factor = Number.isFinite(value) ? value : 1
+        groupOpacity[type] = Math.min(1, Math.max(0.05, factor))
+    }
+
+    /** 将全部图层整体透明度还原为 1(不改变各模型自身的材质值) */
+    function resetGroupOpacity() {
+        for (const type of Object.keys(groupOpacity) as LayerType[]) groupOpacity[type] = 1
     }
 
     function activateTool(tool: 'clip' | 'measure' | 'annotation' | null) {
@@ -173,6 +194,7 @@ export const useSceneStore = defineStore('scene', () => {
         lastMeasurementDistance.value = null
         loadRequest.value = null
         unloadRequest.value = null
+        resetGroupOpacity()
     }
 
     function registerStratumLayers(layers: StratumLayerControl[]) {
@@ -216,6 +238,7 @@ export const useSceneStore = defineStore('scene', () => {
         selectedObject,
         layerVisible,
         showEdges,
+        groupOpacity,
         toolState,
         measurements,
         lastMeasurementDistance,
@@ -230,6 +253,8 @@ export const useSceneStore = defineStore('scene', () => {
         selectObject,
         setLayerVisible,
         setShowEdges,
+        setGroupOpacity,
+        resetGroupOpacity,
         activateTool,
         setClipHeight,
         requestUnloadModel,
