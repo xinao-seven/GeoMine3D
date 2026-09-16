@@ -3,6 +3,8 @@ export interface BoreholeLayer {
   topDepth: number
   bottomDepth: number
   thickness: number
+  /** 分层显示色（来自后端 borehole_segments.color） */
+  color: string
 }
 
 export interface BoreholeLocation {
@@ -17,9 +19,10 @@ export interface BoreholeItem {
   totalDepth: number
   layerCount: number
   location?: BoreholeLocation
+  /** 分层数据（BoreholeDetail 必填；列表项可能为 undefined） */
+  layers?: BoreholeLayer[]
 }
 
 export interface BoreholeDetail extends BoreholeItem {
   layers: BoreholeLayer[]
 }
-

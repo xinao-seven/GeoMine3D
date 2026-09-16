@@ -93,6 +93,7 @@ export function toBoreholeDetail(item: BoreholeRecord): BoreholeDetail {
             topDepth: segment.top_depth,
             bottomDepth: segment.bottom_depth,
             thickness: segment.thickness,
+            color: segment.color,
         })),
     }
 }

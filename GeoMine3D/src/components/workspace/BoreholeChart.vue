@@ -5,6 +5,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import * as echarts from 'echarts'
+import { boreholeLayerColor } from '@/constants/strataColors'
 import type { BoreholeDetail } from '@/types'
 
 const props = defineProps<{
@@ -21,7 +22,6 @@ let resizeObserver: ResizeObserver | null = null
 
 function buildOption(borehole: BoreholeDetail) {
     const layers = [...borehole.layers].reverse()
-    const colors = ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', '#fc8452']
 
     return {
         backgroundColor: 'transparent',
@@ -73,12 +73,12 @@ function buildOption(borehole: BoreholeDetail) {
                             height: Math.max(1, y1[1] - y0[1]),
                         },
                         style: {
-                            fill: colors[layerIdx % colors.length],
+                            fill: boreholeLayerColor(layer.color, layerIdx),
                             opacity: 0.85,
                         },
                     }
                 },
-                data: layers.map((l, i) => ({ value: [0, l.topDepth], layer: l, itemStyle: { color: colors[i % colors.length] } })),
+                data: layers.map((l, i) => ({ value: [0, l.topDepth], layer: l, itemStyle: { color: boreholeLayerColor(l.color, i) } })),
                 encode: { y: 1 },
             },
         ],

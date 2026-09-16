@@ -26,7 +26,7 @@
         <div class="strata-list">
           <div v-for="(layer, index) in selectedBorehole.layers" :key="`${layer.layerName}-${index}`"
             class="strata-item">
-            <i :style="{ background: layerColor(index) }"></i>
+            <i :style="{ background: layerColor(layer.color, index) }"></i>
             <div><strong>{{ layer.layerName }}</strong><span>{{ layer.topDepth.toFixed(2) }} — {{
               layer.bottomDepth.toFixed(2) }} m</span></div>
             <b>{{ layer.thickness.toFixed(2) }}</b>
@@ -64,6 +64,7 @@
 import { computed } from 'vue'
 import { useSceneStore, useBoreholeStore, useWorkspaceStore } from '@/stores'
 import { storeToRefs } from 'pinia'
+import { boreholeLayerColor } from '@/constants/strataColors'
 import type { BoreholeDetail } from '@/types'
 
 const sceneStore = useSceneStore()
@@ -87,8 +88,7 @@ const selectedBorehole = computed(() => {
   return data?.layers && typeof data.totalDepth === 'number' ? data as BoreholeDetail : null
 })
 
-const strataColors = ['#a98a5f', '#766950', '#876345', '#586c60', '#6f7776', '#3f4642', '#b69763']
-function layerColor(index: number) { return strataColors[index % strataColors.length] }
+function layerColor(color: string, index: number) { return boreholeLayerColor(color, index) }
 
 const filteredData = computed(() => {
   const data = selectedObject.value?.data
