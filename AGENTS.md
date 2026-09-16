@@ -69,7 +69,11 @@ server/                     # Preserved legacy data service and source assets (d
 
 - Path alias `@/*` maps to `./src/*` in both Vite and tsconfig.
 - `noUnusedLocals`/`noUnusedParameters` are disabled. ECharts types: use `Record<string, any>`.
-- Borehole Excel "深度" = bottom depth; "厚度" = thickness. topDepth = depth - thickness.
+- Borehole strata Excel has two column dialects (both headers read 深度/厚度); `detect_strata_convention` picks per file:
+  - `bottom_thickness` (旧表 `地层汇总.xlsx`): 深度 = bottom depth, 厚度 = thickness → topDepth = 深度 - 厚度.
+  - `top_bottom` (当前表 `地层汇总14层.xlsx`): 深度 = top depth, 厚度 column actually stores bottom depth → thickness = 厚度 - 深度.
+- Only boreholes present in the strata table are imported/displayed; coordinates-only holes (in `钻孔位置.xlsx` but not in the strata table) are skipped and removed on re-import.
+- 3D boreholes are drawn per layer with the same colors as the chart/table (`borehole_segments.color`); `BoreholeModelLoader` merges one hole's layers into a single `InstancedMesh` (unit cylinder + per-instance matrix/`instanceColor`, zero-thickness layers get no geometry). One `Object3D` per borehole is preserved so pick/remove/visibility/group-opacity keep working.
 - Location coordinates (columns: name/x/y/z) are Gauss-Kruger, normalized (project origin subtracted) for Three.js:
   - three_x = geo_x - cx, three_y = geo_z - cz (elevation → up), three_z = geo_y - cy
 - Camera far clip: 500000; initial: (0, 6000, 9000); controls max distance: 200000.
@@ -80,8 +84,9 @@ server/                     # Preserved legacy data service and source assets (d
 |------|----------|
 | Model package catalog | `server/static/models/web_package/catalog.json` |
 | Working face data | `server/data/workingfaces.json` |
-| Borehole strata | `server/data/boreholes/*.xlsx` |
-| Borehole coordinates | `server/data/location/钻孔位置.xlsx` |
+| Borehole strata (active) | `server/data/boreholes/地层汇总14层.xlsx`（182 孔 × 14 层，列语义 深度=层顶/厚度=层底，路径由 `settings.borehole_strata_file` 指定） |
+| Borehole strata (legacy) | `server/data/boreholes/地层汇总.旧表-已停用.xlsx.bak`（旧表，已停用；列语义 深度=层底/厚度=层厚） |
+| Borehole coordinates | `server/data/location/钻孔位置.xlsx`（210 孔，其中 28 孔无分层，导入时跳过） |
 | .glb models | `server/static/models/web_package/`（L01–L10 分层、model_combined、roadways、working_faces） |
 | 沉陷位移场 | `server/static/models/settlement/`（vertex_offsets.bin/.index.json，前端单模型变形用） |
 

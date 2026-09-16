@@ -19,15 +19,34 @@ from app.models.project import Project
 from app.models.workspace import ImportRun, WorkingFace
 
 
+# 分层配色:与当前分层表(地层汇总14层.xlsx)的 14 个层位一一对应。
+# 选取标准:相邻与任意两层在色相/明度上可区分(最小 RGB 距离 33、色相差 ≥ 25°),
+# 且都亮于深色面板背景(亮度 ≥ 0.15),按层顶→层底顺序排列。
+# 层序:风积砂层/土层/4-1旋回(泥岩·砂岩)/煤顶泥岩层/煤3-1/直接底层/下伏岩层
 LAYER_COLORS = (
-    "#8d7358",
-    "#c7a66b",
-    "#65755f",
-    "#9b7d68",
-    "#6f7f89",
-    "#b68b62",
-    "#74665a",
+    "#e8d7a4",  # 风积砂层
+    "#8f7a63",  # 土层
+    "#9ab98f",  # 第4旋回泥岩层
+    "#e6c878",  # 第4旋回砂岩层
+    "#58a086",  # 第3旋回泥岩层
+    "#cf8b4f",  # 第3旋回砂岩层
+    "#8fb0d4",  # 第2旋回泥岩层
+    "#a8ab63",  # 第2旋回砂岩层
+    "#5484a8",  # 第1旋回泥岩层
+    "#b4738a",  # 第1旋回砂岩层
+    "#b0a08c",  # 煤顶泥岩层
+    "#6a6a72",  # 煤3-1
+    "#b7bcc2",  # 直接底层
+    "#85878f",  # 下伏岩层
 )
+# 层数超过配色表时的中性兑底色
+LAYER_COLOR_FALLBACK = "#8d7358"
+
+# 钻孔分层表两列数值存在两种写法（表头都写作 深度/厚度，语义却不同）：
+# - BOTTOM_THICKNESS：深度 = 层底深度，厚度 = 层厚（旧表 地层汇总.xlsx）
+# - TOP_BOTTOM：      深度 = 层顶深度，厚度列实际存的是层底深度（地层汇总14层.xlsx）
+STRATA_BOTTOM_THICKNESS = "bottom_thickness"
+STRATA_TOP_BOTTOM = "top_bottom"
 
 
 def normalize_match_key(value: Any) -> str:
@@ -55,6 +74,25 @@ def rows_as_dicts(path: Path) -> list[dict[str, Any]]:
         workbook.close()
 
 
+def detect_strata_convention(rows: list[dict[str, Any]]) -> str:
+    """推断分层表 (深度, 厚度) 两列的真实语义。
+
+    判据：若每一行都满足 第二列 ≥ 第一列，则只有“顶深/底深”写法成立
+    （层底不可能浅于层顶）；旧表把层厚放在第二列，普遍小于层底深度，会立即被排除。
+    """
+    pairs: list[tuple[float, float]] = []
+    for row in rows:
+        if not normalize_match_key(row.get("钻孔名称")):
+            continue
+        first, second = row.get("深度"), row.get("厚度")
+        if first in (None, "") or second in (None, ""):
+            continue
+        pairs.append((as_float(first), as_float(second)))
+    if pairs and all(second >= first for first, second in pairs):
+        return STRATA_TOP_BOTTOM
+    return STRATA_BOTTOM_THICKNESS
+
+
 def file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -68,6 +106,8 @@ class ServerDataImportService:
         self.session = session
         self.data_root = settings.source_data_path
         self.model_root = settings.source_model_path
+        self.location_path = self.data_root / settings.borehole_location_file
+        self.strata_path = self.data_root / settings.borehole_strata_file
         self.model_catalog_path = settings.source_model_catalog_path
 
     async def run(self, project_name: str) -> dict[str, Any]:
@@ -89,7 +129,7 @@ class ServerDataImportService:
         self.session.add(
             ImportRun(
                 project_id=project.id,
-                source="server/data + web_package/catalog.json",
+                source=f"server/data + {self.strata_path.name} + web_package/catalog.json",
                 status="completed",
                 summary_json=summary,
             )
@@ -99,8 +139,8 @@ class ServerDataImportService:
 
     def _validate_sources(self) -> None:
         required = (
-            self.data_root / "location" / "钻孔位置.xlsx",
-            self.data_root / "boreholes" / "地层汇总.xlsx",
+            self.location_path,
+            self.strata_path,
             self.data_root / "workingfaces.json",
             self.model_catalog_path,
         )
@@ -109,7 +149,7 @@ class ServerDataImportService:
             raise AppError("IMPORT_SOURCE_MISSING", f"数据源不存在: {', '.join(missing)}")
 
     def _read_locations(self) -> dict[str, dict[str, Any]]:
-        path = self.data_root / "location" / "钻孔位置.xlsx"
+        path = self.location_path
         result: dict[str, dict[str, Any]] = {}
         for row in rows_as_dicts(path):
             key = normalize_match_key(row.get("name"))
@@ -124,23 +164,52 @@ class ServerDataImportService:
         return result
 
     def _read_strata(self) -> dict[str, list[dict[str, Any]]]:
-        path = self.data_root / "boreholes" / "地层汇总.xlsx"
+        """读取钻孔分层表，统一归一化成 层顶深度 / 层底深度 / 层厚。
+
+        两种列语义都会按行首列是否满足“底深 ≥ 顶深”自动判别（见 detect_strata_convention），
+        并按层顶深度排序、校验层厚非负，避免把两种写法的表混着算成负厚度。
+        """
+        path = self.strata_path
+        rows = rows_as_dicts(path)
+        convention = detect_strata_convention(rows)
         grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
-        for row in rows_as_dicts(path):
+        for row in rows:
             key = normalize_match_key(row.get("钻孔名称"))
             if not key:
                 continue
-            bottom = as_float(row.get("深度"))
-            thickness = as_float(row.get("厚度"))
+            first = as_float(row.get("深度"))
+            second = as_float(row.get("厚度"))
+            if convention == STRATA_TOP_BOTTOM:
+                top_depth, bottom_depth = first, second
+            else:
+                bottom_depth, top_depth = first, first - second
             grouped[key].append(
                 {
                     "source_code": canonical_code(row.get("钻孔名称")),
                     "layer_name": str(row.get("地层名称") or "未命名地层").strip(),
-                    "top_depth": bottom - thickness,
-                    "bottom_depth": bottom,
-                    "thickness": thickness,
+                    "top_depth": top_depth,
+                    "bottom_depth": bottom_depth,
+                    "thickness": bottom_depth - top_depth,
                 }
             )
+
+        invalid = [
+            (key, item)
+            for key, segments in grouped.items()
+            for item in segments
+            if item["thickness"] < -1e-6
+        ]
+        if invalid:
+            key, item = invalid[0]
+            raise AppError(
+                "IMPORT_SOURCE_INVALID",
+                f"分层表存在负厚度行({path.name}, 钻孔 {key}, 地层 {item['layer_name']}): "
+                "请确认列语义是 深度=层底+厚度=层厚, 还是 深度=层顶+厚度=层底",
+            )
+
+        for segments in grouped.values():
+            # 按层顶深度稳定排序,保证 0 厚度夹层仍保持原始层序
+            segments.sort(key=lambda item: item["top_depth"])
         return grouped
 
     def _read_model_catalog(self) -> dict[str, Any]:
@@ -193,9 +262,10 @@ class ServerDataImportService:
         segment_count = 0
         zero_thickness = 0
 
-        for key in sorted(set(locations) | set(strata)):
+        # 只导入分层表里有的钻孔：只有坐标、没有分层的孔不进库也不显示。
+        for key in sorted(strata):
             location = locations.get(key)
-            segments = strata.get(key, [])
+            segments = strata[key]
             code = location["code"] if location else segments[0]["source_code"]
             borehole = existing.get(key)
             if borehole is None:
@@ -228,16 +298,26 @@ class ServerDataImportService:
                         top_depth=item["top_depth"],
                         bottom_depth=item["bottom_depth"],
                         thickness=item["thickness"],
-                        color=LAYER_COLORS[sequence % len(LAYER_COLORS)],
+                        color=LAYER_COLORS[sequence] if sequence < len(LAYER_COLORS) else LAYER_COLOR_FALLBACK,
                         sequence=sequence,
                     )
                 )
             segment_count += len(segments)
 
+        # 清理历史上导进来、但已不在分层表中的钻孔(只动导入来源的数据,手工创建的孔保留)
+        removed = 0
+        for key, borehole in existing.items():
+            if key in strata or (borehole.metadata_json or {}).get("source") != "server/data":
+                continue
+            await self.session.delete(borehole)
+            removed += 1
+
         return {
-            "boreholes": len(set(locations) | set(strata)),
+            "boreholes": len(strata),
             "borehole_segments": segment_count,
             "zero_thickness_segments": zero_thickness,
+            "skipped_location_only": len(set(locations) - set(strata)),
+            "removed_stale_boreholes": removed,
         }
 
     async def _upsert_models(self, project: Project, catalog: dict[str, Any]) -> int:

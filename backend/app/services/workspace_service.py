@@ -132,7 +132,9 @@ class BoreholeService:
             .where(Borehole.project_id == project_id)
             .order_by(Borehole.code)
         )
-        return list(result)
+        # 只展示有分层数据的钻孔:坐标表里有、分层表里没有的孔不进入资源树与场景。
+        # 手工创建(无该标记)的钻孔默认保留。
+        return [item for item in result if (item.metadata_json or {}).get("has_strata", True)]
 
     async def get_or_404(self, borehole_id: str) -> Borehole:
         result = await self.session.scalars(
