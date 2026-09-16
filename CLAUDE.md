@@ -58,7 +58,7 @@ server/                     # Preserved legacy data service and source assets
 - Business metadata is persisted in MySQL through SQLAlchemy; source data is imported from `server/data/` and model files remain in `server/static/models/`.
 - The primary frontend is the project center and `/workspace/:projectId` visualization workbench.
 - **Drag-and-drop** .glb files onto scene to load models.
-- FastAPI responses use the unified format `{code, message, data}` and expose OpenAPI docs at `/docs`.
+- FastAPI success payloads are wrapped as `{data}` (list endpoints add `meta`); errors return `{code, message, details, requestId}`. OpenAPI docs at `/docs`.
 
 ## Key Conventions
 

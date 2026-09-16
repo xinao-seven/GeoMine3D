@@ -10,8 +10,13 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.router import api_router
 from app.core.config import settings
-from app.core.exceptions import register_exception_handlers
+from app.core.exceptions import error_payload, register_exception_handlers
+from app.core.logging import get_logger, request_id_var, setup_logging
 
+
+setup_logging()
+logger = get_logger("app.main")
+access_logger = get_logger("app.access")
 
 settings.upload_path.mkdir(parents=True, exist_ok=True)
 (settings.upload_path / "models").mkdir(parents=True, exist_ok=True)
@@ -36,7 +41,15 @@ class NoCacheStaticFiles(StaticFiles):
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    logger.info(
+        "服务启动 env=%s debug=%s log_level=%s db_echo=%s",
+        settings.app_env,
+        settings.debug,
+        settings.log_level_name,
+        settings.db_echo,
+    )
     yield
+    logger.info("服务已停止")
 
 
 app = FastAPI(
@@ -57,11 +70,42 @@ app.add_middleware(
 
 @app.middleware("http")
 async def request_context(request: Request, call_next):
-    request.state.request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    """为每个请求注入 requestId,并输出一行结构化访问日志。"""
+
+    request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+    # 日志里只展示前 8 位,完整值通过响应头 X-Request-ID 返回。
+    request.state.request_id = request_id
+    token = request_id_var.set(request_id[:8])
     started_at = time.perf_counter()
-    response = await call_next(request)
-    response.headers["X-Request-ID"] = request.state.request_id
-    response.headers["X-Process-Time"] = f"{time.perf_counter() - started_at:.6f}"
+    status_code = 500
+    response = None
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+    except Exception:
+        # 统一在此记录堆栈(带 requestId),避免 uvicorn 再打印一份重复堆栈。
+        logger.exception("请求处理失败 %s %s", request.method, request.url.path)
+        response = JSONResponse(
+            status_code=500,
+            content=error_payload(request, "INTERNAL_ERROR", "服务器内部错误"),
+        )
+    finally:
+        elapsed_ms = (time.perf_counter() - started_at) * 1000
+        # API/健康检查按 INFO 输出;静态资源与页面按 DEBUG,避免刷屏。
+        is_api = request.url.path.startswith(("/api/", "/health", "/docs", "/openapi.json"))
+        if settings.access_log:
+            log = access_logger.info if is_api else access_logger.debug
+            log(
+                "%s %s -> %s %.1fms",
+                request.method,
+                request.url.path,
+                status_code,
+                elapsed_ms,
+            )
+        request_id_var.reset(token)
+
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Process-Time"] = f"{elapsed_ms / 1000:.6f}"
     return response
 
 

@@ -60,7 +60,7 @@ server/                     # Preserved legacy data service and source assets (d
 - Business metadata is persisted in MySQL through SQLAlchemy; source data is imported from `server/data/` and model files remain in `server/static/models/`.
 - The primary frontend is the project center (`/projects`) and the `/workspace/:projectId` visualization workbench.
 - **Drag-and-drop** .glb files onto scene to load models.
-- FastAPI responses use the unified format `{code, message, data}` and expose OpenAPI docs at `/docs`.
+- FastAPI success payloads are wrapped as `{data}` (list endpoints add `meta`); errors return `{code, message, details, requestId}`. OpenAPI docs at `/docs`.
 - 原始交付包静态目录：`backend/app/main.py` 将 `server/static/models` 挂载在 `/static/models`，
   前端可直接取 `catalog` 资产与大体积固定数据集（如沉陷位移场 `/static/models/settlement/`）；
   模型详情/版本下载仍走 `/api/v1/models/{id}/file`。

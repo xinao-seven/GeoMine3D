@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     app_env: str = "development"
     debug: bool = False
     api_v1_prefix: str = "/api/v1"
+    # 日志
+    log_level: str = "INFO"
+    access_log: bool = True
+    # 是否打印 SQLAlchemy 生成的 SQL 语句(独立于 DEBUG,避免调试时刷屏)
+    db_echo: bool = False
     database_url: str = (
         "mysql+asyncmy://geomine:geomine@127.0.0.1:3306/geomine3d?charset=utf8mb4"
     )
@@ -37,6 +42,10 @@ class Settings(BaseSettings):
     borehole_strata_file: str = "boreholes/地层汇总14层.xlsx"
     frontend_dist_dir: Path = Path("../GeoMine3D/dist")
     serve_frontend: bool = True
+
+    @property
+    def log_level_name(self) -> str:
+        return self.log_level.upper()
 
     @property
     def upload_path(self) -> Path:
