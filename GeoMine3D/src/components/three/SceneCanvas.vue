@@ -9,11 +9,8 @@
             最近测量 {{ lastMeasurementDistance.toFixed(2) }} m
         </div>
 
-        <div
-            v-if="hoverLabel.visible"
-            class="entity-hover-label"
-            :style="{ left: `${hoverLabel.x}px`, top: `${hoverLabel.y}px` }"
-        >
+        <div v-if="hoverLabel.visible" class="entity-hover-label"
+            :style="{ left: `${hoverLabel.x}px`, top: `${hoverLabel.y}px` }">
             {{ hoverLabel.name }}
         </div>
 
@@ -35,11 +32,14 @@
         </div>
 
         <form v-if="annotationDraft.visible" class="annotation-composer" @submit.prevent="confirmAnnotation">
-            <div class="annotation-composer__head"><span>NEW ANNOTATION</span><button type="button" @click="cancelAnnotation">×</button></div>
+            <div class="annotation-composer__head"><span>NEW ANNOTATION</span><button type="button"
+                    @click="cancelAnnotation">×</button></div>
             <strong>空间标注 {{ annotationDraft.index }}</strong>
-            <small>X {{ annotationDraft.x.toFixed(2) }} · Y {{ annotationDraft.y.toFixed(2) }} · Z {{ annotationDraft.z.toFixed(2) }}</small>
+            <small>X {{ annotationDraft.x.toFixed(2) }} · Y {{ annotationDraft.y.toFixed(2) }} · Z {{
+                annotationDraft.z.toFixed(2) }}</small>
             <el-input ref="annotationInputRef" v-model="annotationDraft.text" maxlength="80" placeholder="输入标注内容" />
-            <div class="annotation-composer__actions"><button type="button" @click="cancelAnnotation">取消</button><button class="confirm" type="submit">创建标注</button></div>
+            <div class="annotation-composer__actions"><button type="button" @click="cancelAnnotation">取消</button><button
+                    class="confirm" type="submit">创建标注</button></div>
         </form>
 
     </div>
@@ -643,7 +643,7 @@ function onControlStart() {
 }
 
 function onControlEnd() {
-    if(hoverEnabled.value) {
+    if (hoverEnabled.value) {
         selectionManager?.setHoverEnabled(true)
     }
 }
@@ -808,8 +808,10 @@ const toolGroups = computed<ToolGroup[]>(() => [
     {
         key: 'model', label: '模型', icon: 'FolderOpened',
         controls: [
-            { kind: 'action', label: '加载本地 .glb', icon: 'Plus', event: 'load-file',
-              primary: true, disabled: isLoading.value },
+            {
+                kind: 'action', label: '加载本地 .glb', icon: 'Plus', event: 'load-file',
+                primary: true, disabled: isLoading.value
+            },
             { kind: 'action', label: '重置视角', icon: 'RefreshRight', event: 'reset-camera' },
             { kind: 'note', text: '也可以把 <b>.glb</b> 直接拖进场景加载。' },
         ],
@@ -826,31 +828,43 @@ const toolGroups = computed<ToolGroup[]>(() => [
         key: 'scale', label: '竖向比例', icon: 'ScaleToOriginal',
         engaged: Math.abs(verticalScale.value - baseVerticalScale.value) > 1e-6,
         controls: [
-            { kind: 'slider', label: '竖向夸张倍数', value: verticalScale.value,
-              display: `${verticalScale.value}×`, min: 1, max: 120, step: 1,
-              event: 'vertical-scale' },
-            { kind: 'segment', label: '快速设定', value: String(verticalScale.value),
-              options: [{ value: '1', label: '1×' }, { value: String(baseVerticalScale.value), label: '默认' },
-                        { value: '50', label: '50×' }, { value: '100', label: '100×' }],
-              event: 'vertical-scale-preset' },
-            { kind: 'stats', items: [
-                { label: '真实米制', value: '1 : 1' },
-                { label: '当前竖向', value: `${verticalScale.value}×` },
-                { label: '平面方向', value: '不变' },
-            ] },
-            { kind: 'note', text: '只拉高竖向，X/Y 不受影响。' +
-                '分层、钻孔、井巷与<b>沉陷位移</b>会同步缩放（位移作用在几何空间，' +
-                '跟随父节点比例）。设回 <b>' + baseVerticalScale.value + '×</b> 即为数据推荐值。' },
+            {
+                kind: 'slider', label: '竖向夸张倍数', value: verticalScale.value,
+                display: `${verticalScale.value}×`, min: 1, max: 120, step: 1,
+                event: 'vertical-scale'
+            },
+            {
+                kind: 'segment', label: '快速设定', value: String(verticalScale.value),
+                options: [{ value: '1', label: '1×' }, { value: String(baseVerticalScale.value), label: '默认' },
+                { value: '50', label: '50×' }, { value: '100', label: '100×' }],
+                event: 'vertical-scale-preset'
+            },
+            {
+                kind: 'stats', items: [
+                    { label: '真实米制', value: '1 : 1' },
+                    { label: '当前竖向', value: `${verticalScale.value}×` },
+                    { label: '平面方向', value: '不变' },
+                ]
+            },
+            {
+                kind: 'note', text: '只拉高竖向，X/Y 不受影响。' +
+                    '分层、钻孔、井巷与<b>沉陷位移</b>会同步缩放（位移作用在几何空间，' +
+                    '跟随父节点比例）。设回 <b>' + baseVerticalScale.value + '×</b> 即为数据推荐值。'
+            },
         ],
     },
     {
         key: 'strata', label: '地层', icon: 'Files', engaged: stratumExploded.value,
         controls: [
-            { kind: 'switch', label: stratumExploded.value ? '炸开中（关闭则还原）' : '炸开层位',
-              value: stratumExploded.value, event: 'explode' },
-            { kind: 'slider', label: '炸开间距', value: toolState.value.explodeGap,
-              display: String(toolState.value.explodeGap), min: 0, max: 5000, step: 50,
-              event: 'explode-gap', disabled: !stratumExploded.value },
+            {
+                kind: 'switch', label: stratumExploded.value ? '炸开中（关闭则还原）' : '炸开层位',
+                value: stratumExploded.value, event: 'explode'
+            },
+            {
+                kind: 'slider', label: '炸开间距', value: toolState.value.explodeGap,
+                display: String(toolState.value.explodeGap), min: 0, max: 5000, step: 50,
+                event: 'explode-gap', disabled: !stratumExploded.value
+            },
             { kind: 'switch', label: '显示地层边缘线', value: showEdges.value, event: 'show-edges' },
         ],
     },
@@ -858,15 +872,21 @@ const toolGroups = computed<ToolGroup[]>(() => [
         key: 'clip', label: '剖切', icon: 'Scissor', engaged: toolState.value.clipEnabled,
         controls: [
             { kind: 'switch', label: '启用剖切', value: toolState.value.clipEnabled, event: 'clip' },
-            { kind: 'segment', label: '剖切轴', value: toolState.value.clipAxis,
-              options: [{ value: 'x', label: 'X' }, { value: 'y', label: 'Y' }, { value: 'z', label: 'Z' }],
-              event: 'clip-axis', disabled: !toolState.value.clipEnabled },
-            { kind: 'slider', label: '位置', value: toolState.value.clipHeight,
-              display: formatClipPosition.value, min: clipRange.value.min, max: clipRange.value.max,
-              step: clipStep.value, event: 'clip-height', disabled: !toolState.value.clipEnabled },
-            { kind: 'segment', label: '保留', value: toolState.value.clipKeepLower ? 'lower' : 'upper',
-              options: [{ value: 'lower', label: '下半' }, { value: 'upper', label: '上半' }],
-              event: 'clip-keep', disabled: !toolState.value.clipEnabled },
+            {
+                kind: 'segment', label: '剖切轴', value: toolState.value.clipAxis,
+                options: [{ value: 'x', label: 'X' }, { value: 'y', label: 'Y' }, { value: 'z', label: 'Z' }],
+                event: 'clip-axis', disabled: !toolState.value.clipEnabled
+            },
+            {
+                kind: 'slider', label: '位置', value: toolState.value.clipHeight,
+                display: formatClipPosition.value, min: clipRange.value.min, max: clipRange.value.max,
+                step: clipStep.value, event: 'clip-height', disabled: !toolState.value.clipEnabled
+            },
+            {
+                kind: 'segment', label: '保留', value: toolState.value.clipKeepLower ? 'lower' : 'upper',
+                options: [{ value: 'lower', label: '下半' }, { value: 'upper', label: '上半' }],
+                event: 'clip-keep', disabled: !toolState.value.clipEnabled
+            },
         ],
     },
     {
@@ -882,12 +902,16 @@ const toolGroups = computed<ToolGroup[]>(() => [
         key: 'measure', label: '测量', icon: 'Aim', engaged: toolState.value.measureEnabled,
         controls: [
             { kind: 'switch', label: '启用测量', value: toolState.value.measureEnabled, event: 'measure' },
-            { kind: 'readout', label: '最近测量',
-              value: lastMeasurementDistance.value === null
-                  ? '—' : `${lastMeasurementDistance.value.toFixed(2)} m` },
+            {
+                kind: 'readout', label: '最近测量',
+                value: lastMeasurementDistance.value === null
+                    ? '—' : `${lastMeasurementDistance.value.toFixed(2)} m`
+            },
             { kind: 'readout', label: '历史记录', value: `${measurements.value.length} 条` },
-            { kind: 'action', label: '清空测量', icon: 'Delete', event: 'clear-measurements',
-              disabled: !measurements.value.length },
+            {
+                kind: 'action', label: '清空测量', icon: 'Delete', event: 'clear-measurements',
+                disabled: !measurements.value.length
+            },
             { kind: 'note', text: '开启后在场景中依次点击两点即可量距。' },
         ],
     },
@@ -902,45 +926,65 @@ const toolGroups = computed<ToolGroup[]>(() => [
     {
         key: 'settlement', label: '沉陷', icon: 'Odometer', engaged: settlementStore.enabled,
         controls: [
-            { kind: 'switch', label: '启用沉陷对比', value: settlementStore.enabled, event: 'settlement-toggle',
-              disabled: settlementStore.loading },
-            { kind: 'slider', label: '变形进程（0=沉陷前）', value: settlementStore.timePercent,
-              display: `${settlementStore.timePercent}%`, min: 0, max: 100, step: 1,
-              event: 'settlement-time', disabled: !settlementStore.enabled },
-            { kind: 'slider', label: '沉陷夸大（纯显示）', value: settlementStore.exaggeration,
-              display: `${settlementStore.exaggeration}×`, min: 1, max: 50, step: 1,
-              event: 'settlement-exaggeration', disabled: !settlementStore.enabled },
-            { kind: 'segment', label: '着色', value: settlementStore.colorMode,
-              options: [{ value: 'original', label: '地层' }, { value: 'dz', label: '沉降' },
-                        { value: 'magnitude', label: '位移' }],
-              event: 'settlement-color', disabled: !settlementStore.enabled },
-            { kind: 'action', label: '沉陷前（t=0）', event: 'settlement-before',
-              disabled: !settlementStore.enabled },
-            { kind: 'action', label: '沉陷后（t=1）', event: 'settlement-after',
-              disabled: !settlementStore.enabled },
-            { kind: 'stats', items: [
-                { label: '最大沉降', value: `${settlementStore.maxSubsidenceM.toFixed(2)} m` },
-                { label: '最大水平', value: `${settlementStore.maxHorizontalM.toFixed(2)} m` },
-                { label: '绑定层数', value: String(settlementStore.boundLayers) },
-            ] },
-            { kind: 'note',
-              text: '数据为真实米制。场景竖向 <b>' + verticalScale.value + '×</b>' +
+            {
+                kind: 'switch', label: '启用沉陷对比', value: settlementStore.enabled, event: 'settlement-toggle',
+                disabled: settlementStore.loading
+            },
+            {
+                kind: 'slider', label: '变形进程（0=沉陷前）', value: settlementStore.timePercent,
+                display: `${settlementStore.timePercent}%`, min: 0, max: 100, step: 1,
+                event: 'settlement-time', disabled: !settlementStore.enabled
+            },
+            {
+                kind: 'slider', label: '沉陷夸大（纯显示）', value: settlementStore.exaggeration,
+                display: `${settlementStore.exaggeration}×`, min: 1, max: 50, step: 1,
+                event: 'settlement-exaggeration', disabled: !settlementStore.enabled
+            },
+            {
+                kind: 'segment', label: '着色', value: settlementStore.colorMode,
+                options: [{ value: 'original', label: '地层' }, { value: 'dz', label: '沉降' },
+                { value: 'magnitude', label: '位移' }],
+                event: 'settlement-color', disabled: !settlementStore.enabled
+            },
+            {
+                kind: 'action', label: '沉陷前（t=0）', event: 'settlement-before',
+                disabled: !settlementStore.enabled
+            },
+            {
+                kind: 'action', label: '沉陷后（t=1）', event: 'settlement-after',
+                disabled: !settlementStore.enabled
+            },
+            {
+                kind: 'stats', items: [
+                    { label: '最大沉降', value: `${settlementStore.maxSubsidenceM.toFixed(2)} m` },
+                    { label: '最大水平', value: `${settlementStore.maxHorizontalM.toFixed(2)} m` },
+                    { label: '绑定层数', value: String(settlementStore.boundLayers) },
+                ]
+            },
+            {
+                kind: 'note',
+                text: '数据为真实米制。场景竖向 <b>' + verticalScale.value + '×</b>' +
                     '，再叠加沉陷夸大 <b>' + settlementStore.exaggeration + '×</b>' +
                     '，竖向上共放大约 <b>' + (verticalScale.value * settlementStore.exaggeration) + '×</b>。' +
-                    (settlementStore.workingsFollow ? '' : ' 巷道与工作面<b>不随沉陷移动</b>。') },
+                    (settlementStore.workingsFollow ? '' : ' 巷道与工作面<b>不随沉陷移动</b>。')
+            },
             ...(settlementStore.enabled && !settlementStore.boundLayers
-                ? [{ kind: 'note' as const,
-                     text: settlementStore.bindIssues.length
-                         ? '未绑定到地层：' + settlementStore.bindIssues
-                             .map(i => `<b>${i.label}</b> ${i.detail}`).join('；')
-                         : '尚未绑定到地层：请先加载地层模型。',
-                     warn: true }]
+                ? [{
+                    kind: 'note' as const,
+                    text: settlementStore.bindIssues.length
+                        ? '未绑定到地层：' + settlementStore.bindIssues
+                            .map(i => `<b>${i.label}</b> ${i.detail}`).join('；')
+                        : '尚未绑定到地层：请先加载地层模型。',
+                    warn: true
+                }]
                 : []),
             ...(settlementStore.enabled && settlementStore.boundLayers && settlementStore.bindIssues.length
-                ? [{ kind: 'note' as const,
-                     text: '部分层未绑定：' + settlementStore.bindIssues
-                         .map(i => `<b>${i.label}</b> ${i.detail}`).join('；'),
-                     warn: true }]
+                ? [{
+                    kind: 'note' as const,
+                    text: '部分层未绑定：' + settlementStore.bindIssues
+                        .map(i => `<b>${i.label}</b> ${i.detail}`).join('；'),
+                    warn: true
+                }]
                 : []),
             ...(settlementStore.loadError
                 ? [{ kind: 'note' as const, text: settlementStore.loadError, warn: true }]
@@ -1118,7 +1162,7 @@ async function initScene() {
     // 开发期调试句柄:便于在浏览器控制台/自动化脚本里检查场景状态
     // (例:__geomine.sceneManager.geoRoot.scale.z)
     if (import.meta.env.DEV) {
-        ;(window as any).__geomine = {
+        ; (window as any).__geomine = {
             sceneManager, cameraManager, rendererManager, modelManager,
             get settlementManager() { return settlementManager },
             get settlement() { return settlementStore },
@@ -1409,7 +1453,9 @@ onUnmounted(() => {
 }
 
 @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .loading-text {
