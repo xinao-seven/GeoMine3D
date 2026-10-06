@@ -55,7 +55,8 @@ interface MeshState {
     base: Float32Array          // 基线顶点(拷贝,不可变)
     offset: Float32Array        // 该顶点对应的位移
     dz: Float32Array            // 竖向位移(着色用,避免每次重算)
-    baseColors: Float32Array | null
+    baseColorAttr: THREE.BufferAttribute | THREE.InterleavedBufferAttribute | null
+    baseVertexColors: boolean
 }
 
 /**
@@ -276,14 +277,14 @@ export class SettlementManager {
                 this._maxDzReal = Math.max(this._maxDzReal, layerMaxDz)
                 this._maxMagReal = Math.max(this._maxMagReal, layerMaxMag)
                 const colorAttr = mesh.geometry.getAttribute('color')
+                const material = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material
                 next.push({
                     mesh,
                     base,
                     offset,
                     dz,
-                    baseColors: colorAttr
-                        ? new Float32Array(colorAttr.array as ArrayLike<number>)
-                        : null,
+                    baseColorAttr: colorAttr ?? null,
+                    baseVertexColors: material ? Boolean((material as any).vertexColors) : false,
                 })
             })
         }
@@ -300,6 +301,22 @@ export class SettlementManager {
             posAttr.needsUpdate = true
             st.mesh.geometry.computeBoundingSphere()
             st.mesh.geometry.computeBoundingBox()
+            // 同步还原原始颜色属性与顶点色开关(与 applyVertexColors 的改动对称),
+            // 否则关闭对比后模型会停留在上一次的着色状态。
+            if (st.baseColorAttr) {
+                if (st.mesh.geometry.getAttribute('color') !== st.baseColorAttr) {
+                    st.mesh.geometry.setAttribute('color', st.baseColorAttr)
+                }
+            } else if (st.mesh.geometry.getAttribute('color')) {
+                st.mesh.geometry.deleteAttribute('color')
+            }
+            const mats = Array.isArray(st.mesh.material) ? st.mesh.material : [st.mesh.material]
+            for (const mat of mats as any[]) {
+                if (mat.vertexColors !== st.baseVertexColors) {
+                    mat.vertexColors = st.baseVertexColors
+                    mat.needsUpdate = true
+                }
+            }
         }
     }
 
@@ -366,36 +383,52 @@ export class SettlementManager {
         const geo = st.mesh.geometry
         const posCount = (geo.getAttribute('position') as THREE.BufferAttribute).count
         let colorAttr = geo.getAttribute('color') as THREE.BufferAttribute | null
+
         if (this._colorMode === 'original') {
-            if (st.baseColors && colorAttr) {
-                (colorAttr.array as Float32Array).set(st.baseColors)
-                colorAttr.needsUpdate = true
+            // 恢复原始颜色属性对象与材质顶点色开关(类型/归一化语义都不变)
+            if (st.baseColorAttr) {
+                if (colorAttr !== st.baseColorAttr) geo.setAttribute('color', st.baseColorAttr)
+            } else if (colorAttr) {
+                geo.deleteAttribute('color')
             }
-            return
-        }
-        if (!colorAttr || colorAttr.count !== posCount) {
-            colorAttr = new THREE.BufferAttribute(new Float32Array(posCount * 4), 4)
-            geo.setAttribute('color', colorAttr)
-        }
-        const arr = colorAttr.array as Float32Array
-        const ref = this._colorMode === 'dz' ? this._maxDzReal : this._maxMagReal
-        const tmp = new THREE.Color()
-        for (let v = 0; v < posCount; v += 1) {
-            let u: number
-            if (this._colorMode === 'dz') {
-                u = Math.abs(st.dz[v]) / ref
-            } else {
-                const i3 = v * 3
-                u = Math.hypot(st.offset[i3], st.offset[i3 + 1], st.offset[i3 + 2]) / ref
+        } else {
+            // 着色写入必须用 Float32 RGBA:GLB 自带的 COLOR_0 可能是 Uint8 归一化,
+            // 直接按 0~1 浮点写进去会被截断成 0,着色表现为完全失效。
+            if (!colorAttr || colorAttr.count !== posCount || !(colorAttr.array instanceof Float32Array)) {
+                colorAttr = new THREE.BufferAttribute(new Float32Array(posCount * 4), 4)
+                geo.setAttribute('color', colorAttr)
             }
-            u = Math.min(1, Math.max(0, u))
-            // 深青(无位移)→ 黄红(最大沉降)
-            tmp.setHSL(0.62 * (1 - u), 0.72, 0.30 + 0.32 * u)
-            arr[v * 4] = tmp.r
-            arr[v * 4 + 1] = tmp.g
-            arr[v * 4 + 2] = tmp.b
-            arr[v * 4 + 3] = 1
+            const arr = colorAttr.array as Float32Array
+            const ref = this._colorMode === 'dz' ? this._maxDzReal : this._maxMagReal
+            const tmp = new THREE.Color()
+            for (let v = 0; v < posCount; v += 1) {
+                let u: number
+                if (this._colorMode === 'dz') {
+                    u = Math.abs(st.dz[v]) / ref
+                } else {
+                    const i3 = v * 3
+                    u = Math.hypot(st.offset[i3], st.offset[i3 + 1], st.offset[i3 + 2]) / ref
+                }
+                u = Math.min(1, Math.max(0, u))
+                // 深青(无位移)→ 黄红(最大沉降)
+                tmp.setHSL(0.62 * (1 - u), 0.72, 0.30 + 0.32 * u)
+                arr[v * 4] = tmp.r
+                arr[v * 4 + 1] = tmp.g
+                arr[v * 4 + 2] = tmp.b
+                arr[v * 4 + 3] = 1
+            }
+            colorAttr.needsUpdate = true
         }
-        colorAttr.needsUpdate = true
+        // 材质的 vertexColors 开关必须与着色模式联动:
+        // 关闭时 three.js 不读取 color attribute,dz/magnitude 着色会完全无效;
+        // 而对没有原始顶点色的 GLB 常开它会把模型渲染成黑面。
+        const wantVertexColors = this._colorMode !== 'original' || st.baseVertexColors
+        const mats = Array.isArray(st.mesh.material) ? st.mesh.material : [st.mesh.material]
+        for (const mat of mats as any[]) {
+            if (mat.vertexColors !== wantVertexColors) {
+                mat.vertexColors = wantVertexColors
+                mat.needsUpdate = true
+            }
+        }
     }
 }

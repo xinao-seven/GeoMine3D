@@ -105,6 +105,11 @@ export interface ToolGroup {
     icon: string
     /** 该组里有工具处于激活态 → 导轨按钮显示小圆点 */
     engaged?: boolean
+    /**
+     * 导轨一键开关组:点击导轨按钮时额外发出 `rail-toggle` 事件,
+     * 由宿主直接开/关该组功能(开启时展开面板,关闭时收起)。
+     */
+    toggleable?: boolean
     controls: ToolControl[]
 }
 
@@ -122,6 +127,13 @@ watch(() => props.groups, (list) => {
 
 function toggleGroup(key: string) {
     if (collapsed.value) collapsed.value = false
+    const group = props.groups.find(g => g.key === key)
+    if (group?.toggleable) {
+        // 一键开关:启用时展开面板看参数,禁用时收起;面板内的开关仍可单独控制
+        emit('tool', 'rail-toggle', key)
+        openKey.value = group.engaged ? '' : key
+        return
+    }
     openKey.value = openKey.value === key ? '' : key
 }
 

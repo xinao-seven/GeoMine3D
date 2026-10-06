@@ -18,6 +18,16 @@ export class AxisGizmoTool {
     private readonly cameraInvQuat = new THREE.Quaternion()
     private readonly geoRootQuat = new THREE.Quaternion()
     private resources: Array<THREE.Material | THREE.Texture> = []
+    /** 隐藏后 render() 直接跳过（截图/演示时使用） */
+    private hidden = false
+
+    setHidden(hidden: boolean) {
+        this.hidden = hidden
+    }
+
+    isHidden() {
+        return this.hidden
+    }
 
     constructor(
         renderer: THREE.WebGLRenderer,
@@ -66,6 +76,7 @@ export class AxisGizmoTool {
     }
 
     render() {
+        if (this.hidden) return
         this.cameraInvQuat.copy(this.mainCamera.quaternion).invert()
         this.geoRoot.getWorldQuaternion(this.geoRootQuat)
         this.root.quaternion.copy(this.cameraInvQuat).multiply(this.geoRootQuat)
