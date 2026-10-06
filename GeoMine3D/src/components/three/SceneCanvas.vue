@@ -9,6 +9,24 @@
             最近测量 {{ lastMeasurementDistance.toFixed(2) }} m
         </div>
 
+        <!-- 沉陷对比状态与位移色标(启用对比时显示) -->
+        <div v-if="settlementStore.enabled" class="settlement-legend">
+            <div class="sl-head">
+                <span>SETTLEMENT OVERLAY</span>
+                <b>沉陷对比 · t={{ Math.round(settlementStore.timePercent) }}%</b>
+            </div>
+            <template v-if="settlementStore.colorMode !== 'original'">
+                <div class="sl-bar"></div>
+                <div class="sl-scale">
+                    <span>0</span>
+                    <span>{{ settlementStore.colorMode === 'dz'
+                        ? `竖向位移 ≤ ${settlementStore.maxSubsidenceM.toFixed(2)} m`
+                        : `水平位移幅值 ≤ ${settlementStore.maxHorizontalM.toFixed(2)} m` }}</span>
+                </div>
+            </template>
+            <div class="sl-note">沉陷夸大 {{ settlementStore.exaggeration }}× · 叠加Z向 {{ verticalScale }}×</div>
+        </div>
+
         <div v-if="hoverLabel.visible" class="entity-hover-label"
             :style="{ left: `${hoverLabel.x}px`, top: `${hoverLabel.y}px` }">
             {{ hoverLabel.name }}
@@ -54,6 +72,7 @@ import { SceneManager } from '@/three/core/SceneManager'
 import { CameraManager } from '@/three/core/CameraManager'
 import { RendererManager } from '@/three/core/RendererManager'
 import { ControlsManager } from '@/three/core/ControlsManager'
+import { installRemoteControl } from '@/three/core/remoteControl'
 import { LightManager } from '@/three/core/LightManager'
 import { ModelManager } from '@/three/managers/ModelManager'
 import { LayerManager } from '@/three/managers/LayerManager'
@@ -937,7 +956,7 @@ const toolGroups = computed<ToolGroup[]>(() => [
         ],
     },
     {
-        key: 'settlement', label: '沉陷', icon: 'Odometer', engaged: settlementStore.enabled,
+        key: 'settlement', label: '沉陷', icon: 'Odometer', toggleable: true, engaged: settlementStore.enabled,
         controls: [
             {
                 kind: 'switch', label: '启用沉陷对比', value: settlementStore.enabled, event: 'settlement-toggle',
@@ -1008,6 +1027,13 @@ const toolGroups = computed<ToolGroup[]>(() => [
 
 function onToolEvent(event: string, payload?: any) {
     switch (event) {
+        case 'rail-toggle':
+            if (payload === 'settlement') {
+                settlementStore.enabled = !settlementStore.enabled
+                // 关闭时要清掉“未绑定”的旧原因,否则再次开启会闪现上一次的提示
+                if (!settlementStore.enabled) settlementStore.bindIssues = []
+            }
+            break
         case 'load-file': fileInputRef.value?.click(); break
         case 'reset-camera': resetCamera(); break
         case 'rotate-x': onRotateXAxisToggle(payload); break
@@ -1172,16 +1198,18 @@ async function initScene() {
     // 预取沉陷元信息(仅 4 KB),使工具箱里未启用时也能显示真实的最大沉降等读数
     void prefetchSettlementMeta()
 
-    // 开发期调试句柄:便于在浏览器控制台/自动化脚本里检查场景状态
-    // (例:__geomine.sceneManager.geoRoot.scale.z)
-    if (import.meta.env.DEV) {
-        ; (window as any).__geomine = {
-            sceneManager, cameraManager, rendererManager, modelManager,
-            get settlementManager() { return settlementManager },
-            get settlement() { return settlementStore },
-            get scene() { return sceneStore },
-        }
-    }
+    // 远程控制桥:开发环境或 URL 带 ?remote=1 时,把场景引擎暴露给
+    // 控制台/自动化脚本(相机球坐标定位、地层颜色、剖切/炸开、PNG 截图导出等),
+    // 例:__geomine.setView({ azimuth: 45, elevation: 35 }) / __geomine.capture({ background: '#ffffff' })
+    installRemoteControl({
+        sceneManager, cameraManager, rendererManager, controlsManager, modelManager,
+        getClipTool: () => clipTool,
+        getExplodeTool: () => stratumExplodeTool,
+        getGizmoTool: () => axisGizmoTool,
+        getSceneStore: () => sceneStore,
+        getSettlementStore: () => settlementStore,
+        getSettlementManager: () => settlementManager,
+    })
 }
 
 // ==================== Watchers ====================
@@ -1370,6 +1398,59 @@ onUnmounted(() => {
     color: #dff8ff;
     font-size: 12px;
     backdrop-filter: blur(6px);
+}
+
+/* ── 沉陷对比图例 ── */
+.settlement-legend {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 9;
+    width: 212px;
+    padding: 9px 11px 10px;
+    border: 1px solid #333c34;
+    background: rgba(16, 21, 17, 0.92);
+    backdrop-filter: blur(8px);
+    color: #cfd6ce;
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.3);
+}
+
+.settlement-legend .sl-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 7px;
+}
+
+.settlement-legend .sl-head span {
+    font: 8px Bahnschrift, sans-serif;
+    letter-spacing: 0.14em;
+    color: #b98548;
+}
+
+.settlement-legend .sl-head b {
+    font-size: 10px;
+    color: #e2ddcf;
+}
+
+.settlement-legend .sl-bar {
+    height: 10px;
+    border: 1px solid #2b322c;
+    background: linear-gradient(90deg, hsl(223, 72%, 30%), hsl(149, 72%, 41%), hsl(74, 72%, 51%), hsl(0, 72%, 62%));
+}
+
+.settlement-legend .sl-scale {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 3px;
+    font-size: 9px;
+    color: #9aa39b;
+}
+
+.settlement-legend .sl-note {
+    margin-top: 6px;
+    font-size: 9px;
+    color: #69736b;
 }
 
 .entity-hover-label {
