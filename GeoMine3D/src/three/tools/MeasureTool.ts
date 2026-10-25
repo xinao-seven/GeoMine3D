@@ -32,8 +32,11 @@ export class MeasureTool {
   private pointer = new THREE.Vector2()
   private enabled = false
   private pendingPoint: THREE.Vector3 | null = null
+  private pendingMarker: THREE.Object3D | null = null
   private group = new THREE.Group()
   private results: MeasureResult[] = []
+  // 每条测量结果对应的场景对象（测线/端点/标签），支持按 id 单条删除
+  private resultVisuals = new Map<string, THREE.Object3D[]>()
   private onMeasure?: (result: MeasureResult) => void
   private resources: Array<THREE.Material | THREE.BufferGeometry | THREE.Texture> = []
   private labels: DynamicLabel[] = []
@@ -67,11 +70,33 @@ export class MeasureTool {
   // 清空所有测量结果与辅助图元。
   clear() {
     this.pendingPoint = null
+    this.pendingMarker = null
     this.results = []
     this.labels = []
+    this.resultVisuals.clear()
     this.group.clear()
     for (const res of this.resources) res.dispose()
     this.resources = []
+  }
+
+  // 删除单条测量结果（含测线、端点与标签）。
+  remove(id: string) {
+    const visuals = this.resultVisuals.get(id)
+    if (!visuals) return false
+    for (const object of visuals) {
+      this.labels = this.labels.filter((item) => item.sprite !== object)
+      this.group.remove(object)
+      object.traverse((child) => {
+        const mesh = child as THREE.Mesh
+        mesh.geometry?.dispose?.()
+        const material = (mesh as any).material
+        if (Array.isArray(material)) material.forEach((mat: any) => mat?.dispose?.())
+        else material?.dispose?.()
+      })
+    }
+    this.resultVisuals.delete(id)
+    this.results = this.results.filter((item) => item.id !== id)
+    return true
   }
 
   // 每帧根据相机距离缩放距离标签，保证任何视角下清晰可读。
@@ -111,11 +136,19 @@ export class MeasureTool {
 
     if (!this.pendingPoint) {
       this.pendingPoint = point
+      const before = this.group.children.length
       this.addPointMarker(point, 6)
+      this.pendingMarker = this.group.children[before] ?? null
       return
     }
 
+    const startObjectCount = this.group.children.length
     const result = this.createMeasurement(this.pendingPoint, point)
+    // 本次创建追加的对象(含上一次点击留下的起点标记)归属该条结果，便于单条删除
+    const created = this.group.children.slice(startObjectCount)
+    if (this.pendingMarker) created.unshift(this.pendingMarker)
+    this.resultVisuals.set(result.id, [...created])
+    this.pendingMarker = null
     this.results.push(result)
     this.pendingPoint = null
     this.onMeasure?.(result)

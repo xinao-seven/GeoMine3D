@@ -28,6 +28,8 @@ export class ClipTool {
     private position = 0
     private minPosition = -1000
     private maxPosition = 1000
+    // 任意剖面模式（剖面工具使用）：优先于轴向剖切
+    private customActive = false
 
     private helperPlane: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>
     private helperFrame: THREE.LineSegments
@@ -66,6 +68,7 @@ export class ClipTool {
 
     // 启用剖切并初始化剖切面、范围与辅助面状态。
     enable(options: ClipEnableOptions = {}) {
+        this.customActive = false
         this.axis = options.axis ?? this.axis
         this.keepLower = options.keepLower ?? this.keepLower
         this.showHelper = options.showHelper ?? this.showHelper
@@ -163,6 +166,30 @@ export class ClipTool {
     // 获取剖切是否启用。
     isEnabled() {
         return this.enabled
+    }
+
+    /**
+     * 沿任意垂直剖面剖切（剖面工具）：normal 为水平法向（指向被保留一侧），
+     * constant 为平面方程常数。隐藏辅助滑块，由剖面工具自行管理。
+     */
+    setCustomPlane(normal: THREE.Vector3, constant: number) {
+        const normalized = normal.clone().normalize()
+        this.clipPlane.set(normalized, constant)
+        this.renderer.clippingPlanes = [this.clipPlane]
+        this.renderer.localClippingEnabled = true
+        this.enabled = true
+        this.customActive = true
+        this.setHelperVisible(false)
+    }
+
+    // 退出任意剖面模式（不改变渲染器裁剪状态，由调用方决定回退到轴向或关闭）。
+    clearCustomPlane() {
+        this.customActive = false
+    }
+
+    // 是否处于任意剖面模式。
+    isCustomActive() {
+        return this.customActive
     }
 
     // 释放剖切辅助资源。

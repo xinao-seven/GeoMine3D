@@ -32,6 +32,19 @@
             {{ hoverLabel.name }}
         </div>
 
+        <!-- 地层颜色图例（与图层树/钻孔配色一致） -->
+        <div v-if="legendEnabled && legendItems.length" class="strata-legend">
+            <button class="lg-head" @click="legendCollapsed = !legendCollapsed">
+                <span>STRATA LEGEND</span>
+                <b>{{ legendCollapsed ? `图例 (${legendItems.length})` : '收起' }}</b>
+            </button>
+            <div v-if="!legendCollapsed" class="lg-body">
+                <div v-for="item in legendItems" :key="item.name" class="lg-row">
+                    <i :style="{ background: item.color }"></i><span>{{ item.name }}</span>
+                </div>
+            </div>
+        </div>
+
         <!-- 拖放加载遮罩 -->
         <div v-if="isDragOver" class="drop-overlay">
             <div class="drop-indicator">
@@ -60,11 +73,33 @@
                     class="confirm" type="submit">创建标注</button></div>
         </form>
 
+        <!-- 虚拟钻孔查询结果 -->
+        <div v-if="virtualBoreholeResult" class="virtual-card">
+            <div class="vc-head"><span>VIRTUAL BOREHOLE</span><button @click="closeVirtualBoreholeResult">×</button></div>
+            <strong>虚拟钻孔</strong>
+            <small>X {{ virtualBoreholeResult.x.toFixed(1) }} · Y {{ virtualBoreholeResult.y.toFixed(1) }} ·
+                邻孔 {{ virtualBoreholeResult.used_neighbors }} · 最近 {{ virtualBoreholeResult.nearest_distance_m === null
+                    ? '—' : virtualBoreholeResult.nearest_distance_m.toFixed(0) }} m</small>
+            <div class="vc-layers">
+                <div v-for="layer in virtualBoreholeResult.layers" :key="layer.layer_name" class="vc-layer">
+                    <i :style="{ background: layer.color }"></i>
+                    <span class="vc-name">{{ layer.layer_name }}</span>
+                    <span class="vc-depth">{{ layer.top_depth }}~{{ layer.bottom_depth }} m</span>
+                </div>
+                <div v-if="!virtualBoreholeResult.layers.length" class="vc-empty">该位置附近没有可用钻孔</div>
+            </div>
+            <div class="vc-actions">
+                <button :disabled="!virtualBoreholeResult.layers.length" @click="openVirtualChart">查看柱状图</button>
+                <button @click="closeVirtualBoreholeResult">关闭</button>
+            </div>
+        </div>
+
     </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted, onActivated, onDeactivated, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import * as THREE from 'three'
 import { storeToRefs } from 'pinia'
 import { DropLoader } from '@/three/loaders/DropLoader'
@@ -79,6 +114,10 @@ import { LayerManager } from '@/three/managers/LayerManager'
 import { HighlightManager } from '@/three/managers/HighlightManager'
 import { SelectionManager } from '@/three/managers/SelectionManager'
 import { SettlementManager } from '@/three/managers/SettlementManager'
+import { BoundaryOverlay } from '@/three/managers/BoundaryOverlay'
+import { ContourOverlay, contourColor } from '@/three/managers/ContourOverlay'
+import { StratumLodController } from '@/three/managers/StratumLodController'
+import { BasemapOverlay } from '@/three/managers/BasemapOverlay'
 import type { SettlementIndex } from '@/three/managers/SettlementManager'
 import SceneToolbox from '@/components/three/SceneToolbox.vue'
 import type { ToolGroup } from '@/components/three/SceneToolbox.vue'
@@ -88,10 +127,13 @@ import { WorkingFaceModelLoader } from '@/three/loaders/WorkingFaceModelLoader'
 import { ClipTool } from '@/three/tools/ClipTool'
 import { MeasureTool } from '@/three/tools/MeasureTool'
 import { AnnotationTool } from '@/three/tools/AnnotationTool'
+import type { AnnotationResult } from '@/three/tools/AnnotationTool'
 import { StratumExplodeTool } from '@/three/tools/StratumExplodeTool'
 import { AxisGizmoTool } from '@/three/tools/AxisGizmoTool'
 import { BoundingBoxTool } from '@/three/tools/BoundingBoxTool'
+import { workspaceApi, fetchBasemapMeta, type BasemapMeta, type BoundariesPayload, type VirtualBoreholeResult, type ContoursResponse } from '@/api/workspace'
 import { useSceneStore, useBoreholeStore, useWorkspaceStore } from '@/stores'
+import type { SceneSnapshot } from '@/stores/sceneStore'
 import { useSettlementStore } from '@/stores/settlementStore'
 import type { ModelItem, BoreholeItem, StratumLayerControl } from '@/types'
 import type { ModelLoadRequest } from '@/stores/sceneStore'
@@ -102,6 +144,8 @@ const sceneStore = useSceneStore()
 const boreholeStore = useBoreholeStore()
 const workspaceStore = useWorkspaceStore()
 const settlementStore = useSettlementStore()
+const route = useRoute()
+const isProjectMode = computed(() => String(route.params.projectId) !== 'local')
 
 const {
     layerVisible,
@@ -139,7 +183,41 @@ const rotateXAxisEnabled = ref(true)
 const stratumExploded = ref(false)
 const outlineEnabled = ref(false)
 const boundingBoxEnabled = ref(false)
-const hoverEnabled = ref(false)
+// 与 initScene 中的 setHoverEnabled(true) 保持一致，避免开关显示“关”但行为是“开”
+const hoverEnabled = ref(true)
+// 矿区边界/地层图例叠加层开关（图例默认展开，边界默认关，避免首屏遮挡）
+const boundaryEnabled = ref(false)
+const legendEnabled = ref(true)
+const legendCollapsed = ref(false)
+// 矿区边界数据缓存（项目模式从后端拉取一次）
+const boundariesData = ref<BoundariesPayload | null>(null)
+let boundaryOverlay: BoundaryOverlay | null = null
+// 虚拟钻孔查询
+const virtualBoreholeActive = ref(false)
+const virtualBoreholeLoading = ref(false)
+const virtualBoreholeResult = ref<VirtualBoreholeResult | null>(null)
+let virtualMarker: THREE.Group | null = null
+let virtualMarkerResources: Array<THREE.BufferGeometry | THREE.Material> = []
+// 剖面工具（世界坐标拾取，投影坐标写入 store 供剖面图使用）
+const sectionWorldA = ref<THREE.Vector3 | null>(null)
+const sectionWorldB = ref<THREE.Vector3 | null>(null)
+let sectionOverlay: THREE.Group | null = null
+let sectionOverlayResources: Array<THREE.BufferGeometry | THREE.Material> = []
+const sectionReady = computed(() => Boolean(sectionWorldA.value && sectionWorldB.value))
+// 地层埋深等值线
+const contourEnabled = ref(false)
+const contourLoading = ref(false)
+const contourLayerIndex = ref(0)
+const contourData = ref<ContoursResponse | null>(null)
+let contourOverlay: ContourOverlay | null = null
+// 地层 LOD 动态切换
+const lodEnabled = ref(false)
+let lodController: StratumLodController | null = null
+// GeoTIFF 预处理底图
+const basemapEnabled = ref(false)
+const basemapOpacity = ref(0.8)
+const basemapMeta = ref<BasemapMeta | null>(null)
+let basemapOverlay: BasemapOverlay | null = null
 const hoverLabel = ref({ visible: false, name: '', x: 0, y: 0 })
 const isDragOver = ref(false)
 const dropError = ref('')
@@ -226,6 +304,7 @@ async function loadStratumModel(model: ModelItem) {
         alignProjectedModel(object)
         modelManager.addModel({ id: model.id, name: model.name, type: 'stratum', object })
         registerStratumLayersFromObject(object, model.id, model.name)
+        lodController?.register(model, object)
     } catch {
         addPlaceholderStratum(model)
     }
@@ -343,6 +422,7 @@ function unloadModelByRequest(req: { type: 'stratum' | 'borehole' | 'workingface
         modelManager.removeModel(req.id)
         sceneStore.clearLoadStatus(req.type, req.id)
         if (req.type === 'stratum') {
+            lodController?.unregister(req.id)
             sceneStore.removeStratumLayersByModel(req.id)
             // 地层被移除后,沉陷位移场的绑定也要同步收缩(失效 mesh 会被自动修剪),
             // 但在那之前必须把基线位置写回去,否则再加载会以变形位置为基线。
@@ -404,6 +484,9 @@ async function loadModelByRequest(req: ModelLoadRequest) {
         } else {
             fitCameraToType(null, preferImmediateFocus)
         }
+
+        // 钻孔加载后孔口平均高程更准确，重建贴地覆盖层
+        if (focusType === 'borehole') rebuildBoundaryOverlay()
 
         if (toolState.value.clipEnabled) {
             syncToolRuntimeState()
@@ -676,6 +759,625 @@ function toggleHoverEffect() {
     selectionManager?.setHoverEnabled(hoverEnabled.value)
 }
 
+// ==================== 坐标读数 ====================
+
+// 投影面在世界空间即 y=0 平面；用数学面求交读平面坐标，代价 O(1)
+const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
+const cursorRaycaster = new THREE.Raycaster()
+const cursorPointer = new THREE.Vector2()
+const cursorHitPoint = new THREE.Vector3()
+let lastCursorUpdate = 0
+// 悬停拾取到的模型表面点（世界坐标），作为高程读数来源；随鼠标离开模型失效
+let surfacePoint: THREE.Vector3 | null = null
+let surfacePointAt = 0
+
+/** 世界坐标 → 真实投影坐标/高程（米）。 */
+function worldPointToProject(point: THREE.Vector3) {
+    const origin = coordinateOrigin.value
+    if (!origin) {
+        return { x: point.x, y: -point.z, z: point.y }
+    }
+    return {
+        x: origin.x + point.x,
+        y: origin.y - point.z,
+        z: origin.z + point.y / verticalScale.value,
+    }
+}
+
+function onCanvasPointerMove(event: PointerEvent) {
+    if (!cameraManager || !canvasRef.value) return
+    const now = performance.now()
+    // 平面求交本身很便宜，节流只为避免高频写 store 触发状态栏抖动
+    if (now - lastCursorUpdate < 100) return
+    lastCursorUpdate = now
+
+    const rect = canvasRef.value.getBoundingClientRect()
+    cursorPointer.set(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1,
+    )
+    cursorRaycaster.setFromCamera(cursorPointer, cameraManager.camera)
+    // 悬停命中的表面点(1s 内)优先：既有真实高程，平面坐标也更准
+    if (surfacePoint && now - surfacePointAt < 1000) {
+        workspaceStore.setCursorCoordinate(worldPointToProject(surfacePoint))
+        return
+    }
+    if (cursorRaycaster.ray.intersectPlane(groundPlane, cursorHitPoint)) {
+        const projected = worldPointToProject(cursorHitPoint)
+        workspaceStore.setCursorCoordinate({ x: projected.x, y: projected.y, z: null })
+    } else {
+        workspaceStore.setCursorCoordinate(null)
+    }
+}
+
+function onCanvasPointerLeave() {
+    surfacePoint = null
+    workspaceStore.setCursorCoordinate(null)
+}
+
+// ==================== 虚拟钻孔查询 ====================
+
+function toggleVirtualBorehole() {
+    virtualBoreholeActive.value = !virtualBoreholeActive.value
+    if (virtualBoreholeActive.value) {
+        // 查询模式与测量/标注一样，避免点击误选模型
+        selectionManager?.setEnabled(false)
+        canvasRef.value?.addEventListener('click', onVirtualBoreholeClick)
+    } else {
+        canvasRef.value?.removeEventListener('click', onVirtualBoreholeClick)
+        selectionManager?.setEnabled(!(toolState.value.measureEnabled || toolState.value.annotationEnabled))
+        closeVirtualBoreholeResult()
+    }
+}
+
+/** 射线与投影面（y=0 平面）求交，取平面落点 */
+function pickGroundPoint(event: MouseEvent): THREE.Vector3 | null {
+    if (!cameraManager || !canvasRef.value) return null
+    const rect = canvasRef.value.getBoundingClientRect()
+    cursorPointer.set(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1,
+    )
+    cursorRaycaster.setFromCamera(cursorPointer, cameraManager.camera)
+    const hit = new THREE.Vector3()
+    return cursorRaycaster.ray.intersectPlane(groundPlane, hit) ? hit : null
+}
+
+const onVirtualBoreholeClick = async (event: MouseEvent) => {
+    if (!cameraManager || !canvasRef.value || virtualBoreholeLoading.value) return
+    if (!isProjectMode.value) return
+    const world = pickGroundPoint(event)
+    if (!world) return
+    const projected = worldPointToProject(world)
+    virtualBoreholeLoading.value = true
+    try {
+        const result = await workspaceApi.getVirtualBorehole(String(route.params.projectId), {
+            x: projected.x,
+            y: projected.y,
+        })
+        virtualBoreholeResult.value = result
+        showVirtualMarker(world.clone())
+    } catch {
+        virtualBoreholeResult.value = null
+        clearVirtualMarker()
+    } finally {
+        virtualBoreholeLoading.value = false
+    }
+}
+
+function showVirtualMarker(worldPoint: THREE.Vector3) {
+    clearVirtualMarker()
+    if (!sceneManager) return
+    const group = new THREE.Group()
+    group.userData.overlayHelper = true
+
+    const top = worldPoint.clone().add(new THREE.Vector3(0, 500, 0))
+    const lineGeometry = new THREE.BufferGeometry().setFromPoints([worldPoint, top])
+    const lineMaterial = new THREE.LineBasicMaterial({ color: 0x67e0ff, transparent: true, opacity: 0.95 })
+    const line = new THREE.Line(lineGeometry, lineMaterial)
+    line.userData.overlayHelper = true
+    group.add(line)
+
+    const coneGeometry = new THREE.ConeGeometry(16, 46, 12)
+    const coneMaterial = new THREE.MeshBasicMaterial({ color: 0x67e0ff, transparent: true, opacity: 0.9 })
+    const cone = new THREE.Mesh(coneGeometry, coneMaterial)
+    cone.position.copy(top)
+    cone.rotation.x = Math.PI
+    cone.userData.overlayHelper = true
+    group.add(cone)
+
+    sceneManager.scene.add(group)
+    virtualMarker = group
+    virtualMarkerResources.push(lineGeometry, lineMaterial, coneGeometry, coneMaterial)
+}
+
+function clearVirtualMarker() {
+    if (virtualMarker) {
+        sceneManager?.scene.remove(virtualMarker)
+        virtualMarker = null
+    }
+    for (const resource of virtualMarkerResources) resource.dispose()
+    virtualMarkerResources = []
+}
+
+function closeVirtualBoreholeResult() {
+    virtualBoreholeResult.value = null
+    clearVirtualMarker()
+}
+
+/** 把虚拟钻孔结果送入底部柱状图页签 */
+function openVirtualChart() {
+    const result = virtualBoreholeResult.value
+    if (!result || !result.layers.length) return
+    const totalDepth = Math.max(...result.layers.map(layer => layer.bottom_depth))
+    boreholeStore.currentDetail = {
+        id: `virtual_${result.x.toFixed(0)}_${result.y.toFixed(0)}`,
+        name: `虚拟钻孔 (${result.x.toFixed(0)}, ${result.y.toFixed(0)})`,
+        totalDepth,
+        layerCount: result.layers.length,
+        location: { x: result.x, y: result.y, z: coordinateOrigin.value?.z ?? 0 },
+        layers: result.layers.map(layer => ({
+            layerName: layer.layer_name,
+            topDepth: layer.top_depth,
+            bottomDepth: layer.bottom_depth,
+            thickness: layer.thickness,
+            color: layer.color,
+        })),
+    }
+    workspaceStore.openDock('borehole')
+}
+
+// ==================== 剖面工具 ====================
+
+function toggleSectionTool() {
+    const activating = !sceneStore.sectionState.active
+    if (activating) {
+        sceneStore.setSectionActive(true)
+        sectionWorldA.value = null
+        sectionWorldB.value = null
+        clearSectionOverlay()
+        selectionManager?.setEnabled(false)
+        canvasRef.value?.addEventListener('click', onSectionClick)
+    } else {
+        deactivateSection()
+    }
+}
+
+function deactivateSection() {
+    canvasRef.value?.removeEventListener('click', onSectionClick)
+    clearSectionOverlay()
+    sectionWorldA.value = null
+    sectionWorldB.value = null
+    sceneStore.setSectionActive(false)
+    selectionManager?.setEnabled(!(toolState.value.measureEnabled || toolState.value.annotationEnabled))
+    // 退出任意剖面模式：恢复轴向剖切或直接关闭
+    clipTool?.clearCustomPlane()
+    if (toolState.value.clipEnabled) {
+        syncToolRuntimeState()
+    } else {
+        clipTool?.disable()
+    }
+}
+
+const onSectionClick = (event: MouseEvent) => {
+    const world = pickGroundPoint(event)
+    if (!world) return
+    if (!sectionWorldA.value || sectionWorldB.value) {
+        // (重新)开始一轮拾取
+        clearSectionOverlay()
+        sectionWorldA.value = world.clone()
+        sectionWorldB.value = null
+        const projected = worldPointToProject(world)
+        sceneStore.resetSectionPoints()
+        sceneStore.setSectionPoint('a', { x: projected.x, y: projected.y })
+        return
+    }
+    sectionWorldB.value = world.clone()
+    const projected = worldPointToProject(world)
+    sceneStore.setSectionPoint('b', { x: projected.x, y: projected.y })
+    applySectionClip()
+    drawSectionLine()
+}
+
+/** 剖面线所在垂直面即为裁剪面：保留远离相机一侧，裁掉观察侧岩体 */
+function applySectionClip() {
+    if (!clipTool || !sectionWorldA.value || !sectionWorldB.value || !cameraManager) return
+    const a = sectionWorldA.value
+    const b = sectionWorldB.value
+    const direction = new THREE.Vector3(b.x - a.x, 0, b.z - a.z)
+    if (direction.lengthSq() < 1e-6) return
+    const normal = new THREE.Vector3(direction.z, 0, -direction.x).normalize()
+    const mid = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5)
+    const toCamera = cameraManager.camera.position.clone().sub(mid)
+    if (normal.dot(toCamera) > 0) {
+        normal.negate()
+    }
+    const constant = -normal.dot(mid)
+    clipTool.setCustomPlane(normal, constant)
+}
+
+function drawSectionLine() {
+    clearSectionOverlay()
+    if (!sceneManager || !sectionWorldA.value || !sectionWorldB.value) return
+    const a = sectionWorldA.value.clone()
+    const b = sectionWorldB.value.clone()
+    const y = overlayYLevel() + 2
+    a.y = y
+    b.y = y
+
+    const group = new THREE.Group()
+    group.userData.overlayHelper = true
+
+    const distance = a.distanceTo(b)
+    const direction = b.clone().sub(a).normalize()
+    const radius = THREE.MathUtils.clamp(distance * 0.004, 1.2, 40)
+    const lineGeometry = new THREE.CylinderGeometry(1, 1, 1, 8, 1, true)
+    const lineMaterial = new THREE.MeshBasicMaterial({ color: 0x37e0b7, transparent: true, opacity: 0.95, depthTest: false })
+    const lineMesh = new THREE.Mesh(lineGeometry, lineMaterial)
+    lineMesh.scale.set(radius, distance, radius)
+    lineMesh.position.copy(a).add(b).multiplyScalar(0.5)
+    lineMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction)
+    lineMesh.renderOrder = 997
+    lineMesh.userData.overlayHelper = true
+    group.add(lineMesh)
+    sectionOverlayResources.push(lineGeometry, lineMaterial)
+
+    for (const point of [a, b]) {
+        const markerGeometry = new THREE.SphereGeometry(radius * 1.8, 12, 12)
+        const markerMaterial = new THREE.MeshBasicMaterial({ color: 0x7cf0d2, depthTest: false, transparent: true, opacity: 0.95 })
+        const marker = new THREE.Mesh(markerGeometry, markerMaterial)
+        marker.position.copy(point)
+        marker.renderOrder = 998
+        marker.userData.overlayHelper = true
+        group.add(marker)
+        sectionOverlayResources.push(markerGeometry, markerMaterial)
+    }
+
+    sceneManager.scene.add(group)
+    sectionOverlay = group
+}
+
+function clearSectionOverlay() {
+    if (sectionOverlay) {
+        sceneManager?.scene.remove(sectionOverlay)
+        sectionOverlay = null
+    }
+    for (const resource of sectionOverlayResources) resource.dispose()
+    sectionOverlayResources = []
+}
+
+/** 相机对齐剖面：沿剖面线垂直方向观察切面 */
+function alignSectionView() {
+    if (!cameraManager || !controlsManager || !sectionWorldA.value || !sectionWorldB.value) return
+    const a = sectionWorldA.value
+    const b = sectionWorldB.value
+    const mid = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5)
+    const direction = new THREE.Vector3(b.x - a.x, 0, b.z - a.z)
+    const length = direction.length()
+    if (length < 1e-6) return
+    const normal = new THREE.Vector3(direction.z, 0, -direction.x).normalize()
+    // 站在保留侧看切面：法向指向保留侧，相机在保留侧反向退后即看到切面
+    const distance = Math.max(length * 1.4, 600)
+    const position = mid.clone().addScaledVector(normal, distance)
+    position.y = mid.y + distance * 0.4
+    const startTarget = controlsManager.controls.target.clone()
+    cameraManager.animateTo(
+        position,
+        mid,
+        startTarget,
+        (lookAt) => {
+            controlsManager.controls.target.copy(lookAt)
+            controlsManager.controls.update()
+        }
+    )
+}
+
+// ==================== 模型体积估算 ====================
+
+/**
+ * 逐层网格体积（四面体符号体积累加，闭合网格与平移无关）。
+ * 世界坐标 Y 已按竖向比例拉伸，真实体积 = 世界体积 / 当前竖向倍数。
+ */
+function computeStratumVolumes() {
+    if (!modelManager) return
+    sceneStore.volumeComputing = true
+    try {
+        const items: Array<{ layerName: string; volumeM3: number; triangles: number }> = []
+        const scale = Math.max(verticalScale.value, 1e-6)
+        // mesh userData.id ↔ stratumLayers.key 的映射，用于把每个网格归到对应层名
+        const layerNameByKey = new Map<string, string>()
+        const fallbackByModel = new Map<string, string>()
+        for (const layer of stratumLayers.value) {
+            layerNameByKey.set(layer.key, layer.layerName)
+            if (!fallbackByModel.has(layer.modelId)) {
+                fallbackByModel.set(layer.modelId, layer.layerName)
+            }
+        }
+        const perLayer = new Map<string, { volume: number; triangles: number }>()
+        const a = new THREE.Vector3()
+        const b = new THREE.Vector3()
+        const c = new THREE.Vector3()
+        const cb = new THREE.Vector3()
+        for (const model of modelManager.getModelsByType('stratum')) {
+            model.object.updateWorldMatrix(true, true)
+            model.object.traverse((child) => {
+                const mesh = child as THREE.Mesh
+                if (!mesh.isMesh || !mesh.visible) return
+                const geometry = mesh.geometry as THREE.BufferGeometry
+                const positions = geometry.getAttribute('position')
+                if (!positions) return
+                const key = String(mesh.userData?.id || '')
+                const layerName = layerNameByKey.get(key) || fallbackByModel.get(model.id) || model.name
+                const bucket = perLayer.get(layerName) ?? { volume: 0, triangles: 0 }
+                const index = geometry.getIndex()
+                const triangleCount = Math.floor((index ? index.count : positions.count) / 3)
+                bucket.triangles += triangleCount
+                const matrix = mesh.matrixWorld
+                for (let i = 0; i < triangleCount; i += 1) {
+                    const i0 = index ? index.getX(i * 3) : i * 3
+                    const i1 = index ? index.getX(i * 3 + 1) : i * 3 + 1
+                    const i2 = index ? index.getX(i * 3 + 2) : i * 3 + 2
+                    a.fromBufferAttribute(positions, i0).applyMatrix4(matrix)
+                    b.fromBufferAttribute(positions, i1).applyMatrix4(matrix)
+                    c.fromBufferAttribute(positions, i2).applyMatrix4(matrix)
+                    cb.copy(b).cross(c)
+                    bucket.volume += a.dot(cb)
+                }
+                perLayer.set(layerName, bucket)
+            })
+        }
+        for (const [layerName, bucket] of perLayer) {
+            const volumeM3 = Math.round(Math.abs(bucket.volume / 6) / scale)
+            if (volumeM3 > 0) {
+                items.push({ layerName, volumeM3, triangles: bucket.triangles })
+            }
+        }
+        items.sort((x, y) => y.volumeM3 - x.volumeM3)
+        sceneStore.stratumVolumes = items
+    } finally {
+        sceneStore.volumeComputing = false
+    }
+}
+
+watch(() => sceneStore.volumeRequest, () => {
+    computeStratumVolumes()
+})
+
+// ==================== 场景快照（保存/恢复） ====================
+
+function getSceneState(): SceneSnapshot {
+    const camera = cameraManager.camera
+    const target = controlsManager.controls.target
+    const types = ['stratum', 'borehole', 'workingface', 'roadway'] as const
+    return {
+        camera: {
+            position: [camera.position.x, camera.position.y, camera.position.z],
+            target: [target.x, target.y, target.z],
+        },
+        layers: types.map(type => ({
+            type,
+            visible: layerVisible.value[type],
+            opacity: groupOpacity.value[type],
+        })),
+        showEdges: showEdges.value,
+        verticalScale: verticalScale.value,
+        clip: {
+            enabled: toolState.value.clipEnabled,
+            axis: toolState.value.clipAxis,
+            height: toolState.value.clipHeight,
+            keepLower: toolState.value.clipKeepLower,
+        },
+        explode: { gap: toolState.value.explodeGap, active: stratumExploded.value },
+    }
+}
+
+function applySceneState(state: SceneSnapshot) {
+    if (state.layers) {
+        for (const item of state.layers) {
+            if (!item?.type) continue
+            sceneStore.setLayerVisible(item.type, Boolean(item.visible))
+            if (typeof item.opacity === 'number') sceneStore.setGroupOpacity(item.type, item.opacity)
+        }
+    }
+    if (typeof state.showEdges === 'boolean') sceneStore.setShowEdges(state.showEdges)
+    if (typeof state.verticalScale === 'number' && state.verticalScale >= 1) {
+        sceneStore.setVerticalScale(state.verticalScale)
+    }
+    if (state.clip) {
+        sceneStore.setClipAxis(state.clip.axis ?? 'y')
+        sceneStore.setClipHeight(Number(state.clip.height) || 0)
+        sceneStore.setClipKeepLower(Boolean(state.clip.keepLower))
+        toolState.value.clipEnabled = Boolean(state.clip.enabled)
+    }
+    if (state.explode) {
+        sceneStore.setExplodeGap(Number(state.explode.gap) || 0)
+        if (Boolean(state.explode.active) !== stratumExploded.value) {
+            toggleStratumExplode()
+        }
+    }
+    if (state.camera?.position?.length === 3 && state.camera?.target?.length === 3) {
+        const [px, py, pz] = state.camera.position
+        const [tx, ty, tz] = state.camera.target
+        cameraManager.camera.position.set(px, py, pz)
+        controlsManager.controls.target.set(tx, ty, tz)
+        controlsManager.controls.update()
+    }
+}
+
+/** 把画布当前帧导出为 PNG dataURL（不含坐标轴小部件）。 */
+function captureImage(): string | null {
+    if (!rendererManager || !sceneManager || !cameraManager) return null
+    rendererManager.render(sceneManager.scene, cameraManager.camera)
+    return rendererManager.renderer.domElement.toDataURL('image/png')
+}
+
+// ==================== 地层聚焦（柱状图联动） ====================
+
+let focusOutlineTimer: ReturnType<typeof setTimeout> | null = null
+
+function focusStratum(layerName: string) {
+    const layer = stratumLayers.value.find(item => item.layerName === layerName)
+    if (!layer) return
+    const model = modelManager?.getModel(layer.modelId)
+    if (!model) return
+
+    let target: THREE.Mesh | null = null
+    model.object.traverse((child) => {
+        if (target) return
+        const mesh = child as THREE.Mesh
+        if (mesh.isMesh && String(mesh.userData?.id || '') === layer.key) {
+            target = mesh
+        }
+    })
+    if (!target) return
+    const mesh = target as THREE.Mesh
+
+    const box = new THREE.Box3().setFromObject(mesh)
+    const fit = cameraManager.fitToBox(box)
+    if (fit) {
+        cameraManager.camera.near = fit.near
+        cameraManager.camera.far = fit.far
+        cameraManager.camera.updateProjectionMatrix()
+        controlsManager.setDistanceLimits(fit.fitDistance * 0.1, fit.fitDistance * 8)
+        const startTarget = controlsManager.controls.target.clone()
+        cameraManager.animateTo(
+            fit.position,
+            fit.center,
+            startTarget,
+            (lookAt) => {
+                controlsManager.controls.target.copy(lookAt)
+                controlsManager.controls.update()
+            }
+        )
+    }
+
+    // 用既有描边系统闪烁提示目标层；若描边原本关闭则结束后还原
+    const outlineWasEnabled = outlineEnabled.value
+    rendererManager.setOutlineEnabled(true)
+    rendererManager.setOutlineSelectedObjects([mesh])
+    if (focusOutlineTimer) clearTimeout(focusOutlineTimer)
+    focusOutlineTimer = setTimeout(() => {
+        rendererManager?.setOutlineSelectedObjects([])
+        if (!outlineWasEnabled) rendererManager?.setOutlineEnabled(false)
+        focusOutlineTimer = null
+    }, 2600)
+}
+
+// ==================== 覆盖层（矿区边界/图例） ====================
+
+/** 叠加层基准高程：取已加载钻孔孔口的世界平均高度（地表附近），无钻孔时落到基准面。 */
+function overlayYLevel() {
+    const boreholes = modelManager?.getModelsByType('borehole') ?? []
+    if (!boreholes.length) return 0
+    const sum = boreholes.reduce((total, item) => total + item.object.position.y, 0)
+    return sum / boreholes.length
+}
+
+function rebuildBoundaryOverlay() {
+    if (!boundaryOverlay || !sceneManager) return
+    const origin = coordinateOrigin.value
+    if (!origin || !boundariesData.value) return
+    boundaryOverlay.build(boundariesData.value, { x: origin.x, y: origin.y }, overlayYLevel())
+    boundaryOverlay.setVisible(boundaryEnabled.value)
+}
+
+async function ensureBoundaries() {
+    if (!isProjectMode.value || boundariesData.value) return
+    try {
+        boundariesData.value = await workspaceApi.listBoundaries(String(route.params.projectId))
+        rebuildBoundaryOverlay()
+    } catch { /* 边界数据缺失时静默跳过 */ }
+}
+
+watch(boundaryEnabled, (visible) => {
+    boundaryOverlay?.setVisible(visible)
+})
+
+// LOD 开关 + 沉陷/炸开期间抑制
+watch(lodEnabled, (enabled) => {
+    lodController?.setEnabled(enabled)
+})
+
+watch([() => settlementStore.enabled, stratumExploded], ([settlementOn, exploded]) => {
+    lodController?.setSuppressed(settlementOn || exploded)
+})
+
+// 地层图例数据：按层名去重，保留登记顺序（自下而上）
+const legendItems = computed(() => {
+    const seen = new Map<string, string>()
+    for (const layer of stratumLayers.value) {
+        if (!layer.layerName || seen.has(layer.layerName)) continue
+        seen.set(layer.layerName, layer.color)
+    }
+    return [...seen.entries()].map(([name, color]) => ({ name, color }))
+})
+
+// ==================== 埋深等值线 ====================
+
+const contourLayerNames = computed(() => legendItems.value.map(item => item.name))
+const currentContourLayer = computed(() =>
+    contourLayerNames.value.length
+        ? contourLayerNames.value[Math.min(contourLayerIndex.value, contourLayerNames.value.length - 1)]
+        : '')
+
+function rebuildContourOverlay() {
+    if (!contourOverlay || !sceneManager) return
+    const origin = coordinateOrigin.value
+    if (!origin || !contourData.value) return
+    contourOverlay.build(contourData.value, { x: origin.x, y: origin.y }, overlayYLevel())
+    contourOverlay.setVisible(contourEnabled.value)
+}
+
+async function refreshContours() {
+    if (!isProjectMode.value || !currentContourLayer.value) return
+    contourLoading.value = true
+    try {
+        contourData.value = await workspaceApi.getContours(
+            String(route.params.projectId),
+            currentContourLayer.value,
+        )
+        rebuildContourOverlay()
+    } catch {
+        contourData.value = null
+    } finally {
+        contourLoading.value = false
+    }
+}
+
+function cycleContourLayer() {
+    if (!contourLayerNames.value.length) return
+    contourLayerIndex.value = (contourLayerIndex.value + 1) % contourLayerNames.value.length
+    if (contourEnabled.value) void refreshContours()
+}
+
+// ==================== GeoTIFF 底图 ====================
+
+function rebuildBasemap() {
+    if (!basemapOverlay || !sceneManager || !basemapMeta.value) return
+    const origin = coordinateOrigin.value
+    if (!origin) return
+    void basemapOverlay
+        .build(basemapMeta.value, { x: origin.x, y: origin.y }, overlayYLevel())
+        .then((built) => {
+            basemapOverlay?.setOpacity(basemapOpacity.value)
+            basemapOverlay?.setVisible(built && basemapEnabled.value)
+        })
+}
+
+async function ensureBasemapMeta() {
+    if (basemapMeta.value) return
+    basemapMeta.value = await fetchBasemapMeta()
+    rebuildBasemap()
+}
+
+watch(basemapEnabled, (visible) => {
+    basemapOverlay?.setVisible(visible && Boolean(basemapMeta.value))
+})
+
+watch(basemapOpacity, (value) => {
+    basemapOverlay?.setOpacity(value)
+})
+
 // ==================== Layer ====================
 
 function toHexColor(color?: THREE.Color) {
@@ -787,6 +1489,10 @@ function syncToolRuntimeState() {
                     z: point.z,
                 }
                 nextTick(() => annotationInputRef.value?.focus?.())
+            },
+            onCreate: (result) => {
+                syncAnnotationsFromTool()
+                void persistAnnotation(result)
             },
         })
     } else {
@@ -925,11 +1631,22 @@ const toolGroups = computed<ToolGroup[]>(() => [
     },
     {
         key: 'display', label: '显示', icon: 'MagicStick',
-        engaged: hoverEnabled.value || outlineEnabled.value || boundingBoxEnabled.value,
+        engaged: hoverEnabled.value || outlineEnabled.value || boundingBoxEnabled.value || boundaryEnabled.value,
         controls: [
             { kind: 'switch', label: '悬停标签', value: hoverEnabled.value, event: 'hover' },
             { kind: 'switch', label: '描边', value: outlineEnabled.value, event: 'outline' },
             { kind: 'switch', label: '坐标盒', value: boundingBoxEnabled.value, event: 'bounding-box' },
+            { kind: 'switch', label: '矿区边界', value: boundaryEnabled.value, event: 'boundary' },
+            { kind: 'switch', label: '地层图例', value: legendEnabled.value, event: 'legend' },
+            {
+                kind: 'switch', label: lodEnabled.value
+                    ? `LOD 优化（远处低模 ${lodController?.lowActiveCount ?? 0}/${lodController?.availableCount ?? 0}）`
+                    : 'LOD 优化（远处自动低模）',
+                value: lodEnabled.value, event: 'lod',
+            },
+            ...(boundaryEnabled.value && !boundariesData.value
+                ? [{ kind: 'note' as const, text: '矿区边界数据尚未加载（仅项目模式可用）。', warn: true }]
+                : []),
         ],
     },
     {
@@ -955,6 +1672,80 @@ const toolGroups = computed<ToolGroup[]>(() => [
             { kind: 'switch', label: '启用标注', value: toolState.value.annotationEnabled, event: 'annotation' },
             { kind: 'action', label: '清空标注', icon: 'Delete', event: 'clear-annotations' },
             { kind: 'note', text: '开启后点击场景中的点位即可输入标注文字。' },
+        ],
+    },
+    {
+        key: 'analysis', label: '分析', icon: 'DataAnalysis',
+        engaged: virtualBoreholeActive.value || sceneStore.sectionState.active,
+        controls: [
+            {
+                kind: 'action',
+                label: virtualBoreholeActive.value ? '虚拟钻孔（点击场景取点）' : '虚拟钻孔查询',
+                icon: 'Search', event: 'virtual-borehole', primary: true,
+            },
+            { kind: 'note', text: '单击场景平面位置，按邻近钻孔 <b>IDW 插值</b>生成虚拟钻孔柱状。' },
+            ...(virtualBoreholeActive.value
+                ? [{ kind: 'note' as const, text: '查询中：单击场景取点；再次点击上方按钮退出。' }]
+                : []),
+            {
+                kind: 'switch', label: '剖面工具（两点剖切）',
+                value: sceneStore.sectionState.active, event: 'section',
+            },
+            { kind: 'action', label: '对齐剖面视角', icon: 'Aim', event: 'section-align', disabled: !sectionReady.value },
+            { kind: 'action', label: '打开剖面图（沿线钻孔）', icon: 'Histogram', event: 'section-chart', disabled: !sectionReady.value },
+            { kind: 'note', text: '依次点击两点定义剖面线：自动裁剪观察侧岩体，剖面图会投影沿线钻孔柱状。' },
+            ...(sceneStore.sectionState.active
+                ? [{
+                    kind: 'note' as const,
+                    text: sectionReady.value
+                        ? `剖面线已就绪：A(${sceneStore.sectionState.pointA?.x.toFixed(0)}, ${sceneStore.sectionState.pointA?.y.toFixed(0)}) → B(${sceneStore.sectionState.pointB?.x.toFixed(0)}, ${sceneStore.sectionState.pointB?.y.toFixed(0)})`
+                        : '剖面工具已开启：单击场景拾取剖面线端点。',
+                }]
+                : []),
+            {
+                kind: 'action', label: sceneStore.volumeComputing ? '体积计算中...' : '计算分层体积',
+                icon: 'Box', event: 'compute-volume', disabled: sceneStore.volumeComputing,
+            },
+            {
+                kind: 'switch', label: contourEnabled.value ? `等值线：${currentContourLayer.value || '无'}` : '地层埋深等值线',
+                value: contourEnabled.value, event: 'contours',
+                disabled: !contourLayerNames.value.length || contourLoading.value,
+            },
+            {
+                kind: 'action', label: '切换等值线地层',
+                icon: 'Refresh', event: 'contour-cycle',
+                disabled: !contourLayerNames.value.length || contourLoading.value,
+            },
+            ...(contourEnabled.value && contourData.value
+                ? [{
+                    kind: 'stats' as const,
+                    items: [
+                        { label: '埋深范围', value: `${contourData.value.levels[0]}~${contourData.value.levels[contourData.value.levels.length - 1]} m` },
+                        { label: '等值线级数', value: String(contourData.value.levels.length) },
+                        { label: '样本钻孔', value: String(contourData.value.sample_count) },
+                    ],
+                }]
+                : []),
+            ...(contourEnabled.value && contourData.value && !contourData.value.levels.length
+                ? [{ kind: 'note' as const, text: `「${currentContourLayer.value}」埋深恒定（如顶层埋深为 0），无等值线；点击“切换等值线地层”换一层。`, warn: true }]
+                : []),
+            ...(contourEnabled.value && !isProjectMode.value
+                ? [{ kind: 'note' as const, text: '等值线需要项目模式（本地演示无钻孔库）。', warn: true }]
+                : []),
+            {
+                kind: 'switch', label: basemapEnabled.value ? '地形底图' : '地形底图（DEM 预处理后可用）',
+                value: basemapEnabled.value, event: 'basemap', disabled: !basemapMeta.value,
+            },
+            ...(basemapEnabled.value
+                ? [{
+                    kind: 'slider' as const, label: '底图透明度', value: basemapOpacity.value,
+                    display: `${Math.round(basemapOpacity.value * 100)}%`, min: 0.1, max: 1, step: 0.05,
+                    event: 'basemap-opacity',
+                }]
+                : []),
+            ...(basemapEnabled.value && !basemapMeta.value
+                ? [{ kind: 'note' as const, text: '尚未生成底图：运行 backend/scripts/preprocess_basemap.py 预处理 DEM。', warn: true }]
+                : []),
         ],
     },
     {
@@ -1049,10 +1840,26 @@ function onToolEvent(event: string, payload?: any) {
         case 'hover': toggleHoverEffect(); break
         case 'outline': toggleOutline(); break
         case 'bounding-box': toggleBoundingBox(); break
+        case 'boundary': boundaryEnabled.value = Boolean(payload); break
+        case 'legend': legendEnabled.value = Boolean(payload); break
+        case 'lod': lodEnabled.value = Boolean(payload); break
         case 'measure': toggleMeasureTool(); break
         case 'clear-measurements': clearMeasurements(); break
         case 'annotation': toggleAnnotationTool(); break
         case 'clear-annotations': clearAnnotations(); break
+        case 'virtual-borehole': toggleVirtualBorehole(); break
+        case 'section': toggleSectionTool(); break
+        case 'section-align': alignSectionView(); break
+        case 'section-chart': workspaceStore.openSectionDialog(); break
+        case 'compute-volume': computeStratumVolumes(); break
+        case 'contours':
+            contourEnabled.value = Boolean(payload)
+            contourOverlay?.setVisible(contourEnabled.value)
+            if (contourEnabled.value && !contourData.value) void refreshContours()
+            break
+        case 'contour-cycle': cycleContourLayer(); break
+        case 'basemap': basemapEnabled.value = Boolean(payload); break
+        case 'basemap-opacity': basemapOpacity.value = Number(payload) || 0.8; break
         case 'settlement-toggle':
             settlementStore.enabled = Boolean(payload)
             // 关闭时要清掉“未绑定”的旧原因,否则再次开启会闪现上一次的提示
@@ -1082,7 +1889,74 @@ function clearMeasurements() {
 }
 
 function clearAnnotations() {
+    const serverIds = [...annotationServerIds.values()]
     annotationTool?.clear()
+    annotationServerIds.clear()
+    syncAnnotationsFromTool()
+    // 项目模式下同步删除服务端持久化记录
+    if (isProjectMode.value) {
+        for (const id of serverIds) {
+            void workspaceApi.deleteAnnotation(id).catch(() => { /* 单条失败不阻塞 */ })
+        }
+    }
+}
+
+// ==================== 标注持久化与镜像同步 ====================
+
+// 本地标注 id → 服务端记录 id
+const annotationServerIds = new Map<string, string>()
+let restoringAnnotations = false
+
+function syncAnnotationsFromTool() {
+    const records = (annotationTool?.getResults() ?? []).map(item => ({
+        id: item.id,
+        text: item.text,
+        position: { x: item.position.x, y: item.position.y, z: item.position.z },
+        createdAt: item.createdAt,
+        serverId: annotationServerIds.get(item.id) ?? null,
+    }))
+    sceneStore.setAnnotations(records)
+}
+
+/** 投影坐标(米) → 场景世界坐标，用于恢复持久化标注 */
+function projectPointToWorld(x: number, y: number, z: number) {
+    const origin = coordinateOrigin.value
+    if (!origin) return new THREE.Vector3(x, y, z)
+    return new THREE.Vector3(x - origin.x, (z - origin.z) * verticalScale.value, -(y - origin.y))
+}
+
+async function persistAnnotation(result: AnnotationResult) {
+    if (!isProjectMode.value || restoringAnnotations) return
+    const projected = worldPointToProject(result.position)
+    try {
+        const created = await workspaceApi.createAnnotation(String(route.params.projectId), {
+            title: result.text,
+            position_x: projected.x,
+            position_y: projected.y,
+            position_z: projected.z,
+        })
+        if (created) {
+            annotationServerIds.set(result.id, created.id)
+            syncAnnotationsFromTool()
+        }
+    } catch { /* 持久化失败保留本地标注 */ }
+}
+
+async function loadPersistedAnnotations() {
+    if (!isProjectMode.value || !annotationTool) return
+    try {
+        const records = await workspaceApi.listAnnotations(String(route.params.projectId))
+        restoringAnnotations = true
+        for (const record of records) {
+            const world = projectPointToWorld(record.position_x, record.position_y, record.position_z)
+            const local = annotationTool.addAnnotation(world, record.title)
+            if (local) annotationServerIds.set(local.id, record.id)
+        }
+    } catch { /* 拉取失败按无标注处理 */ }
+    finally {
+        restoringAnnotations = false
+        syncAnnotationsFromTool()
+    }
 }
 
 function confirmAnnotation() {
@@ -1132,6 +2006,17 @@ async function initScene() {
     annotationTool = new AnnotationTool(sceneManager.scene, cameraManager.camera, canvasRef.value)
     stratumExplodeTool = new StratumExplodeTool(modelManager, { gap: toolState.value.explodeGap })
 
+    boundaryOverlay = new BoundaryOverlay()
+    sceneManager.scene.add(boundaryOverlay.group)
+
+    contourOverlay = new ContourOverlay()
+    sceneManager.scene.add(contourOverlay.group)
+
+    lodController = new StratumLodController(cameraManager.camera)
+
+    basemapOverlay = new BasemapOverlay()
+    sceneManager.scene.add(basemapOverlay.group)
+
     if (toolState.value.clipHeight !== 0) {
         clipTool.setHeight(toolState.value.clipHeight)
     }
@@ -1155,10 +2040,16 @@ async function initScene() {
                 rendererManager?.setOutlineSelectedObjects([])
             }
         },
-        (obj, event) => {
+        (obj, event, point) => {
             if (!containerRef.value || !obj || !event) {
                 hoverLabel.value.visible = false
+                surfacePoint = null
                 return
+            }
+            // 记录表面交点作为坐标读数的高程来源
+            if (point) {
+                surfacePoint = point
+                surfacePointAt = performance.now()
             }
             const name = String(obj.userData?.name || obj.name || '').trim()
             if (!name) {
@@ -1177,6 +2068,10 @@ async function initScene() {
 
     controlsManager.controls.addEventListener('start', onControlStart)
     controlsManager.controls.addEventListener('end', onControlEnd)
+
+    // 坐标读数：指针在画布内移动时更新状态栏 X/Y/Z
+    canvasRef.value.addEventListener('pointermove', onCanvasPointerMove)
+    canvasRef.value.addEventListener('pointerleave', onCanvasPointerLeave)
 
     resizeObserver = new ResizeObserver(() => {
         if (!containerRef.value) return
@@ -1197,6 +2092,8 @@ async function initScene() {
 
     syncToolRuntimeState()
     startAnimate()
+    // 恢复项目持久化标注（项目模式）
+    void loadPersistedAnnotations()
     // 预取沉陷元信息(仅 4 KB),使工具箱里未启用时也能显示真实的最大沉降等读数
     void prefetchSettlementMeta()
 
@@ -1249,6 +2146,11 @@ watch(coordinateOrigin, (origin) => {
         }
     }
     boundingBoxTool?.refresh()
+    rebuildBoundaryOverlay()
+    rebuildContourOverlay()
+    rebuildBasemap()
+    void ensureBoundaries()
+    void ensureBasemapMeta()
 })
 
 // 沉陷对比:启用 → 拉位移场并绑定;参数变化 → 同步到几何
@@ -1322,6 +2224,34 @@ watch(unloadRequest, (req) => {
     }
 })
 
+// 面板（柱状图等）请求聚焦某个地层
+watch(() => sceneStore.focusRequest, (req) => {
+    if (req) {
+        focusStratum(req.layerName)
+    }
+})
+
+// 管理面板请求单条删除测量：移除图元 + 同步记录列表
+watch(() => sceneStore.measurementRemoveRequest, (req) => {
+    if (!req) return
+    measureTool?.remove(req.id)
+    sceneStore.removeMeasurement(req.id)
+})
+
+// 管理面板请求单条删除标注：移除图元 + 同步镜像 + 删除服务端记录
+watch(() => sceneStore.annotationRemoveRequest, (req) => {
+    if (!req) return
+    const serverId = annotationServerIds.get(req.id)
+        ?? sceneStore.annotations.find(item => item.id === req.id)?.serverId
+        ?? null
+    annotationTool?.remove(req.id)
+    annotationServerIds.delete(req.id)
+    syncAnnotationsFromTool()
+    if (serverId && isProjectMode.value) {
+        void workspaceApi.deleteAnnotation(serverId).catch(() => { /* 忽略单条失败 */ })
+    }
+})
+
 // ==================== Lifecycle ====================
 
 onMounted(() => { initScene() })
@@ -1346,8 +2276,22 @@ onDeactivated(() => {
 onUnmounted(() => {
     disposeRemoteBridge?.()
     disposeRemoteBridge = null
+    canvasRef.value?.removeEventListener('pointermove', onCanvasPointerMove)
+    canvasRef.value?.removeEventListener('pointerleave', onCanvasPointerLeave)
+    canvasRef.value?.removeEventListener('click', onVirtualBoreholeClick)
+    canvasRef.value?.removeEventListener('click', onSectionClick)
+    clearVirtualMarker()
+    clearSectionOverlay()
     sceneStore.activateTool(null)
     sceneStore.resetSceneSession()
+    boundaryOverlay?.dispose()
+    boundaryOverlay = null
+    contourOverlay?.dispose()
+    contourOverlay = null
+    lodController?.dispose()
+    lodController = null
+    basemapOverlay?.dispose()
+    basemapOverlay = null
     // geoRoot 随画布销毁,竖向倍率也要回默认,否则下次进来状态不一致
     sceneStore.resetVerticalScale()
     settlementManager?.restoreBase()
@@ -1373,6 +2317,14 @@ onUnmounted(() => {
     modelManager?.clear()
     sceneManager?.dispose()
     hideHoverLabel()
+})
+
+// 供工作台外壳（GeoWorkspaceView）调用：截图、场景保存/恢复、地层聚焦
+defineExpose({
+    captureImage,
+    getSceneState,
+    applySceneState,
+    focusStratum,
 })
 </script>
 
@@ -1402,6 +2354,186 @@ onUnmounted(() => {
     color: #dff8ff;
     font-size: 12px;
     backdrop-filter: blur(6px);
+}
+
+/* ── 地层颜色图例 ── */
+.strata-legend {
+    position: absolute;
+    left: 12px;
+    bottom: 44px;
+    z-index: 9;
+    min-width: 148px;
+    max-width: 210px;
+    max-height: 46%;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid #333c34;
+    background: rgba(16, 21, 17, 0.92);
+    backdrop-filter: blur(8px);
+    color: #cfd6ce;
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.3);
+}
+
+.strata-legend .lg-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 10px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+}
+
+.strata-legend .lg-head span {
+    font: 8px Bahnschrift, sans-serif;
+    letter-spacing: 0.14em;
+    color: #b98548;
+}
+
+.strata-legend .lg-head b {
+    font-size: 10px;
+    color: #aeb6ad;
+    font-weight: 400;
+}
+
+.strata-legend .lg-body {
+    overflow: auto;
+    padding: 0 10px 8px;
+}
+
+.strata-legend .lg-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 2px 0;
+    font-size: 10px;
+    color: #b9c1b8;
+    white-space: nowrap;
+}
+
+.strata-legend .lg-row i {
+    width: 12px;
+    height: 8px;
+    flex-shrink: 0;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+/* ── 虚拟钻孔结果卡 ── */
+.virtual-card {
+    position: absolute;
+    right: 12px;
+    top: 64px;
+    z-index: 9;
+    width: 230px;
+    max-height: 56%;
+    display: flex;
+    flex-direction: column;
+    padding: 9px 11px 10px;
+    border: 1px solid #2f4a52;
+    background: rgba(13, 22, 24, 0.94);
+    backdrop-filter: blur(8px);
+    color: #cfe2e4;
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
+}
+
+.virtual-card .vc-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+}
+
+.virtual-card .vc-head span {
+    font: 8px Bahnschrift, sans-serif;
+    letter-spacing: 0.14em;
+    color: #5fb7c4;
+}
+
+.virtual-card .vc-head button {
+    border: 0;
+    background: transparent;
+    color: #7d8d90;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.virtual-card strong {
+    margin: 4px 0 2px;
+    font-size: 13px;
+    color: #e4f0f1;
+}
+
+.virtual-card small {
+    color: #77909a;
+    font-size: 9px;
+}
+
+.virtual-card .vc-layers {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    margin-top: 7px;
+}
+
+.virtual-card .vc-layer {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+    font-size: 10px;
+}
+
+.virtual-card .vc-layer i {
+    width: 12px;
+    height: 8px;
+    flex-shrink: 0;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.virtual-card .vc-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #c3d4d6;
+}
+
+.virtual-card .vc-depth {
+    color: #7d99a1;
+    font-family: Consolas, monospace;
+}
+
+.virtual-card .vc-empty {
+    padding: 12px 0;
+    text-align: center;
+    color: #77878a;
+    font-size: 10px;
+}
+
+.virtual-card .vc-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 9px;
+}
+
+.virtual-card .vc-actions button {
+    flex: 1;
+    padding: 5px 0;
+    border: 1px solid #37525a;
+    background: #16333a;
+    color: #9fd4dd;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.virtual-card .vc-actions button:disabled {
+    opacity: .4;
+    cursor: not-allowed;
+}
+
+.virtual-card .vc-actions button:hover:not(:disabled) {
+    background: #1d434c;
 }
 
 /* ── 沉陷对比图例 ── */

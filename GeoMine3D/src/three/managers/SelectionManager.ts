@@ -2,7 +2,11 @@ import * as THREE from 'three'
 import type { HighlightManager } from './HighlightManager'
 
 export type SelectionCallback = (object: THREE.Object3D | null) => void
-export type HoverCallback = (object: THREE.Object3D | null, event: MouseEvent | null) => void
+export type HoverCallback = (
+    object: THREE.Object3D | null,
+    event: MouseEvent | null,
+    point?: THREE.Vector3,
+) => void
 
 export class SelectionManager {
     private raycaster = new THREE.Raycaster()
@@ -63,7 +67,7 @@ export class SelectionManager {
         return null
     }
 
-    private _pickObjectByEvent(event: MouseEvent): THREE.Object3D | null {
+    private _pickObjectByEvent(event: MouseEvent): { obj: THREE.Object3D; point: THREE.Vector3 } | null {
         const rect = this.domElement.getBoundingClientRect()
         this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
         this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
@@ -71,17 +75,30 @@ export class SelectionManager {
         this.raycaster.setFromCamera(this.pointer, this.camera)
         const pickRoots = this.pickTargets.length ? this.pickTargets : this.scene.children
         const intersects = this.raycaster.intersectObjects(pickRoots, true)
-        return this._findBusinessObject(intersects)
+        const obj = this._findBusinessObject(intersects)
+        if (!obj) return null
+        const hit = intersects.find(i => i.object === obj || this._isDescendant(obj, i.object))
+        return { obj, point: (hit?.point ?? intersects[0]?.point)?.clone() }
+    }
+
+    // 判断 node 是否在 ancestor 子树内（用于从命中列表里取业务节点的交点）。
+    private _isDescendant(ancestor: THREE.Object3D, node: THREE.Object3D): boolean {
+        let current: THREE.Object3D | null = node
+        while (current) {
+            if (current === ancestor) return true
+            current = current.parent
+        }
+        return false
     }
 
     // 基于鼠标点击执行射线拾取，并向上回溯到业务对象节点。
     private _onClick = (event: MouseEvent) => {
         if (!this.enabled) return
 
-        const obj = this._pickObjectByEvent(event)
-        if (obj) {
-            this.highlightManager.select(obj)
-            this.onSelect(obj)
+        const picked = this._pickObjectByEvent(event)
+        if (picked) {
+            this.highlightManager.select(picked.obj)
+            this.onSelect(picked.obj)
             return
         }
 
@@ -112,12 +129,13 @@ export class SelectionManager {
             if (now - this.lastHoverTime < this.HOVER_THROTTLE_MS) return
 
             this.lastHoverTime = now
-            const obj = this._pickObjectByEvent(e)
+            const picked = this._pickObjectByEvent(e)
+            const obj = picked?.obj ?? null
             const nextUuid = obj?.uuid ?? null
             if (nextUuid === (this.hoveredObject?.uuid ?? null)) return
 
             this.hoveredObject = obj
-            this.onHover?.(obj, obj ? e : null)
+            this.onHover?.(obj, obj ? e : null, picked?.point)
         }, this.HOVER_THROTTLE_MS)
     }
 

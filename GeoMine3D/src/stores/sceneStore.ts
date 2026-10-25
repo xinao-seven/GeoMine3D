@@ -8,6 +8,7 @@ import type {
     StratumLayerControl,
     ToolState,
     MeasurementRecord,
+    AnnotationRecord,
 } from '@/types'
 
 type ModelType = 'stratum' | 'borehole' | 'workingface' | 'roadway'
@@ -31,6 +32,26 @@ export type ModelLoadPayload = {
 export type ModelLoadRequest = ModelLoadPayload & { requestId: number }
 
 export type ModelUnloadRequest = { type: 'stratum' | 'borehole' | 'workingface' | 'roadway'; id: string; requestId: number }
+
+/** 可序列化的场景快照（视角/图层/剖切/炸开/竖向比例），用于场景保存与恢复 */
+export interface SceneSnapshot {
+    camera: { position: number[]; target: number[] }
+    layers: Array<{ type: 'stratum' | 'borehole' | 'workingface' | 'roadway'; visible: boolean; opacity?: number }>
+    showEdges?: boolean
+    verticalScale?: number
+    clip?: { enabled: boolean; axis: 'x' | 'y' | 'z'; height: number; keepLower: boolean }
+    explode?: { gap: number; active: boolean }
+}
+
+/** 柱状图等面板请求三维场景聚焦某个地层（SceneCanvas 监听消费） */
+export type FocusRequest = { layerName: string; requestId: number }
+
+/** 剖面工具状态：两点定义剖面线（投影坐标，米） */
+export interface SectionState {
+    active: boolean
+    pointA: { x: number; y: number } | null
+    pointB: { x: number; y: number } | null
+}
 
 export const useSceneStore = defineStore('scene', () => {
     // 当前在三维场景中被选中的对象（用于属性面板展示）
@@ -67,6 +88,11 @@ export const useSceneStore = defineStore('scene', () => {
     const measurements = ref<MeasurementRecord[]>([])
     // 最近一次测量距离（用于快捷展示）
     const lastMeasurementDistance = ref<number | null>(null)
+    // 标注镜像（SceneCanvas 从 AnnotationTool 同步），供管理面板展示
+    const annotations = ref<AnnotationRecord[]>([])
+    // 单条删除请求（由管理面板发起，SceneCanvas 监听消费）
+    const measurementRemoveRequest = ref<{ id: string; requestId: number } | null>(null)
+    const annotationRemoveRequest = ref<{ id: string; requestId: number } | null>(null)
 
     // 模型加载状态表，key 为 type:id
     const modelLoadStatus = reactive<Record<string, { loaded: boolean; loading: boolean }>>({})
@@ -74,6 +100,14 @@ export const useSceneStore = defineStore('scene', () => {
     const loadRequest = ref<ModelLoadRequest | null>(null)
     // 待处理模型移除请求（由 SceneCanvas 监听并消费）
     const unloadRequest = ref<ModelUnloadRequest | null>(null)
+    // 面板请求聚焦某个地层（由 SceneCanvas 监听并消费）
+    const focusRequest = ref<FocusRequest | null>(null)
+    // 剖面工具状态（SceneCanvas 拾取两点写入；剖面图对话框读取）
+    const sectionState = ref<SectionState>({ active: false, pointA: null, pointB: null })
+    // 体积统计（SceneCanvas 按请求计算写入）
+    const stratumVolumes = ref<Array<{ layerName: string; volumeM3: number; triangles: number }>>([])
+    const volumeComputing = ref(false)
+    const volumeRequest = ref(0)
     // 地层单元控制项（显隐/颜色/透明度）
     const stratumLayers = ref<StratumLayerControl[]>([])
     // 数据库项目的投影坐标原点；用于让真实坐标模型与钻孔使用同一局部坐标系。
@@ -141,6 +175,28 @@ export const useSceneStore = defineStore('scene', () => {
         lastMeasurementDistance.value = null
     }
 
+    /** 删除单条测量记录（本地列表；场景图元由 SceneCanvas 按删除请求移除） */
+    function removeMeasurement(id: string) {
+        measurements.value = measurements.value.filter(item => item.id !== id)
+        const remaining = measurements.value
+        lastMeasurementDistance.value = remaining.length ? remaining[remaining.length - 1].distance : null
+    }
+
+    /** 请求移除场景中的单条测量（图元 + 记录） */
+    function requestRemoveMeasurement(id: string) {
+        measurementRemoveRequest.value = { id, requestId: Date.now() }
+    }
+
+    /** 请求移除场景中的单条标注（图元 + 镜像 + 服务端持久化记录） */
+    function requestRemoveAnnotation(id: string) {
+        annotationRemoveRequest.value = { id, requestId: Date.now() }
+    }
+
+    /** SceneCanvas 将工具内标注快照同步到镜像 */
+    function setAnnotations(records: AnnotationRecord[]) {
+        annotations.value = records
+    }
+
     function getModelKey(type: ModelType, id: string) {
         return `${type}:${id}`
     }
@@ -192,13 +248,38 @@ export const useSceneStore = defineStore('scene', () => {
         selectObject(null)
         measurements.value = []
         lastMeasurementDistance.value = null
+        annotations.value = []
+        measurementRemoveRequest.value = null
+        annotationRemoveRequest.value = null
         loadRequest.value = null
         unloadRequest.value = null
         resetGroupOpacity()
     }
 
-    function registerStratumLayers(layers: StratumLayerControl[]) {
-        for (const layer of layers) {
+    /** 请求三维场景定位并高亮某个地层（按层名） */
+    function requestFocusStratum(layerName: string) {
+        focusRequest.value = { layerName, requestId: Date.now() }
+    }
+
+    function setSectionActive(active: boolean) {
+        sectionState.value = { active, pointA: null, pointB: null }
+    }
+
+    function setSectionPoint(which: 'a' | 'b', point: { x: number; y: number }) {
+        if (which === 'a') sectionState.value = { ...sectionState.value, pointA: point }
+        else sectionState.value = { ...sectionState.value, pointB: point }
+    }
+
+    function resetSectionPoints() {
+        sectionState.value = { ...sectionState.value, pointA: null, pointB: null }
+    }
+
+    /** 请求重新计算各分层模型体积（SceneCanvas 监听 volumeRequest） */
+    function requestVolumeStats() {
+        volumeRequest.value += 1
+    }
+
+    function registerStratumLayers(layers: StratumLayerControl[]) {        for (const layer of layers) {
             const index = stratumLayers.value.findIndex((item) => item.key === layer.key)
             if (index >= 0) {
                 Object.assign(stratumLayers.value[index], layer)
@@ -242,9 +323,17 @@ export const useSceneStore = defineStore('scene', () => {
         toolState,
         measurements,
         lastMeasurementDistance,
+        annotations,
+        measurementRemoveRequest,
+        annotationRemoveRequest,
         modelLoadStatus,
         loadRequest,
         unloadRequest,
+        focusRequest,
+        sectionState,
+        stratumVolumes,
+        volumeComputing,
+        volumeRequest,
         stratumLayers,
         coordinateOrigin,
         verticalScale,
@@ -266,10 +355,19 @@ export const useSceneStore = defineStore('scene', () => {
         setExplodeGap,
         addMeasurement,
         clearMeasurements,
+        removeMeasurement,
+        requestRemoveMeasurement,
+        requestRemoveAnnotation,
+        setAnnotations,
         getModelKey,
         getModelLoadStatus,
         setModelLoadStatus,
         requestLoadModel,
+        requestFocusStratum,
+        setSectionActive,
+        setSectionPoint,
+        resetSectionPoints,
+        requestVolumeStats,
         registerStratumLayers,
         updateStratumLayer,
         setCoordinateOrigin,
