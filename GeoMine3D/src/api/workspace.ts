@@ -49,6 +49,20 @@ export interface BoreholeRecord {
     segments: BoreholeSegmentRecord[]
 }
 
+export interface ModelingJobRecord {
+    id: string
+    project_id: string
+    status: 'pending' | 'running' | 'completed' | 'failed'
+    stage: string | null
+    message: string | null
+    params_json: Record<string, any>
+    output_dir: string | null
+    result_json: Record<string, any> | null
+    error_message: string | null
+    created_at: string
+    updated_at: string
+}
+
 interface DataResponse<T> { data: T }
 interface PageResponse<T> { data: T[]; meta: { page: number; page_size: number; total: number } }
 
@@ -78,6 +92,18 @@ export const workspaceApi = {
     },
     modelFileUrl(modelId: string) {
         return `/api/v1/models/${modelId}/file`
+    },
+    async createModelingJob(form: FormData) {
+        return (await workspaceClient.post<DataResponse<ModelingJobRecord>>('/modeling-jobs', form, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+            timeout: 120000,
+        })).data.data
+    },
+    async getModelingJob(jobId: string) {
+        return (await workspaceClient.get<DataResponse<ModelingJobRecord>>(`/modeling-jobs/${jobId}`)).data.data
+    },
+    async listModelingJobs(projectId: string) {
+        return (await workspaceClient.get<DataResponse<ModelingJobRecord[]>>(`/projects/${projectId}/modeling-jobs`)).data.data
     },
 }
 

@@ -13,6 +13,11 @@
                 <div class="service-state" :class="{ offline: !online }">
                     <i></i>{{ online ? '数据服务已连接' : '本地工作模式' }}
                 </div>
+                <button class="primary-action ghost-action" type="button" @click="modelingDialogVisible = true">
+                    <el-icon>
+                        <Upload />
+                    </el-icon> 上传钻孔建模
+                </button>
                 <button class="primary-action" type="button" @click="dialogVisible = true">
                     <el-icon>
                         <Plus />
@@ -42,15 +47,25 @@
 
             <button v-for="(project, index) in projects" :key="project.id" class="project-card" type="button"
                 :style="{ '--delay': `${index * 70}ms` }" @click="openProject(project.id)">
-                <div class="card-topline"><span>{{ project.coordinate_system }}</span><el-icon>
-                        <Right />
-                    </el-icon></div>
+                <div class="card-topline"><span>{{ project.coordinate_system }}</span>
+                    <span class="card-state">
+                        <span v-if="jobStateOf(project.id) === 'pending'" class="build-chip building">排队中</span>
+                        <span v-else-if="jobStateOf(project.id) === 'running'" class="build-chip building">
+                            <i class="pulse"></i>建模中
+                        </span>
+                        <span v-else-if="jobStateOf(project.id) === 'failed'" class="build-chip failed">建模失败</span>
+                        <el-icon v-else>
+                            <Right />
+                        </el-icon>
+                    </span>
+                </div>
                 <div class="strata-preview" aria-hidden="true">
                     <span v-for="n in 5" :key="n"></span>
                 </div>
                 <div class="card-content">
                     <h3>{{ project.name }}</h3>
-                    <p>{{ project.description || '尚未填写项目说明。' }}</p>
+                    <p v-if="activeJobOf(project.id)">{{ activeJobOf(project.id)!.message || '建模进行中…' }}</p>
+                    <p v-else>{{ project.description || '尚未填写项目说明。' }}</p>
                 </div>
                 <div class="card-meta"><span>{{ formatDate(project.updated_at) }}</span><span>DATABASE</span></div>
             </button>
@@ -74,14 +89,50 @@
                 <el-button type="primary" :loading="creating" @click="createProject">创建并进入</el-button>
             </template>
         </el-dialog>
+
+        <el-dialog v-model="modelingDialogVisible" title="上传钻孔数据建模" width="540px" class="project-dialog">
+            <el-form label-position="top">
+                <el-form-item label="项目名称"><el-input v-model="modelingForm.name"
+                        placeholder="例如：西翼三盘区钻孔地质模型" /></el-form-item>
+                <el-form-item label="项目说明"><el-input v-model="modelingForm.description" type="textarea"
+                        :rows="2" placeholder="可选；留空将自动生成说明" /></el-form-item>
+                <el-form-item label="分层汇总表(14层汇总长表)">
+                    <el-upload drag :auto-upload="false" :limit="1" accept=".xlsx"
+                        :on-change="(file: any) => onModelingFile('strata', file)"
+                        :on-remove="() => (modelingForm.strata = null)">
+                        <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+                        <div class="el-upload__text">拖拽或<em>点击选择</em> .xlsx 文件</div>
+                        <template #tip>
+                            <div class="el-upload__tip">表头：钻孔名称 / 地层名称 / 深度 / 厚度（深度=层顶、厚度列=层底）</div>
+                        </template>
+                    </el-upload>
+                </el-form-item>
+                <el-form-item label="钻孔位置表">
+                    <el-upload drag :auto-upload="false" :limit="1" accept=".xlsx"
+                        :on-change="(file: any) => onModelingFile('location', file)"
+                        :on-remove="() => (modelingForm.location = null)">
+                        <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+                        <div class="el-upload__text">拖拽或<em>点击选择</em> .xlsx 文件</div>
+                        <template #tip>
+                            <div class="el-upload__tip">表头：name(钻孔名称) / x / y / z（Gauss-Kruger 坐标与孔口高程）</div>
+                        </template>
+                    </el-upload>
+                </el-form-item>
+            </el-form>
+            <p class="modeling-note">上传后将创建独立项目，并在后台自动完成界面插值、三维建模与交付包生成（约 1 分钟）。</p>
+            <template #footer>
+                <el-button @click="modelingDialogVisible = false">取消</el-button>
+                <el-button type="primary" :loading="creating" @click="createModelingProject">创建并开始建模</el-button>
+            </template>
+        </el-dialog>
     </main>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { workspaceApi, type ProjectRecord } from '@/api/workspace'
+import { workspaceApi, type ModelingJobRecord, type ProjectRecord } from '@/api/workspace'
 
 const router = useRouter()
 const projects = ref<ProjectRecord[]>([])
@@ -91,12 +142,52 @@ const dialogVisible = ref(false)
 const creating = ref(false)
 const form = reactive({ name: '', description: '', coordinate_system: 'EPSG:2421' })
 
+const modelingDialogVisible = ref(false)
+const modelingForm = reactive<{ name: string; description: string; strata: File | null; location: File | null }>({
+    name: '',
+    description: '',
+    strata: null,
+    location: null,
+})
+
+// projectId → 该项目最近一次建模任务;轮询期间实时刷新,驱动卡片状态条。
+const jobsByProject = ref<Record<string, ModelingJobRecord>>({})
+let pollTimer: number | null = null
+
 function openProject(projectId: string) {
+    const job = jobsByProject.value[projectId]
+    if (job && (job.status === 'pending' || job.status === 'running')) {
+        ElMessage.info(`「${projectNameOf(projectId)}」正在建模中（${job.message || job.stage || '进行中'}），完成后即可进入`)
+        return
+    }
     router.push(`/workspace/${projectId}`)
 }
 
 function formatDate(value: string) {
     return new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', year: 'numeric' }).format(new Date(value))
+}
+
+function projectNameOf(projectId: string) {
+    return projects.value.find(item => item.id === projectId)?.name || '新项目'
+}
+
+function jobStateOf(projectId: string) {
+    return jobsByProject.value[projectId]?.status || 'none'
+}
+
+function activeJobOf(projectId: string) {
+    const job = jobsByProject.value[projectId]
+    if (!job || (job.status !== 'pending' && job.status !== 'running')) return null
+    return job
+}
+
+function onModelingFile(kind: 'strata' | 'location', uploadFile: any) {
+    if (!uploadFile?.raw) return
+    if (!String(uploadFile.name || '').toLowerCase().endsWith('.xlsx')) {
+        ElMessage.warning('只支持 .xlsx 文件')
+        return
+    }
+    modelingForm[kind] = uploadFile.raw as File
 }
 
 async function loadProjects() {
@@ -105,10 +196,60 @@ async function loadProjects() {
         const response = await workspaceApi.listProjects()
         projects.value = response.data
         online.value = true
+        await loadLatestJobs()
     } catch {
         online.value = false
     } finally {
         loading.value = false
+    }
+}
+
+async function loadLatestJobs() {
+    // 每个项目取最近一次建模任务,让“建模中/失败”状态在刷新页面后依然可见。
+    const results = await Promise.allSettled(
+        projects.value.map(project => workspaceApi.listModelingJobs(project.id)),
+    )
+    results.forEach((result, index) => {
+        if (result.status === 'fulfilled' && result.value.length) {
+            jobsByProject.value[projects.value[index].id] = result.value[0]
+        }
+    })
+}
+
+function ensurePolling() {
+    if (pollTimer !== null) return
+    pollTimer = window.setInterval(pollActiveJobs, 2500)
+    void pollActiveJobs()
+}
+
+async function pollActiveJobs() {
+    const active = Object.values(jobsByProject.value).filter(
+        job => job.status === 'pending' || job.status === 'running',
+    )
+    if (!active.length) {
+        stopPolling()
+        return
+    }
+    for (const job of active) {
+        try {
+            const fresh = await workspaceApi.getModelingJob(job.id)
+            jobsByProject.value[fresh.project_id] = fresh
+            if (fresh.status === 'completed') {
+                ElMessage.success(`「${projectNameOf(fresh.project_id)}」建模完成，可进入工作台查看`)
+                await loadProjects()
+            } else if (fresh.status === 'failed') {
+                ElMessage.error(`「${projectNameOf(fresh.project_id)}」建模失败：${(fresh.error_message || '未知错误').slice(0, 160)}`)
+            }
+        } catch {
+            // 服务瞬时不可达时静默,下一轮重试
+        }
+    }
+}
+
+function stopPolling() {
+    if (pollTimer !== null) {
+        clearInterval(pollTimer)
+        pollTimer = null
     }
 }
 
@@ -126,7 +267,37 @@ async function createProject() {
     }
 }
 
+async function createModelingProject() {
+    if (!modelingForm.name.trim()) return ElMessage.warning('请输入项目名称')
+    if (!modelingForm.strata) return ElMessage.warning('请选择分层汇总表(.xlsx)')
+    if (!modelingForm.location) return ElMessage.warning('请选择钻孔位置表(.xlsx)')
+    creating.value = true
+    try {
+        const payload = new FormData()
+        payload.append('name', modelingForm.name.trim())
+        payload.append('description', modelingForm.description)
+        payload.append('strata_file', modelingForm.strata)
+        payload.append('location_file', modelingForm.location)
+        const job = await workspaceApi.createModelingJob(payload)
+        modelingDialogVisible.value = false
+        modelingForm.name = ''
+        modelingForm.description = ''
+        modelingForm.strata = null
+        modelingForm.location = null
+        jobsByProject.value[job.project_id] = job
+        ElMessage.success('项目已创建，建模任务已启动')
+        ensurePolling()
+        await loadProjects()
+    } catch (error: any) {
+        const message = error?.response?.data?.message
+        ElMessage.error(message || '上传失败，请检查数据服务与文件格式')
+    } finally {
+        creating.value = false
+    }
+}
+
 onMounted(loadProjects)
+onBeforeUnmount(stopPolling)
 </script>
 
 <style scoped>
@@ -254,6 +425,73 @@ onMounted(loadProjects)
     gap: 8px;
     align-items: center;
     font-weight: 600;
+}
+
+.ghost-action {
+    background: transparent;
+    border-color: #4a4f49;
+    color: #b9b4a4;
+    font-weight: 500;
+}
+
+.ghost-action:hover {
+    border-color: #ba8845;
+    color: #f2e5cf;
+}
+
+.card-state {
+    display: inline-flex;
+}
+
+.build-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font: 600 10px/1.2 Bahnschrift, 'Noto Sans SC', sans-serif;
+    letter-spacing: .12em;
+}
+
+.build-chip.building {
+    color: #f2e5cf;
+    background: rgba(186, 136, 69, .28);
+    border: 1px solid #ba8845;
+}
+
+.build-chip.failed {
+    color: #ffb9a8;
+    background: rgba(178, 60, 40, .22);
+    border: 1px solid #b23c28;
+}
+
+.build-chip .pulse {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #e8b25f;
+    animation: chip-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes chip-pulse {
+
+    0%,
+    100% {
+        opacity: .25;
+        transform: scale(.8);
+    }
+
+    50% {
+        opacity: 1;
+        transform: scale(1.15);
+    }
+}
+
+.modeling-note {
+    margin: 4px 0 0;
+    font-size: 12px;
+    line-height: 1.6;
+    color: #8f968e;
 }
 
 .hero-copy {

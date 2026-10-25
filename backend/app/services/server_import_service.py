@@ -137,6 +137,21 @@ class ServerDataImportService:
         await self.session.commit()
         return summary
 
+    async def _has_modeling_content(self, project: Project) -> bool:
+        from sqlalchemy import func
+
+        from app.models.modeling import ModelingJob
+
+        jobs = await self.session.scalar(
+            select(func.count()).select_from(ModelingJob).where(ModelingJob.project_id == project.id)
+        )
+        if jobs:
+            return True
+        assets = await self.session.scalars(
+            select(ModelAsset.metadata_json).where(ModelAsset.project_id == project.id)
+        )
+        return any((meta or {}).get("source") == "modeling" for meta in assets)
+
     def _validate_sources(self) -> None:
         required = (
             self.location_path,
@@ -222,6 +237,9 @@ class ServerDataImportService:
         catalog: dict[str, Any],
     ) -> Project:
         project = await self.session.scalar(select(Project).where(Project.name == project_name))
+        if project is not None and await self._has_modeling_content(project):
+            # 重名但属于“上传钻孔建模”的项目:不要劫持(会覆盖原点并混入交付包数据),另建新项目。
+            project = None
         # 场景基准优先采用模型交付包的 origin_restore,保证钻孔与模型在同一坐标系原点上。
         restore = catalog.get("origin_restore") or {}
         if restore.get("x_origin_m") is not None:
@@ -448,6 +466,9 @@ class ServerDataImportService:
             await self._assign_asset_version(asset, glb_path, relative_path)
 
         for source_file, asset in existing.items():
+            # 建模任务(modeling_service)生成的资产不属于本交付包,跳过不删。
+            if (asset.metadata_json or {}).get("source") == "modeling":
+                continue
             if source_file not in catalog_rel_paths:
                 await self.session.delete(asset)
 

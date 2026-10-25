@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     # 远程调试中继(WebSocket /api/v1/remote/ws + /remote/invoke):供 backend/mcp_server.py
     # 把命令转发到浏览器工作台的 __geomine 桥;整体关闭时不影响常规 API。
     remote_debug_enabled: bool = True
+    # 钻孔建模引擎(modeling_engine):上传 14层汇总表后异步生成模型交付包。
+    modeling_max_concurrent: int = 1
+    modeling_timeout_seconds: int = 1800
 
     @property
     def log_level_name(self) -> str:

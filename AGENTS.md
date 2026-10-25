@@ -70,6 +70,18 @@ server/                     # Preserved legacy data service and source assets (d
   `remoteBridgeClient.ts`。门控：开发环境默认启用，生产需页面 URL 带 `?remote=1`（`run_js`
   仅 `?remote=1` 时放行）；总开关 `settings.remote_debug_enabled`。详见
   `docs/远程调试MCP指南.md`。注意 `mcp` 依赖固定在 1.x（2.x 强制 starlette>=1，会破坏 fastapi 0.116）。
+- 钻孔建模引擎（移植自毕业论文细层化管线）：`backend/modeling_engine/` 把“14层汇总长表 +
+  钻孔位置表”全自动建成三维地质模型交付包。链路：前端项目中心“上传钻孔建模” →
+  `POST /api/v1/modeling-jobs`（202）→ 建独立项目 + `modeling_jobs` 行 → 子进程
+  `python -m modeling_engine.generate`（同一 venv，共享趋势+ARD GP 插值 → 保序投影/尖灭折叠
+  → TIN-GTP 建模 → GLB/LOD/VTU/z20 + catalog.json，约 25s）→ 注册进库
+  （模型 `storage_scope="upload"`、`metadata.source="modeling"`；钻孔分层颜色按层名映射；
+  `origin_restore` 写回 project）。产物在 `uploads/projects/<project_id>/web_package/`，
+  任务输入/日志在 `uploads/modeling-jobs/<job_id>/`，删项目时一并清理。
+  层序由上传表的层顶深度自动推导（不再需要 strat_order_refined.json）；网格规模由数据决定
+  （锦界 182 孔 → 16641 节点）；不含 roadways/working_faces/沉陷场（锦界专属）。
+  `import_server_data.py` 重跑时按 `metadata.source=="modeling"` 跳过建模资产、按“项目含建模
+  内容则不劫持”匹配同名项目。E2E 冒烟：`backend/scripts/smoke_modeling_job.py`。
 
 ## Key Conventions
 

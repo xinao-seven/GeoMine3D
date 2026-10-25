@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1 import boreholes, models, projects, remote, scenes, workspace
+from app.api.v1 import boreholes, modeling, models, projects, remote, scenes, workspace
 
 
 api_router = APIRouter()
@@ -10,3 +10,4 @@ api_router.include_router(boreholes.router, tags=["boreholes"])
 api_router.include_router(scenes.router, tags=["scenes"])
 api_router.include_router(workspace.router, tags=["workspace"])
 api_router.include_router(remote.router, tags=["remote"])
+api_router.include_router(modeling.router, tags=["modeling"])

@@ -11,6 +11,14 @@ pyshp==2.3.1
 # 1.x 与 fastapi 0.116 所需的 starlette<0.48 兼容;mcp 2.x 强制 starlette>=1 会破坏后端
 mcp==1.30.0
 Pillow==11.3.0
+# 建模引擎(modeling_engine,移植自论文细层化管线):版本与论文环境对齐,
+# pandas 3.x / trimesh 5.x 等大版本会破坏向量化建模代码,不要随意升级。
+numpy==2.2.6
+pandas==2.3.3
+scipy==1.16.3
+scikit-learn==1.7.2
+pyvista==0.46.4
+trimesh==4.11.0
 pytest==8.4.1
 pytest-asyncio==1.1.0
 httpx==0.28.1

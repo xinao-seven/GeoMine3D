@@ -12,6 +12,7 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.exceptions import error_payload, register_exception_handlers
 from app.core.logging import get_logger, request_id_var, setup_logging
+from app.services.modeling_service import fail_stale_modeling_jobs
 
 
 setup_logging()
@@ -48,6 +49,11 @@ async def lifespan(_: FastAPI):
         settings.log_level_name,
         settings.db_echo,
     )
+    # 上次进程退出时可能留下 pending/running 的建模任务(任务协程随进程消亡),
+    # 启动时统一标记为失败,避免前端无限轮询。
+    stale = await fail_stale_modeling_jobs()
+    if stale:
+        logger.warning("已将 %d 个中断的建模任务标记为失败", stale)
     yield
     logger.info("服务已停止")
 
