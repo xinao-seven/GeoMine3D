@@ -46,6 +46,13 @@ export interface SceneSnapshot {
 /** 柱状图等面板请求三维场景聚焦某个地层（SceneCanvas 监听消费） */
 export type FocusRequest = { layerName: string; requestId: number }
 
+/** 剖面工具状态：两点定义剖面线（投影坐标，米） */
+export interface SectionState {
+    active: boolean
+    pointA: { x: number; y: number } | null
+    pointB: { x: number; y: number } | null
+}
+
 export const useSceneStore = defineStore('scene', () => {
     // 当前在三维场景中被选中的对象（用于属性面板展示）
     const selectedObject = ref<SceneObject | null>(null)
@@ -95,6 +102,12 @@ export const useSceneStore = defineStore('scene', () => {
     const unloadRequest = ref<ModelUnloadRequest | null>(null)
     // 面板请求聚焦某个地层（由 SceneCanvas 监听并消费）
     const focusRequest = ref<FocusRequest | null>(null)
+    // 剖面工具状态（SceneCanvas 拾取两点写入；剖面图对话框读取）
+    const sectionState = ref<SectionState>({ active: false, pointA: null, pointB: null })
+    // 体积统计（SceneCanvas 按请求计算写入）
+    const stratumVolumes = ref<Array<{ layerName: string; volumeM3: number; triangles: number }>>([])
+    const volumeComputing = ref(false)
+    const volumeRequest = ref(0)
     // 地层单元控制项（显隐/颜色/透明度）
     const stratumLayers = ref<StratumLayerControl[]>([])
     // 数据库项目的投影坐标原点；用于让真实坐标模型与钻孔使用同一局部坐标系。
@@ -248,6 +261,24 @@ export const useSceneStore = defineStore('scene', () => {
         focusRequest.value = { layerName, requestId: Date.now() }
     }
 
+    function setSectionActive(active: boolean) {
+        sectionState.value = { active, pointA: null, pointB: null }
+    }
+
+    function setSectionPoint(which: 'a' | 'b', point: { x: number; y: number }) {
+        if (which === 'a') sectionState.value = { ...sectionState.value, pointA: point }
+        else sectionState.value = { ...sectionState.value, pointB: point }
+    }
+
+    function resetSectionPoints() {
+        sectionState.value = { ...sectionState.value, pointA: null, pointB: null }
+    }
+
+    /** 请求重新计算各分层模型体积（SceneCanvas 监听 volumeRequest） */
+    function requestVolumeStats() {
+        volumeRequest.value += 1
+    }
+
     function registerStratumLayers(layers: StratumLayerControl[]) {        for (const layer of layers) {
             const index = stratumLayers.value.findIndex((item) => item.key === layer.key)
             if (index >= 0) {
@@ -299,6 +330,10 @@ export const useSceneStore = defineStore('scene', () => {
         loadRequest,
         unloadRequest,
         focusRequest,
+        sectionState,
+        stratumVolumes,
+        volumeComputing,
+        volumeRequest,
         stratumLayers,
         coordinateOrigin,
         verticalScale,
@@ -329,6 +364,10 @@ export const useSceneStore = defineStore('scene', () => {
         setModelLoadStatus,
         requestLoadModel,
         requestFocusStratum,
+        setSectionActive,
+        setSectionPoint,
+        resetSectionPoints,
+        requestVolumeStats,
         registerStratumLayers,
         updateStratumLayer,
         setCoordinateOrigin,

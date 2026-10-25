@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { reactive, ref } from 'vue'
 
-export type WorkspaceDock = 'overview' | 'borehole' | 'table' | 'records' | 'performance'
+export type WorkspaceDock = 'overview' | 'borehole' | 'table' | 'records' | 'volume' | 'performance'
 
 export interface RenderPerformance {
     fps: number
@@ -20,6 +20,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     const performance = reactive<RenderPerformance>({ fps: 0, calls: 0, triangles: 0, geometries: 0, textures: 0 })
     // 鼠标拾取的坐标读数（真实投影坐标/高程，米）；z 为 null 表示当前只落在投影面上
     const cursorCoordinate = ref<{ x: number; y: number; z: number | null } | null>(null)
+    // 剖面图对话框（SceneCanvas 的剖面工具触发打开）
+    const sectionDialogVisible = ref(false)
 
     function toggleLeft() { leftVisible.value = !leftVisible.value }
     function toggleRight() { rightVisible.value = !rightVisible.value }
@@ -30,6 +32,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
     function updatePerformance(stats: RenderPerformance) { Object.assign(performance, stats) }
     function setCursorCoordinate(value: { x: number; y: number; z: number | null } | null) { cursorCoordinate.value = value }
+    function openSectionDialog() { sectionDialogVisible.value = true }
+    function closeSectionDialog() { sectionDialogVisible.value = false }
 
     return {
         leftVisible,
@@ -39,11 +43,14 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         commandPaletteVisible,
         performance,
         cursorCoordinate,
+        sectionDialogVisible,
         toggleLeft,
         toggleRight,
         toggleBottom,
         openDock,
         updatePerformance,
         setCursorCoordinate,
+        openSectionDialog,
+        closeSectionDialog,
     }
 })

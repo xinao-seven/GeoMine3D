@@ -69,6 +69,18 @@
             </div>
         </el-dialog>
 
+        <el-dialog v-model="workspace.sectionDialogVisible" title="勘探线剖面图（沿线钻孔投影）" width="min(1100px, 94vw)"
+            append-to-body class="section-dialog" @opened="renderSectionChart" @closed="disposeSectionChart">
+            <div class="section-toolbar">
+                <span class="section-meta">{{ sectionMetaText }}</span>
+                <el-button size="small" :disabled="!boreholesInSection.length" @click="exportSectionChart">导出 PNG</el-button>
+            </div>
+            <div ref="sectionChartRef" class="section-chart"></div>
+            <p v-if="!boreholesInSection.length" class="section-empty">
+                剖面线走廊（±300m）内没有已加载分层数据的钻孔——请先在左侧资源面板加载钻孔。
+            </p>
+        </el-dialog>
+
         <el-dialog v-model="workspace.commandPaletteVisible" width="560px" :show-close="false" class="command-dialog">
             <el-input v-model="command" size="large" placeholder="输入命令，例如“启用剖切”" @keyup.enter="executeCommand"><template
                     #prefix><el-icon>
@@ -84,7 +96,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -93,10 +105,12 @@ import ResourceExplorer from '@/components/workspace/ResourceExplorer.vue'
 import InspectorPanel from '@/components/workspace/InspectorPanel.vue'
 import AnalysisDock from '@/components/workspace/AnalysisDock.vue'
 import { workspaceApi, type ProjectRecord, type SceneRecord } from '@/api/workspace'
-import { useSceneStore, useWorkspaceStore } from '@/stores'
+import { useSceneStore, useWorkspaceStore, useBoreholeStore } from '@/stores'
 import type { SceneSnapshot } from '@/stores/sceneStore'
+import { boreholeLayerColor } from '@/constants/strataColors'
+import type { BoreholeLayer } from '@/types'
 
-const route = useRoute(); const router = useRouter(); const workspace = useWorkspaceStore(); const sceneStore = useSceneStore()
+const route = useRoute(); const router = useRouter(); const workspace = useWorkspaceStore(); const sceneStore = useSceneStore(); const boreholeStore = useBoreholeStore()
 const { leftVisible, rightVisible, bottomVisible, performance, cursorCoordinate } = storeToRefs(workspace); const project = ref<ProjectRecord | null>(null); const command = ref('')
 const projectName = computed(() => project.value?.name || (route.params.projectId === 'local' ? '本地演示工作区' : '三维地质项目'))
 const isLocal = computed(() => String(route.params.projectId) === 'local')
@@ -217,6 +231,174 @@ async function removeScene(item: SceneRecord) {
 function formatSceneTime(value: string) {
     return new Date(value).toLocaleString('zh-CN', { hour12: false })
 }
+
+// ==================== 勘探线剖面图 ====================
+
+const SECTION_CORRIDOR_M = 300
+
+interface SectionHole {
+    name: string
+    s: number
+    t: number
+    layers: BoreholeLayer[]
+}
+
+const sectionChartRef = ref<HTMLDivElement>()
+let sectionChart: import('echarts').ECharts | null = null
+const boreholesInSection = ref<SectionHole[]>([])
+
+const sectionMetaText = computed(() => {
+    const a = sceneStore.sectionState.pointA
+    const b = sceneStore.sectionState.pointB
+    if (!a || !b) return '剖面线未定义'
+    const length = Math.hypot(b.x - a.x, b.y - a.y)
+    const bearing = (Math.atan2(b.x - a.x, b.y - a.y) * 180 / Math.PI + 360) % 360
+    return `方位角 ${bearing.toFixed(1)}° · 长度 ${length.toFixed(0)} m · 沿线钻孔 ${boreholesInSection.value.length} 个（走廊 ±${SECTION_CORRIDOR_M}m）`
+})
+
+/** 把剖面线走廊内的钻孔投影到剖面线坐标系（s=沿线距离, t=偏距） */
+function computeSectionHoles(): SectionHole[] {
+    const a = sceneStore.sectionState.pointA
+    const b = sceneStore.sectionState.pointB
+    if (!a || !b) return []
+    const dx = b.x - a.x
+    const dy = b.y - a.y
+    const length = Math.hypot(dx, dy)
+    if (length < 1) return []
+    const ux = dx / length
+    const uy = dy / length
+    const holes: SectionHole[] = []
+    for (const item of boreholeStore.list) {
+        if (!item.location || !item.layers?.length) continue
+        const vx = item.location.x - a.x
+        const vy = item.location.y - a.y
+        const s = vx * ux + vy * uy
+        if (s < -50 || s > length + 50) continue
+        const t = Math.abs(vx * uy - vy * ux)
+        if (t > SECTION_CORRIDOR_M) continue
+        holes.push({ name: item.name, s, t, layers: item.layers })
+    }
+    holes.sort((x, y) => x.s - y.s)
+    return holes
+}
+
+function buildSectionOption(holes: SectionHole[]) {
+    const maxDepth = Math.max(1, ...holes.flatMap(hole => hole.layers.map(layer => layer.bottomDepth)))
+    // 柱宽取相邻孔距中位数的 45%，夹在 8~40
+    const gaps: number[] = []
+    for (let i = 1; i < holes.length; i += 1) gaps.push(holes[i].s - holes[i - 1].s)
+    gaps.sort((x, y) => x - y)
+    const medianGap = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 120
+    const barWidth = Math.min(40, Math.max(8, medianGap * 0.45))
+
+    const data = holes.flatMap((hole, holeIndex) =>
+        hole.layers.map((layer, layerIndex) => ({
+            value: [hole.s, layer.topDepth],
+            holeIndex,
+            layerIndex,
+            layer,
+        }))
+    )
+
+    return {
+        backgroundColor: 'transparent',
+        tooltip: {
+            trigger: 'item',
+            formatter: (params: any) => {
+                const d = params.data
+                const layer = d?.layer
+                const hole = holes[d?.holeIndex]
+                if (!layer || !hole) return ''
+                return `<b>${hole.name}</b><br/>${layer.layerName}<br/>顶深 ${layer.topDepth} m · 底深 ${layer.bottomDepth} m<br/>偏距 ${hole.t.toFixed(0)} m`
+            },
+        },
+        grid: { left: 56, right: 24, top: 30, bottom: 34 },
+        xAxis: {
+            type: 'value',
+            name: '沿线距离 m',
+            nameTextStyle: { color: '#77807a', fontSize: 10 },
+            min: 0,
+            max: Math.ceil(Math.max(1, holes.length ? holes[holes.length - 1].s : 1)),
+            axisLabel: { color: '#8b948c', fontSize: 10 },
+            splitLine: { lineStyle: { color: '#1f251f' } },
+        },
+        yAxis: {
+            type: 'value',
+            inverse: true,
+            name: '深度 m',
+            nameTextStyle: { color: '#77807a', fontSize: 10 },
+            max: Math.ceil(maxDepth * 1.05),
+            axisLabel: { color: '#8b948c', fontSize: 10 },
+            splitLine: { lineStyle: { color: '#1f251f' } },
+        },
+        series: [
+            {
+                type: 'custom',
+                renderItem: (params: any, api: any) => {
+                    const d = params.data
+                    const hole = holes[d.holeIndex]
+                    const layer = d.layer
+                    const x0 = api.coord([hole.s - barWidth / 2, layer.topDepth])
+                    const x1 = api.coord([hole.s + barWidth / 2, layer.topDepth])
+                    const y1 = api.coord([hole.s, layer.bottomDepth])
+                    return {
+                        type: 'rect',
+                        shape: {
+                            x: x0[0],
+                            y: x0[1],
+                            width: Math.max(2, x1[0] - x0[0]),
+                            height: Math.max(1, y1[1] - x0[1]),
+                        },
+                        style: {
+                            fill: boreholeLayerColor(layer.color, d.layerIndex),
+                            opacity: 0.92,
+                            stroke: 'rgba(255,255,255,0.25)',
+                            lineWidth: 0.5,
+                        },
+                    }
+                },
+                data,
+                encode: { x: 0, y: 1 },
+                clip: true,
+            },
+        ],
+    }
+}
+
+async function renderSectionChart() {
+    boreholesInSection.value = computeSectionHoles()
+    if (!sectionChartRef.value) return
+    const echarts = await import('echarts')
+    if (!sectionChartRef.value) return
+    if (!sectionChart) sectionChart = echarts.init(sectionChartRef.value)
+    if (!boreholesInSection.value.length) {
+        sectionChart.clear()
+        return
+    }
+    sectionChart.setOption(buildSectionOption(boreholesInSection.value), true)
+}
+
+function disposeSectionChart() {
+    sectionChart?.dispose()
+    sectionChart = null
+}
+
+function exportSectionChart() {
+    if (!sectionChart) return
+    const url = sectionChart.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: '#101411' })
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `section-${Date.now()}.png`
+    link.click()
+}
+
+// 剖面线第二点落定后自动打开剖面图
+watch(() => sceneStore.sectionState.pointB, (pointB) => {
+    if (pointB) workspace.openSectionDialog()
+})
+watch(() => workspace.sectionDialogVisible, (visible) => {
+    if (visible) void renderSectionChart()
+})
 function onGlobalKeydown(event: KeyboardEvent) {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
@@ -582,6 +764,31 @@ onUnmounted(() => {
 .scene-item-actions {
     display: flex;
     gap: 6px
+}
+
+.section-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px
+}
+
+.section-meta {
+    flex: 1;
+    color: #606266;
+    font-size: 12px
+}
+
+.section-chart {
+    width: 100%;
+    height: 460px;
+    background: #101411
+}
+
+.section-empty {
+    margin: 6px 0 0;
+    color: #909399;
+    font-size: 12px
 }
 
 .status-spacer {

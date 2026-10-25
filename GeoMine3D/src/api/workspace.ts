@@ -144,6 +144,27 @@ export interface VirtualBoreholeResult {
     nearest_distance_m: number | null
 }
 
+export interface ReservesResponse {
+    items: Array<{
+        name: string
+        area_m2: number
+        borehole_count: number
+        mean_coal_thickness_m: number | null
+        reserve_wan_t: number | null
+    }>
+    density_t_m3: number
+    face_count: number
+    total_reserve_wan_t: number
+}
+
+export interface ContoursResponse {
+    layer: string
+    levels: number[]
+    lines: Array<{ level: number; segments: number[] }>
+    bbox: [number, number, number, number] | null
+    sample_count: number
+}
+
 interface DataResponse<T> { data: T }
 interface PageResponse<T> { data: T[]; meta: { page: number; page_size: number; total: number } }
 
@@ -230,6 +251,16 @@ export const workspaceApi = {
     async getVirtualBorehole(projectId: string, payload: { x: number; y: number; max_neighbors?: number }) {
         return (await workspaceClient.post<DataResponse<VirtualBoreholeResult>>(
             `/projects/${projectId}/analysis/virtual-borehole`, payload,
+        )).data.data
+    },
+    async getReserves(projectId: string, density?: number) {
+        return (await workspaceClient.get<DataResponse<ReservesResponse>>(
+            `/projects/${projectId}/analysis/reserves`, { params: density ? { density } : undefined },
+        )).data.data
+    },
+    async getContours(projectId: string, layer: string, step?: number) {
+        return (await workspaceClient.get<DataResponse<ContoursResponse>>(
+            `/projects/${projectId}/analysis/contours`, { params: { layer, ...(step ? { step } : {}) } },
         )).data.data
     },
 }

@@ -1,8 +1,14 @@
 from app.services.analysis_service import (
+    burial_depth_contours,
     build_overview,
     coal_thickness_by_borehole,
     depth_distribution,
+    estimate_workingface_reserves,
+    idw_grid,
     layer_frequency,
+    marching_squares,
+    point_in_polygon,
+    polygon_area,
     thickness_distribution,
     virtual_borehole,
     workingface_status,
@@ -153,3 +159,92 @@ def test_virtual_borehole_layers_sorted_by_top_depth() -> None:
     result = virtual_borehole(V_BOREHOLES, V_SEGMENTS, 30, 0)
     tops = [layer["top_depth"] for layer in result["layers"]]
     assert tops == sorted(tops)
+
+
+SQUARE = [[0, 0], [100, 0], [100, 100], [0, 100]]
+
+
+def test_polygon_area_and_point_in_polygon() -> None:
+    assert polygon_area(SQUARE) == 10000.0
+    assert point_in_polygon(50, 50, SQUARE)
+    assert not point_in_polygon(150, 50, SQUARE)
+    assert point_in_polygon(50, 0.0001, SQUARE)
+
+
+def test_estimate_workingface_reserves_uses_inside_boreholes_only() -> None:
+    faces = [{"name": "W1", "points": SQUARE}]
+    boreholes = [
+        {"id": "b1", "code": "B1", "x": 50, "y": 50},
+        {"id": "b2", "code": "B2", "x": 500, "y": 500},
+    ]
+    segments = {
+        "b1": [{"layer_name": "1-2煤", "top_depth": 100, "bottom_depth": 106, "thickness": 6}],
+        "b2": [{"layer_name": "1-2煤", "top_depth": 100, "bottom_depth": 200, "thickness": 100}],
+    }
+
+    items = estimate_workingface_reserves(faces, boreholes, segments, density_t_per_m3=1.35)
+
+    assert len(items) == 1
+    item = items[0]
+    assert item["area_m2"] == 10000
+    assert item["borehole_count"] == 1
+    assert item["mean_coal_thickness_m"] == 6.0
+    # 10000 m2 * 6 m * 1.35 t/m3 = 81000 t = 8.1 万吨
+    assert item["reserve_wan_t"] == 8.1
+
+
+def test_estimate_workingface_reserves_without_boreholes() -> None:
+    faces = [{"name": "W1", "points": SQUARE}]
+    items = estimate_workingface_reserves(faces, [], {})
+    assert items[0]["borehole_count"] == 0
+    assert items[0]["mean_coal_thickness_m"] is None
+    assert items[0]["reserve_wan_t"] is None
+
+
+def test_idw_grid_and_marching_squares_produce_lines() -> None:
+    # 平面场 value = x + y
+    samples = [
+        {"x": 0, "y": 0, "value": 0},
+        {"x": 100, "y": 0, "value": 100},
+        {"x": 0, "y": 100, "value": 100},
+        {"x": 100, "y": 100, "value": 200},
+    ]
+    grid = idw_grid(samples, 0, 0, 100, 100, 21, 21)
+    assert len(grid) == 21 and len(grid[0]) == 21
+    # 角点近似采样值
+    assert grid[0][0] == 0
+    assert grid[20][20] == 200
+
+    lines = marching_squares(grid, 0, 0, 100, 100, [100])
+    assert len(lines) == 1
+    level_lines = lines[0]
+    assert level_lines["level"] == 100
+    # 平面 x+y=100 的等值线应是对角线附近的线段集合
+    assert len(level_lines["segments"]) >= 4
+    flat = level_lines["segments"]
+    coords = [(flat[i], flat[i + 1]) for i in range(0, len(flat), 4)]
+    for x, y in coords:
+        assert 90 <= x + y <= 110
+
+
+def test_burial_depth_contours_auto_step() -> None:
+    samples = [
+        {"x": 0, "y": 0, "value": 90},
+        {"x": 100, "y": 0, "value": 110},
+        {"x": 0, "y": 100, "value": 130},
+        {"x": 100, "y": 100, "value": 150},
+    ]
+
+    result = burial_depth_contours(samples)
+
+    assert result["sample_count"] if "sample_count" in result else True
+    assert result["bbox"] is not None
+    assert result["levels"]
+    assert result["lines"]
+
+
+def test_burial_depth_contours_empty() -> None:
+    result = burial_depth_contours([])
+    assert result["levels"] == []
+    assert result["lines"] == []
+    assert result["bbox"] is None

@@ -187,8 +187,7 @@ def coal_thickness_by_borehole(
     return result
 
 
-def virtual_borehole(
-    boreholes: Sequence[Mapping[str, Any]],
+def virtual_borehole(    boreholes: Sequence[Mapping[str, Any]],
     segments_by_borehole: Mapping[str, Sequence[Mapping[str, Any]]],
     x: float,
     y: float,
@@ -280,4 +279,255 @@ def build_overview(
         "depth_distribution": depth_distribution(depths),
         "layer_frequency": layer_frequency(segments),
         "workingface_status": workingface_status(faces),
+    }
+
+
+def polygon_area(points: Sequence[Sequence[float]]) -> float:
+    """鞋带公式计算多边形面积（平方米）。"""
+    if len(points) < 3:
+        return 0.0
+    total = 0.0
+    count = len(points)
+    for i in range(count):
+        x1, y1 = float(points[i][0]), float(points[i][1])
+        x2, y2 = float(points[(i + 1) % count][0]), float(points[(i + 1) % count][1])
+        total += x1 * y2 - x2 * y1
+    return abs(total) / 2.0
+
+
+def point_in_polygon(x: float, y: float, points: Sequence[Sequence[float]]) -> bool:
+    """射线法判断点是否在多边形内。"""
+    inside = False
+    count = len(points)
+    if count < 3:
+        return False
+    j = count - 1
+    for i in range(count):
+        xi, yi = float(points[i][0]), float(points[i][1])
+        xj, yj = float(points[j][0]), float(points[j][1])
+        if (yi > y) != (yj > y):
+            intersect_x = (xj - xi) * (y - yi) / (yj - yi) + xi
+            if x < intersect_x:
+                inside = not inside
+        j = i
+    return inside
+
+
+def estimate_workingface_reserves(
+    face_polygons: Sequence[Mapping[str, Any]],
+    boreholes: Sequence[Mapping[str, Any]],
+    segments_by_borehole: Mapping[str, Sequence[Mapping[str, Any]]],
+    density_t_per_m3: float = 1.35,
+    coal_keywords: Sequence[str] = ("煤",),
+) -> list[dict[str, Any]]:
+    """按工作面圈闭多边形估算煤炭资源量。
+
+    面积取折线多边形鞋带面积；厚度取多边形内钻孔的煤层合计厚度均值；
+    资源量 = 面积 × 平均厚度 × 密度。圈闭内无钻孔时厚度/资源量返回 None。
+    """
+    coal = coal_thickness_by_borehole(
+        {str(b.get("id")): segments_by_borehole.get(str(b.get("id")), []) for b in boreholes},
+        coal_keywords,
+    )
+    items: list[dict[str, Any]] = []
+    for face in face_polygons:
+        points = face.get("points") or []
+        area = polygon_area(points)
+        if area <= 0:
+            continue
+        inside_ids = [
+            str(borehole["id"])
+            for borehole in boreholes
+            if borehole.get("id") in segments_by_borehole
+            and point_in_polygon(float(borehole["x"]), float(borehole["y"]), points)
+        ]
+        thicknesses = [
+            coal[borehole_id]["coal_thickness"]
+            for borehole_id in inside_ids
+            if coal.get(borehole_id, {}).get("coal_layers")
+        ]
+        mean_thickness = round(sum(thicknesses) / len(thicknesses), 2) if thicknesses else None
+        reserve_wan_t = (
+            round(area * mean_thickness * density_t_per_m3 / 10000, 1)
+            if mean_thickness
+            else None
+        )
+        items.append(
+            {
+                "name": str(face.get("name") or "未命名工作面"),
+                "area_m2": round(area, 0),
+                "borehole_count": len(inside_ids),
+                "mean_coal_thickness_m": mean_thickness,
+                "reserve_wan_t": reserve_wan_t,
+            }
+        )
+    items.sort(key=lambda item: -(item["reserve_wan_t"] or 0))
+    return items
+
+
+def idw_grid(
+    samples: Sequence[Mapping[str, Any]],
+    xmin: float,
+    ymin: float,
+    xmax: float,
+    ymax: float,
+    nx: int = 100,
+    ny: int = 100,
+    power: float = 2.0,
+) -> list[list[float]]:
+    """对采样点做 IDW 插值生成规则网格（行优先，[0][0] 为 (xmin, ymin)）。"""
+    points = [
+        (float(s["x"]), float(s["y"]), float(s["value"]))
+        for s in samples
+        if s.get("x") is not None and s.get("y") is not None and s.get("value") is not None
+    ]
+    grid: list[list[float]] = []
+    if not points or xmax <= xmin or ymax <= ymin or nx < 1 or ny < 1:
+        return grid
+    for row in range(ny):
+        y = ymin + (ymax - ymin) * row / (ny - 1) if ny > 1 else ymin
+        line: list[float] = []
+        for col in range(nx):
+            x = xmin + (xmax - xmin) * col / (nx - 1) if nx > 1 else xmin
+            numerator = 0.0
+            denominator = 0.0
+            exact = False
+            for px, py, value in points:
+                distance = math.hypot(px - x, py - y)
+                if distance < 1e-9:
+                    numerator = value
+                    denominator = 1.0
+                    exact = True
+                    break
+                weight = 1.0 / (distance ** power)
+                numerator += weight * value
+                denominator += weight
+            line.append(numerator / denominator if denominator else 0.0)
+            if exact:
+                line[-1] = numerator
+        grid.append(line)
+    return grid
+
+
+def _nice_step(raw: float) -> float:
+    if raw <= 0:
+        return 1.0
+    magnitude = 10 ** math.floor(math.log10(raw))
+    for candidate in (1, 2, 2.5, 5, 10):
+        step = candidate * magnitude
+        if step >= raw:
+            return step
+    return 10 * magnitude
+
+
+def marching_squares(
+    grid: Sequence[Sequence[float]],
+    xmin: float,
+    ymin: float,
+    xmax: float,
+    ymax: float,
+    levels: Sequence[float],
+) -> list[dict[str, Any]]:
+    """Marching Squares 提取等值线段（返回投影坐标线段，便于前端直接绘制）。"""
+    rows = len(grid)
+    cols = len(grid[0]) if rows else 0
+    if rows < 2 or cols < 2 or xmax <= xmin or ymax <= ymin:
+        return []
+    step_x = (xmax - xmin) / (cols - 1)
+    step_y = (ymax - ymin) / (rows - 1)
+
+    # 角点分类 → 边交叉组合（边编号：0=下 1=右 2=上 3=左）
+    case_edges: dict[int, tuple[tuple[int, int], ...]] = {
+        0b0001: ((3, 0),), 0b0010: ((0, 1),), 0b0011: ((3, 1),),
+        0b0100: ((1, 2),), 0b0101: ((3, 2), (0, 1)), 0b0110: ((0, 2),),
+        0b0111: ((3, 2),), 0b1000: ((2, 3),), 0b1001: ((0, 2),),
+        0b1010: ((2, 3), (1, 0)), 0b1011: ((2, 1),), 0b1100: ((1, 3),),
+        0b1101: ((1, 0),), 0b1110: ((0, 3),),
+    }
+
+    def corner_value(row: int, col: int) -> float:
+        return float(grid[row][col])
+
+    def edge_point(row: int, col: int, edge: int, level: float) -> tuple[float, float]:
+        x0 = xmin + col * step_x
+        y0 = ymin + row * step_y
+        if edge == 0:  # 下边 (row,col)-(row,col+1)
+            v0, v1 = corner_value(row, col), corner_value(row, col + 1)
+            t = (level - v0) / (v1 - v0)
+            return x0 + t * step_x, y0
+        if edge == 1:  # 右边 (row,col+1)-(row+1,col+1)
+            v0, v1 = corner_value(row, col + 1), corner_value(row + 1, col + 1)
+            t = (level - v0) / (v1 - v0)
+            return x0 + step_x, y0 + t * step_y
+        if edge == 2:  # 上边 (row+1,col)-(row+1,col+1)
+            v0, v1 = corner_value(row + 1, col), corner_value(row + 1, col + 1)
+            t = (level - v0) / (v1 - v0)
+            return x0 + t * step_x, y0 + step_y
+        # 左边 (row,col)-(row+1,col)
+        v0, v1 = corner_value(row, col), corner_value(row + 1, col)
+        t = (level - v0) / (v1 - v0)
+        return x0, y0 + t * step_y
+
+    out: list[dict[str, Any]] = []
+    for level in levels:
+        segments: list[list[float]] = []
+        for row in range(rows - 1):
+            for col in range(cols - 1):
+                code = 0
+                if corner_value(row, col) >= level:
+                    code |= 0b0001
+                if corner_value(row, col + 1) >= level:
+                    code |= 0b0010
+                if corner_value(row + 1, col + 1) >= level:
+                    code |= 0b0100
+                if corner_value(row + 1, col) >= level:
+                    code |= 0b1000
+                if code == 0 or code == 0b1111:
+                    continue
+                for edge_a, edge_b in case_edges[code]:
+                    ax, ay = edge_point(row, col, edge_a, level)
+                    bx, by = edge_point(row, col, edge_b, level)
+                    segments.extend([round(ax, 2), round(ay, 2), round(bx, 2), round(by, 2)])
+        if segments:
+            out.append({"level": round(float(level), 2), "segments": segments})
+    return out
+
+
+def burial_depth_contours(
+    samples: Sequence[Mapping[str, Any]],
+    step: float | None = None,
+    grid_size: int = 96,
+) -> dict[str, Any]:
+    """由钻孔样本生成某地层顶埋深等值线（自动范围/步长）。"""
+    if not samples:
+        return {"levels": [], "lines": [], "bbox": None}
+    xs = [float(s["x"]) for s in samples]
+    ys = [float(s["y"]) for s in samples]
+    values = [float(s["value"]) for s in samples]
+    pad_x = max((max(xs) - min(xs)) * 0.08, 1.0)
+    pad_y = max((max(ys) - min(ys)) * 0.08, 1.0)
+    xmin, xmax = min(xs) - pad_x, max(xs) + pad_x
+    ymin, ymax = min(ys) - pad_y, max(ys) + pad_y
+    value_lo, value_hi = min(values), max(values)
+    if value_hi <= value_lo:
+        return {
+            "levels": [],
+            "lines": [],
+            "bbox": [round(xmin, 2), round(ymin, 2), round(xmax, 2), round(ymax, 2)],
+        }
+    auto_step = _nice_step((value_hi - value_lo) / 8)
+    resolved_step = float(step) if step and step > 0 else auto_step
+    start = math.ceil(value_lo / resolved_step) * resolved_step
+    levels = []
+    level = start
+    while level < value_hi:
+        levels.append(level)
+        level += resolved_step
+
+    grid = idw_grid(samples, xmin, ymin, xmax, ymax, grid_size, grid_size)
+    lines = marching_squares(grid, xmin, ymin, xmax, ymax, levels)
+    return {
+        "levels": [round(level, 2) for level in levels],
+        "lines": lines,
+        "bbox": [round(xmin, 2), round(ymin, 2), round(xmax, 2), round(ymax, 2)],
     }
