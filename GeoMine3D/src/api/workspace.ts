@@ -165,6 +165,30 @@ export interface ContoursResponse {
     sample_count: number
 }
 
+/** 由 scripts/preprocess_basemap.py 生成的底图元数据（静态资源） */
+export interface BasemapMeta {
+    image: string
+    width_px: number
+    height_px: number
+    bounds: { xmin: number; ymin: number; xmax: number; ymax: number }
+    crs: string
+    source_crs: string
+    source_file: string
+    elevation_range_m: [number, number]
+    generated_utc: string
+}
+
+/** 尝试读取底图元数据；未预处理（404）时返回 null */
+export async function fetchBasemapMeta(): Promise<BasemapMeta | null> {
+    try {
+        const response = await fetch('/static/models/basemap/basemap.json', { cache: 'no-store' })
+        if (!response.ok) return null
+        return (await response.json()) as BasemapMeta
+    } catch {
+        return null
+    }
+}
+
 interface DataResponse<T> { data: T }
 interface PageResponse<T> { data: T[]; meta: { page: number; page_size: number; total: number } }
 

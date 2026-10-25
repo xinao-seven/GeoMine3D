@@ -116,6 +116,8 @@ import { SelectionManager } from '@/three/managers/SelectionManager'
 import { SettlementManager } from '@/three/managers/SettlementManager'
 import { BoundaryOverlay } from '@/three/managers/BoundaryOverlay'
 import { ContourOverlay, contourColor } from '@/three/managers/ContourOverlay'
+import { StratumLodController } from '@/three/managers/StratumLodController'
+import { BasemapOverlay } from '@/three/managers/BasemapOverlay'
 import type { SettlementIndex } from '@/three/managers/SettlementManager'
 import SceneToolbox from '@/components/three/SceneToolbox.vue'
 import type { ToolGroup } from '@/components/three/SceneToolbox.vue'
@@ -129,7 +131,7 @@ import type { AnnotationResult } from '@/three/tools/AnnotationTool'
 import { StratumExplodeTool } from '@/three/tools/StratumExplodeTool'
 import { AxisGizmoTool } from '@/three/tools/AxisGizmoTool'
 import { BoundingBoxTool } from '@/three/tools/BoundingBoxTool'
-import { workspaceApi, type BoundariesPayload, type VirtualBoreholeResult, type ContoursResponse } from '@/api/workspace'
+import { workspaceApi, fetchBasemapMeta, type BasemapMeta, type BoundariesPayload, type VirtualBoreholeResult, type ContoursResponse } from '@/api/workspace'
 import { useSceneStore, useBoreholeStore, useWorkspaceStore } from '@/stores'
 import type { SceneSnapshot } from '@/stores/sceneStore'
 import { useSettlementStore } from '@/stores/settlementStore'
@@ -208,6 +210,14 @@ const contourLoading = ref(false)
 const contourLayerIndex = ref(0)
 const contourData = ref<ContoursResponse | null>(null)
 let contourOverlay: ContourOverlay | null = null
+// 地层 LOD 动态切换
+const lodEnabled = ref(false)
+let lodController: StratumLodController | null = null
+// GeoTIFF 预处理底图
+const basemapEnabled = ref(false)
+const basemapOpacity = ref(0.8)
+const basemapMeta = ref<BasemapMeta | null>(null)
+let basemapOverlay: BasemapOverlay | null = null
 const hoverLabel = ref({ visible: false, name: '', x: 0, y: 0 })
 const isDragOver = ref(false)
 const dropError = ref('')
@@ -294,6 +304,7 @@ async function loadStratumModel(model: ModelItem) {
         alignProjectedModel(object)
         modelManager.addModel({ id: model.id, name: model.name, type: 'stratum', object })
         registerStratumLayersFromObject(object, model.id, model.name)
+        lodController?.register(model, object)
     } catch {
         addPlaceholderStratum(model)
     }
@@ -411,6 +422,7 @@ function unloadModelByRequest(req: { type: 'stratum' | 'borehole' | 'workingface
         modelManager.removeModel(req.id)
         sceneStore.clearLoadStatus(req.type, req.id)
         if (req.type === 'stratum') {
+            lodController?.unregister(req.id)
             sceneStore.removeStratumLayersByModel(req.id)
             // 地层被移除后,沉陷位移场的绑定也要同步收缩(失效 mesh 会被自动修剪),
             // 但在那之前必须把基线位置写回去,否则再加载会以变形位置为基线。
@@ -1277,6 +1289,15 @@ watch(boundaryEnabled, (visible) => {
     boundaryOverlay?.setVisible(visible)
 })
 
+// LOD 开关 + 沉陷/炸开期间抑制
+watch(lodEnabled, (enabled) => {
+    lodController?.setEnabled(enabled)
+})
+
+watch([() => settlementStore.enabled, stratumExploded], ([settlementOn, exploded]) => {
+    lodController?.setSuppressed(settlementOn || exploded)
+})
+
 // 地层图例数据：按层名去重，保留登记顺序（自下而上）
 const legendItems = computed(() => {
     const seen = new Map<string, string>()
@@ -1324,6 +1345,34 @@ function cycleContourLayer() {
     contourLayerIndex.value = (contourLayerIndex.value + 1) % contourLayerNames.value.length
     if (contourEnabled.value) void refreshContours()
 }
+
+// ==================== GeoTIFF 底图 ====================
+
+function rebuildBasemap() {
+    if (!basemapOverlay || !sceneManager || !basemapMeta.value) return
+    const origin = coordinateOrigin.value
+    if (!origin) return
+    void basemapOverlay
+        .build(basemapMeta.value, { x: origin.x, y: origin.y }, overlayYLevel())
+        .then((built) => {
+            basemapOverlay?.setOpacity(basemapOpacity.value)
+            basemapOverlay?.setVisible(built && basemapEnabled.value)
+        })
+}
+
+async function ensureBasemapMeta() {
+    if (basemapMeta.value) return
+    basemapMeta.value = await fetchBasemapMeta()
+    rebuildBasemap()
+}
+
+watch(basemapEnabled, (visible) => {
+    basemapOverlay?.setVisible(visible && Boolean(basemapMeta.value))
+})
+
+watch(basemapOpacity, (value) => {
+    basemapOverlay?.setOpacity(value)
+})
 
 // ==================== Layer ====================
 
@@ -1585,6 +1634,12 @@ const toolGroups = computed<ToolGroup[]>(() => [
             { kind: 'switch', label: '坐标盒', value: boundingBoxEnabled.value, event: 'bounding-box' },
             { kind: 'switch', label: '矿区边界', value: boundaryEnabled.value, event: 'boundary' },
             { kind: 'switch', label: '地层图例', value: legendEnabled.value, event: 'legend' },
+            {
+                kind: 'switch', label: lodEnabled.value
+                    ? `LOD 优化（远处低模 ${lodController?.lowActiveCount ?? 0}/${lodController?.availableCount ?? 0}）`
+                    : 'LOD 优化（远处自动低模）',
+                value: lodEnabled.value, event: 'lod',
+            },
             ...(boundaryEnabled.value && !boundariesData.value
                 ? [{ kind: 'note' as const, text: '矿区边界数据尚未加载（仅项目模式可用）。', warn: true }]
                 : []),
@@ -1669,6 +1724,20 @@ const toolGroups = computed<ToolGroup[]>(() => [
                 : []),
             ...(contourEnabled.value && !isProjectMode.value
                 ? [{ kind: 'note' as const, text: '等值线需要项目模式（本地演示无钻孔库）。', warn: true }]
+                : []),
+            {
+                kind: 'switch', label: basemapEnabled.value ? '地形底图' : '地形底图（DEM 预处理后可用）',
+                value: basemapEnabled.value, event: 'basemap', disabled: !basemapMeta.value,
+            },
+            ...(basemapEnabled.value
+                ? [{
+                    kind: 'slider' as const, label: '底图透明度', value: basemapOpacity.value,
+                    display: `${Math.round(basemapOpacity.value * 100)}%`, min: 0.1, max: 1, step: 0.05,
+                    event: 'basemap-opacity',
+                }]
+                : []),
+            ...(basemapEnabled.value && !basemapMeta.value
+                ? [{ kind: 'note' as const, text: '尚未生成底图：运行 backend/scripts/preprocess_basemap.py 预处理 DEM。', warn: true }]
                 : []),
         ],
     },
@@ -1766,6 +1835,7 @@ function onToolEvent(event: string, payload?: any) {
         case 'bounding-box': toggleBoundingBox(); break
         case 'boundary': boundaryEnabled.value = Boolean(payload); break
         case 'legend': legendEnabled.value = Boolean(payload); break
+        case 'lod': lodEnabled.value = Boolean(payload); break
         case 'measure': toggleMeasureTool(); break
         case 'clear-measurements': clearMeasurements(); break
         case 'annotation': toggleAnnotationTool(); break
@@ -1781,6 +1851,8 @@ function onToolEvent(event: string, payload?: any) {
             if (contourEnabled.value && !contourData.value) void refreshContours()
             break
         case 'contour-cycle': cycleContourLayer(); break
+        case 'basemap': basemapEnabled.value = Boolean(payload); break
+        case 'basemap-opacity': basemapOpacity.value = Number(payload) || 0.8; break
         case 'settlement-toggle':
             settlementStore.enabled = Boolean(payload)
             // 关闭时要清掉“未绑定”的旧原因,否则再次开启会闪现上一次的提示
@@ -1933,6 +2005,11 @@ async function initScene() {
     contourOverlay = new ContourOverlay()
     sceneManager.scene.add(contourOverlay.group)
 
+    lodController = new StratumLodController(cameraManager.camera)
+
+    basemapOverlay = new BasemapOverlay()
+    sceneManager.scene.add(basemapOverlay.group)
+
     if (toolState.value.clipHeight !== 0) {
         clipTool.setHeight(toolState.value.clipHeight)
     }
@@ -2064,7 +2141,9 @@ watch(coordinateOrigin, (origin) => {
     boundingBoxTool?.refresh()
     rebuildBoundaryOverlay()
     rebuildContourOverlay()
+    rebuildBasemap()
     void ensureBoundaries()
+    void ensureBasemapMeta()
 })
 
 // 沉陷对比:启用 → 拉位移场并绑定;参数变化 → 同步到几何
@@ -2202,6 +2281,10 @@ onUnmounted(() => {
     boundaryOverlay = null
     contourOverlay?.dispose()
     contourOverlay = null
+    lodController?.dispose()
+    lodController = null
+    basemapOverlay?.dispose()
+    basemapOverlay = null
     // geoRoot 随画布销毁,竖向倍率也要回默认,否则下次进来状态不一致
     sceneStore.resetVerticalScale()
     settlementManager?.restoreBase()
