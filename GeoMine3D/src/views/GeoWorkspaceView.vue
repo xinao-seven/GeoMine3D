@@ -18,10 +18,10 @@
                         <Operation />
                     </el-icon></button>
                 <span class="tool-divider"></span>
-                <button title="保存场景"><el-icon>
+                <button title="保存场景 / 视角书签" @click="openSceneManager"><el-icon>
                         <Collection />
                     </el-icon></button>
-                <button class="export-button"><el-icon>
+                <button class="export-button" @click="takeSnapshot"><el-icon>
                         <Camera />
                     </el-icon> 快照</button>
             </div>
@@ -33,7 +33,7 @@
             <div class="viewport-shell">
                 <div class="viewport-ruler top-ruler"></div>
                 <div class="viewport-ruler left-ruler"></div>
-                <SceneCanvas />
+                <SceneCanvas ref="sceneCanvasRef" />
                 <div class="viewport-badge"><i></i> WEBGL / PERSPECTIVE</div>
             </div>
             <InspectorPanel v-if="rightVisible" class="right-dock" />
@@ -42,10 +42,32 @@
 
         <footer class="status-bar">
             <span><i class="online"></i> ENGINE READY</span><span>CRS {{ project?.coordinate_system || 'LOCAL' }}</span>
-            <span>X — &nbsp; Y — &nbsp; Z —</span><span class="status-spacer"></span><span>FPS {{ performance.fps
+            <span class="cursor-coords">{{ cursorText }}</span><span class="status-spacer"></span><span>FPS {{ performance.fps
                 }}</span><span>CALLS {{ performance.calls }}</span><span>TRI {{ compactNumber(performance.triangles)
                 }}</span>
         </footer>
+
+        <el-dialog v-model="sceneDialogVisible" title="场景管理" width="500px" class="scene-dialog" append-to-body>
+            <div class="scene-save-row">
+                <el-input v-model="sceneName" placeholder="场景名称，例如：3号勘探线视角" maxlength="60"
+                    @keyup.enter="saveScene" />
+                <el-button type="primary" :loading="sceneSaving" :disabled="isLocal" @click="saveScene">保存当前视角</el-button>
+            </div>
+            <p v-if="isLocal" class="scene-hint">本地演示模式不连接数据服务，无法保存场景；视角仍可在会话内切换。</p>
+            <div class="scene-list">
+                <div v-for="item in scenes" :key="item.id" class="scene-item">
+                    <div class="scene-item-info">
+                        <strong>{{ item.name }}</strong>
+                        <small>{{ formatSceneTime(item.updated_at) }}</small>
+                    </div>
+                    <div class="scene-item-actions">
+                        <el-button size="small" @click="applyScene(item)">载入</el-button>
+                        <el-button size="small" type="danger" plain @click="removeScene(item)">删除</el-button>
+                    </div>
+                </div>
+                <div v-if="!scenes.length" class="scene-hint">暂无已保存场景</div>
+            </div>
+        </el-dialog>
 
         <el-dialog v-model="workspace.commandPaletteVisible" width="560px" :show-close="false" class="command-dialog">
             <el-input v-model="command" size="large" placeholder="输入命令，例如“启用剖切”" @keyup.enter="executeCommand"><template
@@ -65,16 +87,19 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import SceneCanvas from '@/components/three/SceneCanvas.vue'
 import ResourceExplorer from '@/components/workspace/ResourceExplorer.vue'
 import InspectorPanel from '@/components/workspace/InspectorPanel.vue'
 import AnalysisDock from '@/components/workspace/AnalysisDock.vue'
-import { workspaceApi, type ProjectRecord } from '@/api/workspace'
+import { workspaceApi, type ProjectRecord, type SceneRecord } from '@/api/workspace'
 import { useSceneStore, useWorkspaceStore } from '@/stores'
+import type { SceneSnapshot } from '@/stores/sceneStore'
 
 const route = useRoute(); const router = useRouter(); const workspace = useWorkspaceStore(); const sceneStore = useSceneStore()
-const { leftVisible, rightVisible, bottomVisible, performance } = storeToRefs(workspace); const project = ref<ProjectRecord | null>(null); const command = ref('')
+const { leftVisible, rightVisible, bottomVisible, performance, cursorCoordinate } = storeToRefs(workspace); const project = ref<ProjectRecord | null>(null); const command = ref('')
 const projectName = computed(() => project.value?.name || (route.params.projectId === 'local' ? '本地演示工作区' : '三维地质项目'))
+const isLocal = computed(() => String(route.params.projectId) === 'local')
 const commands = [
     { name: '启用三轴剖切', icon: 'Crop', shortcut: 'C', run: () => sceneStore.activateTool('clip') },
     { name: '开始距离测量', icon: 'ScaleToOriginal', shortcut: 'M', run: () => sceneStore.activateTool('measure') },
@@ -86,6 +111,112 @@ const filteredCommands = computed(() => commands.filter(item => item.name.includ
 function runCommand(item: typeof commands[number]) { item.run(); workspace.commandPaletteVisible = false; command.value = '' }
 function executeCommand() { if (filteredCommands.value[0]) runCommand(filteredCommands.value[0]) }
 function compactNumber(value: number) { return new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(value) }
+
+// ==================== 快照与场景管理 ====================
+
+const sceneCanvasRef = ref<InstanceType<typeof SceneCanvas> | null>(null)
+const sceneDialogVisible = ref(false)
+const sceneName = ref('')
+const sceneSaving = ref(false)
+const scenes = ref<SceneRecord[]>([])
+
+const cursorText = computed(() => {
+    const c = cursorCoordinate.value
+    if (!c) return 'X —   Y —   高程 —'
+    const zText = c.z === null ? '—' : c.z.toFixed(2)
+    return `X ${c.x.toFixed(2)}   Y ${c.y.toFixed(2)}   高程 ${zText}`
+})
+
+function takeSnapshot() {
+    const dataUrl = sceneCanvasRef.value?.captureImage()
+    if (!dataUrl) {
+        ElMessage.warning('场景尚未就绪，无法截图')
+        return
+    }
+    const link = document.createElement('a')
+    link.href = dataUrl
+    link.download = `geomine-snapshot-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.png`
+    link.click()
+    ElMessage.success('快照已导出为 PNG')
+}
+
+async function openSceneManager() {
+    sceneDialogVisible.value = true
+    if (isLocal.value) return
+    try {
+        scenes.value = await workspaceApi.listScenes(String(route.params.projectId))
+    } catch { /* 列表加载失败时保留空态 */ }
+}
+
+function buildScenePayload(name: string) {
+    const state = sceneCanvasRef.value?.getSceneState()
+    return {
+        name,
+        camera_json: state?.camera ?? {},
+        layers_json: state?.layers ?? [],
+        clipping_json: state?.clip ?? {},
+        explode_json: state?.explode ?? {},
+        render_settings_json: { verticalScale: state?.verticalScale, showEdges: state?.showEdges },
+    }
+}
+
+async function saveScene() {
+    const name = sceneName.value.trim()
+    if (!name) {
+        ElMessage.warning('请输入场景名称')
+        return
+    }
+    if (isLocal.value || !sceneCanvasRef.value) return
+    sceneSaving.value = true
+    try {
+        const existing = scenes.value.find(item => item.name === name)
+        if (existing) {
+            const updated = await workspaceApi.updateScene(existing.id, buildScenePayload(name))
+            const index = scenes.value.findIndex(item => item.id === existing.id)
+            if (index >= 0 && updated) scenes.value[index] = updated
+            ElMessage.success(`场景「${name}」已更新`)
+        } else {
+            const created = await workspaceApi.createScene(String(route.params.projectId), buildScenePayload(name))
+            if (created) scenes.value.unshift(created)
+            ElMessage.success(`场景「${name}」已保存`)
+        }
+        sceneName.value = ''
+    } catch {
+        ElMessage.error('场景保存失败')
+    } finally {
+        sceneSaving.value = false
+    }
+}
+
+function sceneToSnapshot(record: SceneRecord): SceneSnapshot {
+    return {
+        camera: (record.camera_json || {}) as SceneSnapshot['camera'],
+        layers: (record.layers_json || []) as SceneSnapshot['layers'],
+        showEdges: record.render_settings_json?.showEdges,
+        verticalScale: record.render_settings_json?.verticalScale,
+        clip: (record.clipping_json || {}) as SceneSnapshot['clip'],
+        explode: (record.explode_json || {}) as SceneSnapshot['explode'],
+    }
+}
+
+function applyScene(item: SceneRecord) {
+    sceneCanvasRef.value?.applySceneState(sceneToSnapshot(item))
+    sceneDialogVisible.value = false
+    ElMessage.success(`已载入场景「${item.name}」`)
+}
+
+async function removeScene(item: SceneRecord) {
+    try {
+        await workspaceApi.deleteScene(item.id)
+        scenes.value = scenes.value.filter(s => s.id !== item.id)
+    } catch {
+        ElMessage.error('场景删除失败')
+    }
+}
+
+function formatSceneTime(value: string) {
+    return new Date(value).toLocaleString('zh-CN', { hour12: false })
+}
 function onGlobalKeydown(event: KeyboardEvent) {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
@@ -403,6 +534,54 @@ onUnmounted(() => {
 
 .status-bar i.online {
     background: #6c9672
+}
+
+.cursor-coords {
+    color: #9aa39a;
+    font-family: Consolas, monospace;
+    letter-spacing: .02em
+}
+
+.scene-save-row {
+    display: flex;
+    gap: 10px
+}
+
+.scene-hint {
+    margin: 10px 0 0;
+    color: #8a938a;
+    font-size: 12px
+}
+
+.scene-list {
+    margin-top: 14px;
+    max-height: 320px;
+    overflow: auto;
+    border-top: 1px solid #ebeef5
+}
+
+.scene-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 2px;
+    border-bottom: 1px solid #f0f2f5
+}
+
+.scene-item-info strong {
+    display: block;
+    font-size: 13px;
+    color: #303133
+}
+
+.scene-item-info small {
+    color: #909399;
+    font-size: 11px
+}
+
+.scene-item-actions {
+    display: flex;
+    gap: 6px
 }
 
 .status-spacer {

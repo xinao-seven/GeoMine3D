@@ -32,6 +32,19 @@ export type ModelLoadRequest = ModelLoadPayload & { requestId: number }
 
 export type ModelUnloadRequest = { type: 'stratum' | 'borehole' | 'workingface' | 'roadway'; id: string; requestId: number }
 
+/** 可序列化的场景快照（视角/图层/剖切/炸开/竖向比例），用于场景保存与恢复 */
+export interface SceneSnapshot {
+    camera: { position: number[]; target: number[] }
+    layers: Array<{ type: 'stratum' | 'borehole' | 'workingface' | 'roadway'; visible: boolean; opacity?: number }>
+    showEdges?: boolean
+    verticalScale?: number
+    clip?: { enabled: boolean; axis: 'x' | 'y' | 'z'; height: number; keepLower: boolean }
+    explode?: { gap: number; active: boolean }
+}
+
+/** 柱状图等面板请求三维场景聚焦某个地层（SceneCanvas 监听消费） */
+export type FocusRequest = { layerName: string; requestId: number }
+
 export const useSceneStore = defineStore('scene', () => {
     // 当前在三维场景中被选中的对象（用于属性面板展示）
     const selectedObject = ref<SceneObject | null>(null)
@@ -74,6 +87,8 @@ export const useSceneStore = defineStore('scene', () => {
     const loadRequest = ref<ModelLoadRequest | null>(null)
     // 待处理模型移除请求（由 SceneCanvas 监听并消费）
     const unloadRequest = ref<ModelUnloadRequest | null>(null)
+    // 面板请求聚焦某个地层（由 SceneCanvas 监听并消费）
+    const focusRequest = ref<FocusRequest | null>(null)
     // 地层单元控制项（显隐/颜色/透明度）
     const stratumLayers = ref<StratumLayerControl[]>([])
     // 数据库项目的投影坐标原点；用于让真实坐标模型与钻孔使用同一局部坐标系。
@@ -197,8 +212,12 @@ export const useSceneStore = defineStore('scene', () => {
         resetGroupOpacity()
     }
 
-    function registerStratumLayers(layers: StratumLayerControl[]) {
-        for (const layer of layers) {
+    /** 请求三维场景定位并高亮某个地层（按层名） */
+    function requestFocusStratum(layerName: string) {
+        focusRequest.value = { layerName, requestId: Date.now() }
+    }
+
+    function registerStratumLayers(layers: StratumLayerControl[]) {        for (const layer of layers) {
             const index = stratumLayers.value.findIndex((item) => item.key === layer.key)
             if (index >= 0) {
                 Object.assign(stratumLayers.value[index], layer)
@@ -245,6 +264,7 @@ export const useSceneStore = defineStore('scene', () => {
         modelLoadStatus,
         loadRequest,
         unloadRequest,
+        focusRequest,
         stratumLayers,
         coordinateOrigin,
         verticalScale,
@@ -270,6 +290,7 @@ export const useSceneStore = defineStore('scene', () => {
         getModelLoadStatus,
         setModelLoadStatus,
         requestLoadModel,
+        requestFocusStratum,
         registerStratumLayers,
         updateStratumLayer,
         setCoordinateOrigin,

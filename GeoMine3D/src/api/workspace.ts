@@ -63,6 +63,49 @@ export interface ModelingJobRecord {
     updated_at: string
 }
 
+export interface SceneRecord {
+    id: string
+    project_id: string
+    name: string
+    camera_json: Record<string, any>
+    layers_json: Array<Record<string, any>>
+    clipping_json: Record<string, any>
+    explode_json: Record<string, any>
+    render_settings_json: Record<string, any>
+    created_at: string
+    updated_at: string
+}
+
+export interface ThicknessStat {
+    layer_name: string
+    count: number
+    avg_thickness: number
+    min_thickness: number
+    max_thickness: number
+    avg_top_depth: number
+}
+
+export interface AnalysisOverview {
+    borehole_count: number
+    segment_count: number
+    strata_layer_count: number
+    model_count: number
+    workingface_count: number
+    total_drilling_depth: number
+    avg_borehole_depth: number
+    max_borehole_depth: number
+    thickness_distribution: ThicknessStat[]
+    depth_distribution: {
+        count: number
+        min: number
+        max: number
+        avg: number
+        bins: Array<{ start: number; end: number; count: number }>
+    }
+    layer_frequency: Array<{ layer_name: string; borehole_count: number; avg_top_depth: number }>
+    workingface_status: Array<{ status: string; count: number; avg_length: number | null; avg_width: number | null }>
+}
+
 interface DataResponse<T> { data: T }
 interface PageResponse<T> { data: T[]; meta: { page: number; page_size: number; total: number } }
 
@@ -104,6 +147,28 @@ export const workspaceApi = {
     },
     async listModelingJobs(projectId: string) {
         return (await workspaceClient.get<DataResponse<ModelingJobRecord[]>>(`/projects/${projectId}/modeling-jobs`)).data.data
+    },
+    async listScenes(projectId: string) {
+        return (await workspaceClient.get<DataResponse<SceneRecord[]>>(`/projects/${projectId}/scenes`)).data.data
+    },
+    async createScene(projectId: string, payload: {
+        name: string
+        camera_json: Record<string, any>
+        layers_json: Array<Record<string, any>>
+        clipping_json: Record<string, any>
+        explode_json: Record<string, any>
+        render_settings_json: Record<string, any>
+    }) {
+        return (await workspaceClient.post<DataResponse<SceneRecord>>(`/projects/${projectId}/scenes`, payload)).data.data
+    },
+    async updateScene(sceneId: string, payload: Record<string, any>) {
+        return (await workspaceClient.put<DataResponse<SceneRecord>>(`/scenes/${sceneId}`, payload)).data.data
+    },
+    async deleteScene(sceneId: string) {
+        await workspaceClient.delete(`/scenes/${sceneId}`)
+    },
+    async getAnalysisOverview(projectId: string) {
+        return (await workspaceClient.get<DataResponse<AnalysisOverview>>(`/projects/${projectId}/analysis/overview`)).data.data
     },
 }
 

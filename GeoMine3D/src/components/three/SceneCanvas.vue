@@ -92,6 +92,7 @@ import { StratumExplodeTool } from '@/three/tools/StratumExplodeTool'
 import { AxisGizmoTool } from '@/three/tools/AxisGizmoTool'
 import { BoundingBoxTool } from '@/three/tools/BoundingBoxTool'
 import { useSceneStore, useBoreholeStore, useWorkspaceStore } from '@/stores'
+import type { SceneSnapshot } from '@/stores/sceneStore'
 import { useSettlementStore } from '@/stores/settlementStore'
 import type { ModelItem, BoreholeItem, StratumLayerControl } from '@/types'
 import type { ModelLoadRequest } from '@/stores/sceneStore'
@@ -139,7 +140,8 @@ const rotateXAxisEnabled = ref(true)
 const stratumExploded = ref(false)
 const outlineEnabled = ref(false)
 const boundingBoxEnabled = ref(false)
-const hoverEnabled = ref(false)
+// 与 initScene 中的 setHoverEnabled(true) 保持一致，避免开关显示“关”但行为是“开”
+const hoverEnabled = ref(true)
 const hoverLabel = ref({ visible: false, name: '', x: 0, y: 0 })
 const isDragOver = ref(false)
 const dropError = ref('')
@@ -676,6 +678,182 @@ function toggleHoverEffect() {
     selectionManager?.setHoverEnabled(hoverEnabled.value)
 }
 
+// ==================== 坐标读数 ====================
+
+// 投影面在世界空间即 y=0 平面；用数学面求交读平面坐标，代价 O(1)
+const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
+const cursorRaycaster = new THREE.Raycaster()
+const cursorPointer = new THREE.Vector2()
+const cursorHitPoint = new THREE.Vector3()
+let lastCursorUpdate = 0
+// 悬停拾取到的模型表面点（世界坐标），作为高程读数来源；随鼠标离开模型失效
+let surfacePoint: THREE.Vector3 | null = null
+let surfacePointAt = 0
+
+/** 世界坐标 → 真实投影坐标/高程（米）。 */
+function worldPointToProject(point: THREE.Vector3) {
+    const origin = coordinateOrigin.value
+    if (!origin) {
+        return { x: point.x, y: -point.z, z: point.y }
+    }
+    return {
+        x: origin.x + point.x,
+        y: origin.y - point.z,
+        z: origin.z + point.y / verticalScale.value,
+    }
+}
+
+function onCanvasPointerMove(event: PointerEvent) {
+    if (!cameraManager || !canvasRef.value) return
+    const now = performance.now()
+    // 平面求交本身很便宜，节流只为避免高频写 store 触发状态栏抖动
+    if (now - lastCursorUpdate < 100) return
+    lastCursorUpdate = now
+
+    const rect = canvasRef.value.getBoundingClientRect()
+    cursorPointer.set(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1,
+    )
+    cursorRaycaster.setFromCamera(cursorPointer, cameraManager.camera)
+    // 悬停命中的表面点(1s 内)优先：既有真实高程，平面坐标也更准
+    if (surfacePoint && now - surfacePointAt < 1000) {
+        workspaceStore.setCursorCoordinate(worldPointToProject(surfacePoint))
+        return
+    }
+    if (cursorRaycaster.ray.intersectPlane(groundPlane, cursorHitPoint)) {
+        const projected = worldPointToProject(cursorHitPoint)
+        workspaceStore.setCursorCoordinate({ x: projected.x, y: projected.y, z: null })
+    } else {
+        workspaceStore.setCursorCoordinate(null)
+    }
+}
+
+function onCanvasPointerLeave() {
+    surfacePoint = null
+    workspaceStore.setCursorCoordinate(null)
+}
+
+// ==================== 场景快照（保存/恢复） ====================
+
+function getSceneState(): SceneSnapshot {
+    const camera = cameraManager.camera
+    const target = controlsManager.controls.target
+    const types = ['stratum', 'borehole', 'workingface', 'roadway'] as const
+    return {
+        camera: {
+            position: [camera.position.x, camera.position.y, camera.position.z],
+            target: [target.x, target.y, target.z],
+        },
+        layers: types.map(type => ({
+            type,
+            visible: layerVisible.value[type],
+            opacity: groupOpacity.value[type],
+        })),
+        showEdges: showEdges.value,
+        verticalScale: verticalScale.value,
+        clip: {
+            enabled: toolState.value.clipEnabled,
+            axis: toolState.value.clipAxis,
+            height: toolState.value.clipHeight,
+            keepLower: toolState.value.clipKeepLower,
+        },
+        explode: { gap: toolState.value.explodeGap, active: stratumExploded.value },
+    }
+}
+
+function applySceneState(state: SceneSnapshot) {
+    if (state.layers) {
+        for (const item of state.layers) {
+            if (!item?.type) continue
+            sceneStore.setLayerVisible(item.type, Boolean(item.visible))
+            if (typeof item.opacity === 'number') sceneStore.setGroupOpacity(item.type, item.opacity)
+        }
+    }
+    if (typeof state.showEdges === 'boolean') sceneStore.setShowEdges(state.showEdges)
+    if (typeof state.verticalScale === 'number' && state.verticalScale >= 1) {
+        sceneStore.setVerticalScale(state.verticalScale)
+    }
+    if (state.clip) {
+        sceneStore.setClipAxis(state.clip.axis ?? 'y')
+        sceneStore.setClipHeight(Number(state.clip.height) || 0)
+        sceneStore.setClipKeepLower(Boolean(state.clip.keepLower))
+        toolState.value.clipEnabled = Boolean(state.clip.enabled)
+    }
+    if (state.explode) {
+        sceneStore.setExplodeGap(Number(state.explode.gap) || 0)
+        if (Boolean(state.explode.active) !== stratumExploded.value) {
+            toggleStratumExplode()
+        }
+    }
+    if (state.camera?.position?.length === 3 && state.camera?.target?.length === 3) {
+        const [px, py, pz] = state.camera.position
+        const [tx, ty, tz] = state.camera.target
+        cameraManager.camera.position.set(px, py, pz)
+        controlsManager.controls.target.set(tx, ty, tz)
+        controlsManager.controls.update()
+    }
+}
+
+/** 把画布当前帧导出为 PNG dataURL（不含坐标轴小部件）。 */
+function captureImage(): string | null {
+    if (!rendererManager || !sceneManager || !cameraManager) return null
+    rendererManager.render(sceneManager.scene, cameraManager.camera)
+    return rendererManager.renderer.domElement.toDataURL('image/png')
+}
+
+// ==================== 地层聚焦（柱状图联动） ====================
+
+let focusOutlineTimer: ReturnType<typeof setTimeout> | null = null
+
+function focusStratum(layerName: string) {
+    const layer = stratumLayers.value.find(item => item.layerName === layerName)
+    if (!layer) return
+    const model = modelManager?.getModel(layer.modelId)
+    if (!model) return
+
+    let target: THREE.Mesh | null = null
+    model.object.traverse((child) => {
+        if (target) return
+        const mesh = child as THREE.Mesh
+        if (mesh.isMesh && String(mesh.userData?.id || '') === layer.key) {
+            target = mesh
+        }
+    })
+    if (!target) return
+    const mesh = target as THREE.Mesh
+
+    const box = new THREE.Box3().setFromObject(mesh)
+    const fit = cameraManager.fitToBox(box)
+    if (fit) {
+        cameraManager.camera.near = fit.near
+        cameraManager.camera.far = fit.far
+        cameraManager.camera.updateProjectionMatrix()
+        controlsManager.setDistanceLimits(fit.fitDistance * 0.1, fit.fitDistance * 8)
+        const startTarget = controlsManager.controls.target.clone()
+        cameraManager.animateTo(
+            fit.position,
+            fit.center,
+            startTarget,
+            (lookAt) => {
+                controlsManager.controls.target.copy(lookAt)
+                controlsManager.controls.update()
+            }
+        )
+    }
+
+    // 用既有描边系统闪烁提示目标层；若描边原本关闭则结束后还原
+    const outlineWasEnabled = outlineEnabled.value
+    rendererManager.setOutlineEnabled(true)
+    rendererManager.setOutlineSelectedObjects([mesh])
+    if (focusOutlineTimer) clearTimeout(focusOutlineTimer)
+    focusOutlineTimer = setTimeout(() => {
+        rendererManager?.setOutlineSelectedObjects([])
+        if (!outlineWasEnabled) rendererManager?.setOutlineEnabled(false)
+        focusOutlineTimer = null
+    }, 2600)
+}
+
 // ==================== Layer ====================
 
 function toHexColor(color?: THREE.Color) {
@@ -1155,10 +1333,16 @@ async function initScene() {
                 rendererManager?.setOutlineSelectedObjects([])
             }
         },
-        (obj, event) => {
+        (obj, event, point) => {
             if (!containerRef.value || !obj || !event) {
                 hoverLabel.value.visible = false
+                surfacePoint = null
                 return
+            }
+            // 记录表面交点作为坐标读数的高程来源
+            if (point) {
+                surfacePoint = point
+                surfacePointAt = performance.now()
             }
             const name = String(obj.userData?.name || obj.name || '').trim()
             if (!name) {
@@ -1177,6 +1361,10 @@ async function initScene() {
 
     controlsManager.controls.addEventListener('start', onControlStart)
     controlsManager.controls.addEventListener('end', onControlEnd)
+
+    // 坐标读数：指针在画布内移动时更新状态栏 X/Y/Z
+    canvasRef.value.addEventListener('pointermove', onCanvasPointerMove)
+    canvasRef.value.addEventListener('pointerleave', onCanvasPointerLeave)
 
     resizeObserver = new ResizeObserver(() => {
         if (!containerRef.value) return
@@ -1322,6 +1510,13 @@ watch(unloadRequest, (req) => {
     }
 })
 
+// 面板（柱状图等）请求聚焦某个地层
+watch(() => sceneStore.focusRequest, (req) => {
+    if (req) {
+        focusStratum(req.layerName)
+    }
+})
+
 // ==================== Lifecycle ====================
 
 onMounted(() => { initScene() })
@@ -1346,6 +1541,8 @@ onDeactivated(() => {
 onUnmounted(() => {
     disposeRemoteBridge?.()
     disposeRemoteBridge = null
+    canvasRef.value?.removeEventListener('pointermove', onCanvasPointerMove)
+    canvasRef.value?.removeEventListener('pointerleave', onCanvasPointerLeave)
     sceneStore.activateTool(null)
     sceneStore.resetSceneSession()
     // geoRoot 随画布销毁,竖向倍率也要回默认,否则下次进来状态不一致
@@ -1373,6 +1570,14 @@ onUnmounted(() => {
     modelManager?.clear()
     sceneManager?.dispose()
     hideHoverLabel()
+})
+
+// 供工作台外壳（GeoWorkspaceView）调用：截图、场景保存/恢复、地层聚焦
+defineExpose({
+    captureImage,
+    getSceneState,
+    applySceneState,
+    focusStratum,
 })
 </script>
 

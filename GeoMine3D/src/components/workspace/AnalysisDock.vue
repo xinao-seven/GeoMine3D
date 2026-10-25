@@ -19,8 +19,21 @@
                 </div>
                 <div class="metric"><span>MEASUREMENTS</span><strong>{{ measurements.length
                         }}</strong><small>测量记录</small></div>
-                <div class="activity-graph"><i v-for="n in 28" :key="n"
-                        :style="{ height: `${18 + ((n * 19) % 62)}%` }"></i></div>
+                <div class="analysis-summary" v-if="overview">
+                    <div class="summary-row">
+                        <div class="summary-cell"><b>{{ overview.borehole_count }}</b><small>钻孔</small></div>
+                        <div class="summary-cell"><b>{{ overview.strata_layer_count }}</b><small>地层单元</small></div>
+                        <div class="summary-cell"><b>{{ formatMeters(overview.total_drilling_depth) }}</b><small>总进尺/m</small>
+                        </div>
+                        <div class="summary-cell"><b>{{ overview.model_count }}</b><small>模型</small></div>
+                        <div class="summary-cell"><b>{{ overview.workingface_count }}</b><small>工作面</small></div>
+                        <div class="summary-cell"><b>{{ overview.max_borehole_depth }}</b><small>最大孔深/m</small></div>
+                    </div>
+                    <div ref="thicknessChartRef" class="thickness-chart"></div>
+                </div>
+                <div class="dock-empty analysis-empty" v-else>
+                    {{ analysisLoading ? '统计数据加载中...' : (isLocal ? '本地演示模式无统计数据' : '暂无统计数据') }}
+                </div>
             </template>
             <template v-else-if="activeDock === 'borehole'">
                 <div v-if="currentDetail" class="borehole-workbench">
@@ -28,15 +41,16 @@
                         <span>SELECTED BOREHOLE</span><strong>{{ currentDetail.name }}</strong>
                         <div><b>{{ currentDetail.totalDepth.toFixed(2) }}</b><small>总深度 / m</small></div>
                         <div><b>{{ currentDetail.layers.length }}</b><small>地层数量</small></div>
+                        <small class="borehole-hint">点击柱状图地层可在三维中定位</small>
                     </aside>
-                    <BoreholeChart :borehole="currentDetail" class="borehole-chart" />
+                    <BoreholeChart :borehole="currentDetail" class="borehole-chart" @layer-click="onLayerClick" />
                 </div>
                 <div v-else class="dock-empty">选择一个钻孔后显示地层柱状图</div>
             </template>
             <template v-else-if="activeDock === 'table'">
                 <div class="data-table-head"><span>对象名称</span><span>类型</span><span>状态</span></div>
                 <div class="data-row" v-if="selectedObject"><span>{{ selectedObject.name }}</span><span>{{
-                        selectedObject.type }}</span><span>SELECTED</span></div>
+                    selectedObject.type }}</span><span>SELECTED</span></div>
                 <div class="dock-empty" v-else>场景对象属性表将在加载数据后显示</div>
             </template>
             <template v-else>
@@ -54,17 +68,106 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+import { useRoute } from 'vue-router'
+import * as echarts from 'echarts'
 import BoreholeChart from '@/components/workspace/BoreholeChart.vue'
+import { workspaceApi, type AnalysisOverview } from '@/api/workspace'
 import { useBoreholeStore, useSceneStore, useWorkspaceStore } from '@/stores'
 import type { WorkspaceDock } from '@/stores/workspaceStore'
 const store = useWorkspaceStore(); const sceneStore = useSceneStore(); const boreholeStore = useBoreholeStore()
+const route = useRoute()
 const { activeDock, performance } = storeToRefs(store); const { selectedObject, layerVisible, measurements, modelLoadStatus } = storeToRefs(sceneStore); const { currentDetail } = storeToRefs(boreholeStore)
 const tabs: Array<{ id: WorkspaceDock; label: string; icon: string }> = [{ id: 'overview', label: '场景概览', icon: 'DataAnalysis' }, { id: 'borehole', label: '钻孔柱状图', icon: 'Histogram' }, { id: 'table', label: '属性表', icon: 'Grid' }, { id: 'performance', label: '性能', icon: 'Odometer' }]
 const activeLayerCount = computed(() => Object.values(layerVisible.value).filter(Boolean).length)
 const objectCount = computed(() => Object.values(modelLoadStatus.value).filter(item => item.loaded).length)
+const isLocal = computed(() => String(route.params.projectId) === 'local')
 function compactNumber(value: number) { return new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(value) }
+function formatMeters(value: number) {
+    return value >= 10000 ? compactNumber(value) : String(Math.round(value))
+}
+
+// ==================== 项目统计概览 ====================
+const overview = ref<AnalysisOverview | null>(null)
+const analysisLoading = ref(false)
+const thicknessChartRef = ref<HTMLDivElement>()
+let thicknessChart: echarts.ECharts | null = null
+
+async function loadOverview() {
+    if (isLocal.value || overview.value || analysisLoading.value) return
+    analysisLoading.value = true
+    try {
+        overview.value = await workspaceApi.getAnalysisOverview(String(route.params.projectId))
+        renderThicknessChart()
+    } catch { /* 统计加载失败不打断场景使用 */ }
+    finally { analysisLoading.value = false }
+}
+
+function renderThicknessChart() {
+    if (!thicknessChartRef.value || !overview.value) return
+    if (!thicknessChart) thicknessChart = echarts.init(thicknessChartRef.value)
+    const stats = overview.value.thickness_distribution.slice(0, 16)
+    thicknessChart.setOption({
+        backgroundColor: 'transparent',
+        grid: { left: 8, right: 8, top: 22, bottom: 38, containLabel: true },
+        tooltip: {
+            trigger: 'axis',
+            formatter: (params: any) => {
+                const s = params[0]?.data
+                if (!s) return ''
+                const stat = stats[s.dataIndex]
+                return `<b>${stat.layer_name}</b><br/>平均厚度 ${stat.avg_thickness} m<br/>范围 ${stat.min_thickness}~${stat.max_thickness} m<br/>统计段数 ${stat.count}`
+            },
+        },
+        xAxis: {
+            type: 'category',
+            data: stats.map(item => item.layer_name),
+            axisLabel: { color: '#8b948c', fontSize: 9, interval: 0, rotate: 38 },
+            axisLine: { lineStyle: { color: '#333b34' } },
+        },
+        yAxis: {
+            type: 'value',
+            name: '平均厚度 m',
+            nameTextStyle: { color: '#667068', fontSize: 9 },
+            axisLabel: { color: '#77807a', fontSize: 9 },
+            splitLine: { lineStyle: { color: '#232824' } },
+        },
+        series: [{
+            type: 'bar',
+            barMaxWidth: 22,
+            itemStyle: { color: '#7c9c72', opacity: 0.85 },
+            data: stats.map((item, dataIndex) => ({ value: item.avg_thickness, dataIndex })),
+        }],
+    }, true)
+}
+
+watch(activeDock, (dock) => {
+    if (dock === 'overview') {
+        void loadOverview()
+        // 从其它页签切回时图表容器刚重新显示，需要 resize
+        requestAnimationFrame(() => thicknessChart?.resize())
+    }
+})
+
+function onLayerClick(layerName: string) {
+    sceneStore.requestFocusStratum(layerName)
+}
+
+let chartResizeObserver: ResizeObserver | null = null
+onMounted(() => {
+    if (activeDock.value === 'overview') void loadOverview()
+    if (thicknessChartRef.value) {
+        chartResizeObserver = new ResizeObserver(() => thicknessChart?.resize())
+        chartResizeObserver.observe(thicknessChartRef.value)
+    }
+})
+
+onUnmounted(() => {
+    chartResizeObserver?.disconnect()
+    thicknessChart?.dispose()
+    thicknessChart = null
+})
 </script>
 
 <style scoped>
@@ -144,19 +247,54 @@ function compactNumber(value: number) { return new Intl.NumberFormat('en', { not
     font-size: 9px
 }
 
-.activity-graph {
+.analysis-summary {
     flex: 1;
+    min-width: 0;
     display: flex;
-    align-items: end;
-    gap: 4px;
-    padding: 18px;
-    background: repeating-linear-gradient(to bottom, transparent 0 24px, #232824 25px)
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+    border-left: 2px solid #4f6658;
+    background: #151a16
 }
 
-.activity-graph i {
+.summary-row {
+    display: flex;
+    gap: 8px
+}
+
+.summary-cell {
     flex: 1;
-    background: #4f6658;
-    opacity: .7
+    text-align: center;
+    padding: 4px 2px;
+    background: #1a201b
+}
+
+.summary-cell b {
+    display: block;
+    color: #c8b489;
+    font: 16px Bahnschrift
+}
+
+.summary-cell small {
+    color: #5e665f;
+    font-size: 8px
+}
+
+.thickness-chart {
+    flex: 1;
+    min-height: 0
+}
+
+.analysis-empty {
+    flex: 1;
+    border: 1px dashed #313832
+}
+
+.borehole-hint {
+    margin-top: 8px;
+    color: #6d766e;
+    font-size: 8px
 }
 
 .borehole-workbench {
