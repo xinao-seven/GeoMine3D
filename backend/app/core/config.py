@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     # 钻孔数据源(相对 source_data_dir)。分层表换版本时只需改这里。
     borehole_location_file: str = "location/钻孔位置.xlsx"
     borehole_strata_file: str = "boreholes/地层汇总14层.xlsx"
+    # 矿区边界/工作面范围 Shapefile(相对 source_data_dir,CAD 折线导出,pyshp 读取)
+    mine_boundary_shp: str = "shp/锦界矿边界.shp"
+    workingface_boundary_shp: str = "shp/开采工作面.shp"
     frontend_dist_dir: Path = Path("../GeoMine3D/dist")
     serve_frontend: bool = True
     # 远程调试中继(WebSocket /api/v1/remote/ws + /remote/invoke):供 backend/mcp_server.py

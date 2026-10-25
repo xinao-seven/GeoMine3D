@@ -53,6 +53,40 @@
                     selectedObject.type }}</span><span>SELECTED</span></div>
                 <div class="dock-empty" v-else>场景对象属性表将在加载数据后显示</div>
             </template>
+            <template v-else-if="activeDock === 'records'">
+                <div class="records-panel">
+                    <div class="records-column">
+                        <div class="records-head">
+                            <span>测量记录（{{ measurements.length }}）</span>
+                            <button :disabled="!measurements.length" @click="exportMeasurementsCsv">导出 CSV</button>
+                        </div>
+                        <div class="records-body">
+                            <div v-for="(item, index) in measurements" :key="item.id" class="record-row">
+                                <b>{{ index + 1 }}</b>
+                                <span class="record-main">{{ item.distance.toFixed(2) }} m</span>
+                                <small>{{ formatCoord(item.start) }} → {{ formatCoord(item.end) }}</small>
+                                <button class="record-del" title="删除" @click="sceneStore.requestRemoveMeasurement(item.id)">×</button>
+                            </div>
+                            <div v-if="!measurements.length" class="records-empty">暂无测量记录</div>
+                        </div>
+                    </div>
+                    <div class="records-column">
+                        <div class="records-head">
+                            <span>空间标注（{{ annotations.length }}）<i v-if="!isProjectMode" class="local-tag">会话内</i></span>
+                            <button :disabled="!annotations.length" @click="exportAnnotationsCsv">导出 CSV</button>
+                        </div>
+                        <div class="records-body">
+                            <div v-for="item in annotations" :key="item.id" class="record-row">
+                                <b>{{ item.serverId ? '云' : '本' }}</b>
+                                <span class="record-main">{{ item.text }}</span>
+                                <small>{{ formatCoord(item.position) }}</small>
+                                <button class="record-del" title="删除" @click="sceneStore.requestRemoveAnnotation(item.id)">×</button>
+                            </div>
+                            <div v-if="!annotations.length" class="records-empty">暂无标注（项目模式下自动保存）</div>
+                        </div>
+                    </div>
+                </div>
+            </template>
             <template v-else>
                 <div class="metric"><span>FPS</span><strong>{{ performance.fps }}</strong><small>500ms 滑动窗口</small>
                 </div>
@@ -78,11 +112,12 @@ import { useBoreholeStore, useSceneStore, useWorkspaceStore } from '@/stores'
 import type { WorkspaceDock } from '@/stores/workspaceStore'
 const store = useWorkspaceStore(); const sceneStore = useSceneStore(); const boreholeStore = useBoreholeStore()
 const route = useRoute()
-const { activeDock, performance } = storeToRefs(store); const { selectedObject, layerVisible, measurements, modelLoadStatus } = storeToRefs(sceneStore); const { currentDetail } = storeToRefs(boreholeStore)
-const tabs: Array<{ id: WorkspaceDock; label: string; icon: string }> = [{ id: 'overview', label: '场景概览', icon: 'DataAnalysis' }, { id: 'borehole', label: '钻孔柱状图', icon: 'Histogram' }, { id: 'table', label: '属性表', icon: 'Grid' }, { id: 'performance', label: '性能', icon: 'Odometer' }]
+const { activeDock, performance } = storeToRefs(store); const { selectedObject, layerVisible, measurements, modelLoadStatus, annotations, coordinateOrigin, verticalScale } = storeToRefs(sceneStore); const { currentDetail } = storeToRefs(boreholeStore)
+const tabs: Array<{ id: WorkspaceDock; label: string; icon: string }> = [{ id: 'overview', label: '场景概览', icon: 'DataAnalysis' }, { id: 'borehole', label: '钻孔柱状图', icon: 'Histogram' }, { id: 'records', label: '测量与标注', icon: 'List' }, { id: 'table', label: '属性表', icon: 'Grid' }, { id: 'performance', label: '性能', icon: 'Odometer' }]
 const activeLayerCount = computed(() => Object.values(layerVisible.value).filter(Boolean).length)
 const objectCount = computed(() => Object.values(modelLoadStatus.value).filter(item => item.loaded).length)
 const isLocal = computed(() => String(route.params.projectId) === 'local')
+const isProjectMode = computed(() => !isLocal.value)
 function compactNumber(value: number) { return new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(value) }
 function formatMeters(value: number) {
     return value >= 10000 ? compactNumber(value) : String(Math.round(value))
@@ -152,6 +187,61 @@ watch(activeDock, (dock) => {
 
 function onLayerClick(layerName: string) {
     sceneStore.requestFocusStratum(layerName)
+}
+
+// ==================== 测量/标注管理 ====================
+
+/** 世界坐标 → 真实投影坐标（与 SceneCanvas 同一换算），无原点时按原值输出 */
+function toProjectCoords(point: { x: number; y: number; z: number }) {
+    const origin = coordinateOrigin.value
+    if (!origin) return point
+    return {
+        x: origin.x + point.x,
+        y: origin.y - point.z,
+        z: origin.z + point.y / verticalScale.value,
+    }
+}
+
+function formatCoord(point: { x: number; y: number; z: number }) {
+    const projected = toProjectCoords(point)
+    return `${projected.x.toFixed(1)}, ${projected.y.toFixed(1)}, ${projected.z === undefined ? '—' : projected.z.toFixed(1)}`
+}
+
+function downloadCsv(filename: string, rows: string[][]) {
+    const csv = '\uFEFF' + rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\r\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = filename
+    link.click()
+    URL.revokeObjectURL(link.href)
+}
+
+function exportMeasurementsCsv() {
+    const rows: string[][] = [['序号', '距离m', '起点X', '起点Y', '起点Z', '终点X', '终点Y', '终点Z']]
+    measurements.value.forEach((item, index) => {
+        const start = toProjectCoords(item.start)
+        const end = toProjectCoords(item.end)
+        rows.push([
+            String(index + 1), item.distance.toFixed(2),
+            start.x.toFixed(2), start.y.toFixed(2), (start.z ?? 0).toFixed(2),
+            end.x.toFixed(2), end.y.toFixed(2), (end.z ?? 0).toFixed(2),
+        ])
+    })
+    downloadCsv(`geomine-measurements-${Date.now()}.csv`, rows)
+}
+
+function exportAnnotationsCsv() {
+    const rows: string[][] = [['序号', '内容', 'X', 'Y', '高程Z', '持久化']]
+    annotations.value.forEach((item, index) => {
+        const projected = toProjectCoords(item.position)
+        rows.push([
+            String(index + 1), item.text,
+            projected.x.toFixed(2), projected.y.toFixed(2), (projected.z ?? 0).toFixed(2),
+            item.serverId ? '是' : '否',
+        ])
+    })
+    downloadCsv(`geomine-annotations-${Date.now()}.csv`, rows)
 }
 
 let chartResizeObserver: ResizeObserver | null = null
@@ -358,6 +448,125 @@ onUnmounted(() => {
     margin: auto;
     color: #677068;
     font-size: 11px
+}
+
+/* ── 测量与标注管理 ── */
+.records-panel {
+    flex: 1;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px
+}
+
+.records-column {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    border-left: 2px solid #4f6658;
+    background: #151a16
+}
+
+.records-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    border-bottom: 1px solid #2b312c
+}
+
+.records-head span {
+    color: #a9b2a9;
+    font-size: 11px
+}
+
+.local-tag {
+    margin-left: 6px;
+    padding: 1px 5px;
+    font-size: 8px;
+    font-style: normal;
+    color: #b98548;
+    border: 1px solid #5a4a2c
+}
+
+.records-head button {
+    border: 1px solid #37403a;
+    background: #1a201b;
+    color: #9fb5a2;
+    font-size: 10px;
+    padding: 3px 8px;
+    cursor: pointer
+}
+
+.records-head button:disabled {
+    opacity: .4;
+    cursor: not-allowed
+}
+
+.records-body {
+    flex: 1;
+    overflow: auto;
+    padding: 4px 0
+}
+
+.record-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 10px;
+    font-size: 10px;
+    color: #b9beb7
+}
+
+.record-row b {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    display: grid;
+    place-items: center;
+    background: #222a23;
+    color: #93a093;
+    font-size: 9px
+}
+
+.record-main {
+    flex-shrink: 0;
+    color: #d8d6cc;
+    max-width: 45%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap
+}
+
+.record-row small {
+    flex: 1;
+    color: #6c756d;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: Consolas, monospace
+}
+
+.record-del {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    border: 1px solid #3a423b;
+    background: transparent;
+    color: #8d968d;
+    cursor: pointer
+}
+
+.record-del:hover {
+    color: #e08a7a;
+    border-color: #6b423a
+}
+
+.records-empty {
+    padding: 18px 10px;
+    text-align: center;
+    color: #677068;
+    font-size: 10px
 }
 
 .data-table-head,

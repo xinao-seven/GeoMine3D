@@ -187,6 +187,77 @@ def coal_thickness_by_borehole(
     return result
 
 
+def virtual_borehole(
+    boreholes: Sequence[Mapping[str, Any]],
+    segments_by_borehole: Mapping[str, Sequence[Mapping[str, Any]]],
+    x: float,
+    y: float,
+    max_neighbors: int = 8,
+    power: float = 2.0,
+) -> dict[str, Any]:
+    """IDW 插值生成虚拟钻孔。
+
+    取距查询点最近的 max_neighbors 个有分层数据的钻孔，按 1/d^power 权重
+    逐层插值顶/底深；颜色取最近邻同层颜色。邻孔数量与最近孔距作为置信度返回。
+    """
+    scored: list[tuple[float, str]] = []
+    for borehole in boreholes:
+        try:
+            bx = float(borehole["x"])
+            by = float(borehole["y"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        borehole_id = str(borehole.get("id") or "")
+        if borehole_id not in segments_by_borehole or not segments_by_borehole[borehole_id]:
+            continue
+        distance = math.hypot(bx - x, by - y)
+        scored.append((max(distance, 1e-6), borehole_id))
+    scored.sort(key=lambda item: item[0])
+    neighbors = scored[: max(int(max_neighbors), 1)]
+    if not neighbors:
+        return {"layers": [], "used_neighbors": 0, "nearest_distance_m": None}
+
+    # 逐层加权累计：top/bottom 深度用 IDW，颜色取最近邻
+    buckets: dict[str, dict[str, Any]] = {}
+    for distance, borehole_id in neighbors:
+        weight = 1.0 / (distance ** power)
+        for row in segments_by_borehole[borehole_id]:
+            name = str(row.get("layer_name") or "").strip()
+            if not name:
+                continue
+            bucket = buckets.setdefault(
+                name,
+                {"w": 0.0, "top": 0.0, "bottom": 0.0, "count": 0, "color": None},
+            )
+            bucket["w"] += weight
+            bucket["top"] += weight * float(row.get("top_depth") or 0)
+            bucket["bottom"] += weight * float(row.get("bottom_depth") or 0)
+            bucket["count"] += 1
+            if bucket["color"] is None:
+                bucket["color"] = row.get("color")
+
+    layers = []
+    for name, bucket in buckets.items():
+        top = bucket["top"] / bucket["w"] if bucket["w"] else 0.0
+        bottom = bucket["bottom"] / bucket["w"] if bucket["w"] else 0.0
+        layers.append(
+            {
+                "layer_name": name,
+                "top_depth": round(top, 2),
+                "bottom_depth": round(bottom, 2),
+                "thickness": round(max(bottom - top, 0.0), 2),
+                "color": bucket["color"] or "#8d7358",
+                "sample_count": bucket["count"],
+            }
+        )
+    layers.sort(key=lambda item: item["top_depth"])
+    return {
+        "layers": layers,
+        "used_neighbors": len(neighbors),
+        "nearest_distance_m": round(neighbors[0][0], 2),
+    }
+
+
 def build_overview(
     boreholes: Sequence[Mapping[str, Any]],
     segments: Sequence[Mapping[str, Any]],

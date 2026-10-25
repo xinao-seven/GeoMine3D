@@ -32,6 +32,19 @@
             {{ hoverLabel.name }}
         </div>
 
+        <!-- 地层颜色图例（与图层树/钻孔配色一致） -->
+        <div v-if="legendEnabled && legendItems.length" class="strata-legend">
+            <button class="lg-head" @click="legendCollapsed = !legendCollapsed">
+                <span>STRATA LEGEND</span>
+                <b>{{ legendCollapsed ? `图例 (${legendItems.length})` : '收起' }}</b>
+            </button>
+            <div v-if="!legendCollapsed" class="lg-body">
+                <div v-for="item in legendItems" :key="item.name" class="lg-row">
+                    <i :style="{ background: item.color }"></i><span>{{ item.name }}</span>
+                </div>
+            </div>
+        </div>
+
         <!-- 拖放加载遮罩 -->
         <div v-if="isDragOver" class="drop-overlay">
             <div class="drop-indicator">
@@ -60,11 +73,33 @@
                     class="confirm" type="submit">创建标注</button></div>
         </form>
 
+        <!-- 虚拟钻孔查询结果 -->
+        <div v-if="virtualBoreholeResult" class="virtual-card">
+            <div class="vc-head"><span>VIRTUAL BOREHOLE</span><button @click="closeVirtualBoreholeResult">×</button></div>
+            <strong>虚拟钻孔</strong>
+            <small>X {{ virtualBoreholeResult.x.toFixed(1) }} · Y {{ virtualBoreholeResult.y.toFixed(1) }} ·
+                邻孔 {{ virtualBoreholeResult.used_neighbors }} · 最近 {{ virtualBoreholeResult.nearest_distance_m === null
+                    ? '—' : virtualBoreholeResult.nearest_distance_m.toFixed(0) }} m</small>
+            <div class="vc-layers">
+                <div v-for="layer in virtualBoreholeResult.layers" :key="layer.layer_name" class="vc-layer">
+                    <i :style="{ background: layer.color }"></i>
+                    <span class="vc-name">{{ layer.layer_name }}</span>
+                    <span class="vc-depth">{{ layer.top_depth }}~{{ layer.bottom_depth }} m</span>
+                </div>
+                <div v-if="!virtualBoreholeResult.layers.length" class="vc-empty">该位置附近没有可用钻孔</div>
+            </div>
+            <div class="vc-actions">
+                <button :disabled="!virtualBoreholeResult.layers.length" @click="openVirtualChart">查看柱状图</button>
+                <button @click="closeVirtualBoreholeResult">关闭</button>
+            </div>
+        </div>
+
     </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted, onActivated, onDeactivated, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import * as THREE from 'three'
 import { storeToRefs } from 'pinia'
 import { DropLoader } from '@/three/loaders/DropLoader'
@@ -79,6 +114,7 @@ import { LayerManager } from '@/three/managers/LayerManager'
 import { HighlightManager } from '@/three/managers/HighlightManager'
 import { SelectionManager } from '@/three/managers/SelectionManager'
 import { SettlementManager } from '@/three/managers/SettlementManager'
+import { BoundaryOverlay } from '@/three/managers/BoundaryOverlay'
 import type { SettlementIndex } from '@/three/managers/SettlementManager'
 import SceneToolbox from '@/components/three/SceneToolbox.vue'
 import type { ToolGroup } from '@/components/three/SceneToolbox.vue'
@@ -88,9 +124,11 @@ import { WorkingFaceModelLoader } from '@/three/loaders/WorkingFaceModelLoader'
 import { ClipTool } from '@/three/tools/ClipTool'
 import { MeasureTool } from '@/three/tools/MeasureTool'
 import { AnnotationTool } from '@/three/tools/AnnotationTool'
+import type { AnnotationResult } from '@/three/tools/AnnotationTool'
 import { StratumExplodeTool } from '@/three/tools/StratumExplodeTool'
 import { AxisGizmoTool } from '@/three/tools/AxisGizmoTool'
 import { BoundingBoxTool } from '@/three/tools/BoundingBoxTool'
+import { workspaceApi, type BoundariesPayload, type VirtualBoreholeResult } from '@/api/workspace'
 import { useSceneStore, useBoreholeStore, useWorkspaceStore } from '@/stores'
 import type { SceneSnapshot } from '@/stores/sceneStore'
 import { useSettlementStore } from '@/stores/settlementStore'
@@ -103,6 +141,8 @@ const sceneStore = useSceneStore()
 const boreholeStore = useBoreholeStore()
 const workspaceStore = useWorkspaceStore()
 const settlementStore = useSettlementStore()
+const route = useRoute()
+const isProjectMode = computed(() => String(route.params.projectId) !== 'local')
 
 const {
     layerVisible,
@@ -142,6 +182,19 @@ const outlineEnabled = ref(false)
 const boundingBoxEnabled = ref(false)
 // 与 initScene 中的 setHoverEnabled(true) 保持一致，避免开关显示“关”但行为是“开”
 const hoverEnabled = ref(true)
+// 矿区边界/地层图例叠加层开关（图例默认展开，边界默认关，避免首屏遮挡）
+const boundaryEnabled = ref(false)
+const legendEnabled = ref(true)
+const legendCollapsed = ref(false)
+// 矿区边界数据缓存（项目模式从后端拉取一次）
+const boundariesData = ref<BoundariesPayload | null>(null)
+let boundaryOverlay: BoundaryOverlay | null = null
+// 虚拟钻孔查询
+const virtualBoreholeActive = ref(false)
+const virtualBoreholeLoading = ref(false)
+const virtualBoreholeResult = ref<VirtualBoreholeResult | null>(null)
+let virtualMarker: THREE.Group | null = null
+let virtualMarkerResources: Array<THREE.BufferGeometry | THREE.Material> = []
 const hoverLabel = ref({ visible: false, name: '', x: 0, y: 0 })
 const isDragOver = ref(false)
 const dropError = ref('')
@@ -406,6 +459,9 @@ async function loadModelByRequest(req: ModelLoadRequest) {
         } else {
             fitCameraToType(null, preferImmediateFocus)
         }
+
+        // 钻孔加载后孔口平均高程更准确，重建贴地覆盖层
+        if (focusType === 'borehole') rebuildBoundaryOverlay()
 
         if (toolState.value.clipEnabled) {
             syncToolRuntimeState()
@@ -734,6 +790,118 @@ function onCanvasPointerLeave() {
     workspaceStore.setCursorCoordinate(null)
 }
 
+// ==================== 虚拟钻孔查询 ====================
+
+function toggleVirtualBorehole() {
+    virtualBoreholeActive.value = !virtualBoreholeActive.value
+    if (virtualBoreholeActive.value) {
+        // 查询模式与测量/标注一样，避免点击误选模型
+        selectionManager?.setEnabled(false)
+        canvasRef.value?.addEventListener('click', onVirtualBoreholeClick)
+    } else {
+        canvasRef.value?.removeEventListener('click', onVirtualBoreholeClick)
+        selectionManager?.setEnabled(!(toolState.value.measureEnabled || toolState.value.annotationEnabled))
+        closeVirtualBoreholeResult()
+    }
+}
+
+/** 射线与投影面（y=0 平面）求交，取平面落点 */
+function pickGroundPoint(event: MouseEvent): THREE.Vector3 | null {
+    if (!cameraManager || !canvasRef.value) return null
+    const rect = canvasRef.value.getBoundingClientRect()
+    cursorPointer.set(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1,
+    )
+    cursorRaycaster.setFromCamera(cursorPointer, cameraManager.camera)
+    const hit = new THREE.Vector3()
+    return cursorRaycaster.ray.intersectPlane(groundPlane, hit) ? hit : null
+}
+
+const onVirtualBoreholeClick = async (event: MouseEvent) => {
+    if (!cameraManager || !canvasRef.value || virtualBoreholeLoading.value) return
+    if (!isProjectMode.value) return
+    const world = pickGroundPoint(event)
+    if (!world) return
+    const projected = worldPointToProject(world)
+    virtualBoreholeLoading.value = true
+    try {
+        const result = await workspaceApi.getVirtualBorehole(String(route.params.projectId), {
+            x: projected.x,
+            y: projected.y,
+        })
+        virtualBoreholeResult.value = result
+        showVirtualMarker(world.clone())
+    } catch {
+        virtualBoreholeResult.value = null
+        clearVirtualMarker()
+    } finally {
+        virtualBoreholeLoading.value = false
+    }
+}
+
+function showVirtualMarker(worldPoint: THREE.Vector3) {
+    clearVirtualMarker()
+    if (!sceneManager) return
+    const group = new THREE.Group()
+    group.userData.overlayHelper = true
+
+    const top = worldPoint.clone().add(new THREE.Vector3(0, 500, 0))
+    const lineGeometry = new THREE.BufferGeometry().setFromPoints([worldPoint, top])
+    const lineMaterial = new THREE.LineBasicMaterial({ color: 0x67e0ff, transparent: true, opacity: 0.95 })
+    const line = new THREE.Line(lineGeometry, lineMaterial)
+    line.userData.overlayHelper = true
+    group.add(line)
+
+    const coneGeometry = new THREE.ConeGeometry(16, 46, 12)
+    const coneMaterial = new THREE.MeshBasicMaterial({ color: 0x67e0ff, transparent: true, opacity: 0.9 })
+    const cone = new THREE.Mesh(coneGeometry, coneMaterial)
+    cone.position.copy(top)
+    cone.rotation.x = Math.PI
+    cone.userData.overlayHelper = true
+    group.add(cone)
+
+    sceneManager.scene.add(group)
+    virtualMarker = group
+    virtualMarkerResources.push(lineGeometry, lineMaterial, coneGeometry, coneMaterial)
+}
+
+function clearVirtualMarker() {
+    if (virtualMarker) {
+        sceneManager?.scene.remove(virtualMarker)
+        virtualMarker = null
+    }
+    for (const resource of virtualMarkerResources) resource.dispose()
+    virtualMarkerResources = []
+}
+
+function closeVirtualBoreholeResult() {
+    virtualBoreholeResult.value = null
+    clearVirtualMarker()
+}
+
+/** 把虚拟钻孔结果送入底部柱状图页签 */
+function openVirtualChart() {
+    const result = virtualBoreholeResult.value
+    if (!result || !result.layers.length) return
+    const totalDepth = Math.max(...result.layers.map(layer => layer.bottom_depth))
+    boreholeStore.currentDetail = {
+        id: `virtual_${result.x.toFixed(0)}_${result.y.toFixed(0)}`,
+        name: `虚拟钻孔 (${result.x.toFixed(0)}, ${result.y.toFixed(0)})`,
+        totalDepth,
+        layerCount: result.layers.length,
+        location: { x: result.x, y: result.y, z: coordinateOrigin.value?.z ?? 0 },
+        layers: result.layers.map(layer => ({
+            layerName: layer.layer_name,
+            topDepth: layer.top_depth,
+            bottomDepth: layer.bottom_depth,
+            thickness: layer.thickness,
+            color: layer.color,
+        })),
+    }
+    workspaceStore.openDock('borehole')
+}
+
 // ==================== 场景快照（保存/恢复） ====================
 
 function getSceneState(): SceneSnapshot {
@@ -854,6 +1022,46 @@ function focusStratum(layerName: string) {
     }, 2600)
 }
 
+// ==================== 覆盖层（矿区边界/图例） ====================
+
+/** 叠加层基准高程：取已加载钻孔孔口的世界平均高度（地表附近），无钻孔时落到基准面。 */
+function overlayYLevel() {
+    const boreholes = modelManager?.getModelsByType('borehole') ?? []
+    if (!boreholes.length) return 0
+    const sum = boreholes.reduce((total, item) => total + item.object.position.y, 0)
+    return sum / boreholes.length
+}
+
+function rebuildBoundaryOverlay() {
+    if (!boundaryOverlay || !sceneManager) return
+    const origin = coordinateOrigin.value
+    if (!origin || !boundariesData.value) return
+    boundaryOverlay.build(boundariesData.value, { x: origin.x, y: origin.y }, overlayYLevel())
+    boundaryOverlay.setVisible(boundaryEnabled.value)
+}
+
+async function ensureBoundaries() {
+    if (!isProjectMode.value || boundariesData.value) return
+    try {
+        boundariesData.value = await workspaceApi.listBoundaries(String(route.params.projectId))
+        rebuildBoundaryOverlay()
+    } catch { /* 边界数据缺失时静默跳过 */ }
+}
+
+watch(boundaryEnabled, (visible) => {
+    boundaryOverlay?.setVisible(visible)
+})
+
+// 地层图例数据：按层名去重，保留登记顺序（自下而上）
+const legendItems = computed(() => {
+    const seen = new Map<string, string>()
+    for (const layer of stratumLayers.value) {
+        if (!layer.layerName || seen.has(layer.layerName)) continue
+        seen.set(layer.layerName, layer.color)
+    }
+    return [...seen.entries()].map(([name, color]) => ({ name, color }))
+})
+
 // ==================== Layer ====================
 
 function toHexColor(color?: THREE.Color) {
@@ -965,6 +1173,10 @@ function syncToolRuntimeState() {
                     z: point.z,
                 }
                 nextTick(() => annotationInputRef.value?.focus?.())
+            },
+            onCreate: (result) => {
+                syncAnnotationsFromTool()
+                void persistAnnotation(result)
             },
         })
     } else {
@@ -1103,11 +1315,16 @@ const toolGroups = computed<ToolGroup[]>(() => [
     },
     {
         key: 'display', label: '显示', icon: 'MagicStick',
-        engaged: hoverEnabled.value || outlineEnabled.value || boundingBoxEnabled.value,
+        engaged: hoverEnabled.value || outlineEnabled.value || boundingBoxEnabled.value || boundaryEnabled.value,
         controls: [
             { kind: 'switch', label: '悬停标签', value: hoverEnabled.value, event: 'hover' },
             { kind: 'switch', label: '描边', value: outlineEnabled.value, event: 'outline' },
             { kind: 'switch', label: '坐标盒', value: boundingBoxEnabled.value, event: 'bounding-box' },
+            { kind: 'switch', label: '矿区边界', value: boundaryEnabled.value, event: 'boundary' },
+            { kind: 'switch', label: '地层图例', value: legendEnabled.value, event: 'legend' },
+            ...(boundaryEnabled.value && !boundariesData.value
+                ? [{ kind: 'note' as const, text: '矿区边界数据尚未加载（仅项目模式可用）。', warn: true }]
+                : []),
         ],
     },
     {
@@ -1133,6 +1350,21 @@ const toolGroups = computed<ToolGroup[]>(() => [
             { kind: 'switch', label: '启用标注', value: toolState.value.annotationEnabled, event: 'annotation' },
             { kind: 'action', label: '清空标注', icon: 'Delete', event: 'clear-annotations' },
             { kind: 'note', text: '开启后点击场景中的点位即可输入标注文字。' },
+        ],
+    },
+    {
+        key: 'analysis', label: '分析', icon: 'DataAnalysis',
+        engaged: virtualBoreholeActive.value,
+        controls: [
+            {
+                kind: 'action',
+                label: virtualBoreholeActive.value ? '虚拟钻孔（点击场景取点）' : '虚拟钻孔查询',
+                icon: 'Search', event: 'virtual-borehole', primary: true,
+            },
+            { kind: 'note', text: '单击场景平面位置，按邻近钻孔 <b>IDW 插值</b>生成虚拟钻孔柱状。' },
+            ...(virtualBoreholeActive.value
+                ? [{ kind: 'note' as const, text: '查询中：单击场景取点；再次点击上方按钮退出。' }]
+                : []),
         ],
     },
     {
@@ -1227,10 +1459,13 @@ function onToolEvent(event: string, payload?: any) {
         case 'hover': toggleHoverEffect(); break
         case 'outline': toggleOutline(); break
         case 'bounding-box': toggleBoundingBox(); break
+        case 'boundary': boundaryEnabled.value = Boolean(payload); break
+        case 'legend': legendEnabled.value = Boolean(payload); break
         case 'measure': toggleMeasureTool(); break
         case 'clear-measurements': clearMeasurements(); break
         case 'annotation': toggleAnnotationTool(); break
         case 'clear-annotations': clearAnnotations(); break
+        case 'virtual-borehole': toggleVirtualBorehole(); break
         case 'settlement-toggle':
             settlementStore.enabled = Boolean(payload)
             // 关闭时要清掉“未绑定”的旧原因,否则再次开启会闪现上一次的提示
@@ -1260,7 +1495,74 @@ function clearMeasurements() {
 }
 
 function clearAnnotations() {
+    const serverIds = [...annotationServerIds.values()]
     annotationTool?.clear()
+    annotationServerIds.clear()
+    syncAnnotationsFromTool()
+    // 项目模式下同步删除服务端持久化记录
+    if (isProjectMode.value) {
+        for (const id of serverIds) {
+            void workspaceApi.deleteAnnotation(id).catch(() => { /* 单条失败不阻塞 */ })
+        }
+    }
+}
+
+// ==================== 标注持久化与镜像同步 ====================
+
+// 本地标注 id → 服务端记录 id
+const annotationServerIds = new Map<string, string>()
+let restoringAnnotations = false
+
+function syncAnnotationsFromTool() {
+    const records = (annotationTool?.getResults() ?? []).map(item => ({
+        id: item.id,
+        text: item.text,
+        position: { x: item.position.x, y: item.position.y, z: item.position.z },
+        createdAt: item.createdAt,
+        serverId: annotationServerIds.get(item.id) ?? null,
+    }))
+    sceneStore.setAnnotations(records)
+}
+
+/** 投影坐标(米) → 场景世界坐标，用于恢复持久化标注 */
+function projectPointToWorld(x: number, y: number, z: number) {
+    const origin = coordinateOrigin.value
+    if (!origin) return new THREE.Vector3(x, y, z)
+    return new THREE.Vector3(x - origin.x, (z - origin.z) * verticalScale.value, -(y - origin.y))
+}
+
+async function persistAnnotation(result: AnnotationResult) {
+    if (!isProjectMode.value || restoringAnnotations) return
+    const projected = worldPointToProject(result.position)
+    try {
+        const created = await workspaceApi.createAnnotation(String(route.params.projectId), {
+            title: result.text,
+            position_x: projected.x,
+            position_y: projected.y,
+            position_z: projected.z,
+        })
+        if (created) {
+            annotationServerIds.set(result.id, created.id)
+            syncAnnotationsFromTool()
+        }
+    } catch { /* 持久化失败保留本地标注 */ }
+}
+
+async function loadPersistedAnnotations() {
+    if (!isProjectMode.value || !annotationTool) return
+    try {
+        const records = await workspaceApi.listAnnotations(String(route.params.projectId))
+        restoringAnnotations = true
+        for (const record of records) {
+            const world = projectPointToWorld(record.position_x, record.position_y, record.position_z)
+            const local = annotationTool.addAnnotation(world, record.title)
+            if (local) annotationServerIds.set(local.id, record.id)
+        }
+    } catch { /* 拉取失败按无标注处理 */ }
+    finally {
+        restoringAnnotations = false
+        syncAnnotationsFromTool()
+    }
 }
 
 function confirmAnnotation() {
@@ -1309,6 +1611,9 @@ async function initScene() {
     measureTool = new MeasureTool(sceneManager.scene, cameraManager.camera, canvasRef.value)
     annotationTool = new AnnotationTool(sceneManager.scene, cameraManager.camera, canvasRef.value)
     stratumExplodeTool = new StratumExplodeTool(modelManager, { gap: toolState.value.explodeGap })
+
+    boundaryOverlay = new BoundaryOverlay()
+    sceneManager.scene.add(boundaryOverlay.group)
 
     if (toolState.value.clipHeight !== 0) {
         clipTool.setHeight(toolState.value.clipHeight)
@@ -1385,6 +1690,8 @@ async function initScene() {
 
     syncToolRuntimeState()
     startAnimate()
+    // 恢复项目持久化标注（项目模式）
+    void loadPersistedAnnotations()
     // 预取沉陷元信息(仅 4 KB),使工具箱里未启用时也能显示真实的最大沉降等读数
     void prefetchSettlementMeta()
 
@@ -1437,6 +1744,8 @@ watch(coordinateOrigin, (origin) => {
         }
     }
     boundingBoxTool?.refresh()
+    rebuildBoundaryOverlay()
+    void ensureBoundaries()
 })
 
 // 沉陷对比:启用 → 拉位移场并绑定;参数变化 → 同步到几何
@@ -1517,6 +1826,27 @@ watch(() => sceneStore.focusRequest, (req) => {
     }
 })
 
+// 管理面板请求单条删除测量：移除图元 + 同步记录列表
+watch(() => sceneStore.measurementRemoveRequest, (req) => {
+    if (!req) return
+    measureTool?.remove(req.id)
+    sceneStore.removeMeasurement(req.id)
+})
+
+// 管理面板请求单条删除标注：移除图元 + 同步镜像 + 删除服务端记录
+watch(() => sceneStore.annotationRemoveRequest, (req) => {
+    if (!req) return
+    const serverId = annotationServerIds.get(req.id)
+        ?? sceneStore.annotations.find(item => item.id === req.id)?.serverId
+        ?? null
+    annotationTool?.remove(req.id)
+    annotationServerIds.delete(req.id)
+    syncAnnotationsFromTool()
+    if (serverId && isProjectMode.value) {
+        void workspaceApi.deleteAnnotation(serverId).catch(() => { /* 忽略单条失败 */ })
+    }
+})
+
 // ==================== Lifecycle ====================
 
 onMounted(() => { initScene() })
@@ -1543,8 +1873,12 @@ onUnmounted(() => {
     disposeRemoteBridge = null
     canvasRef.value?.removeEventListener('pointermove', onCanvasPointerMove)
     canvasRef.value?.removeEventListener('pointerleave', onCanvasPointerLeave)
+    canvasRef.value?.removeEventListener('click', onVirtualBoreholeClick)
+    clearVirtualMarker()
     sceneStore.activateTool(null)
     sceneStore.resetSceneSession()
+    boundaryOverlay?.dispose()
+    boundaryOverlay = null
     // geoRoot 随画布销毁,竖向倍率也要回默认,否则下次进来状态不一致
     sceneStore.resetVerticalScale()
     settlementManager?.restoreBase()
@@ -1607,6 +1941,186 @@ defineExpose({
     color: #dff8ff;
     font-size: 12px;
     backdrop-filter: blur(6px);
+}
+
+/* ── 地层颜色图例 ── */
+.strata-legend {
+    position: absolute;
+    left: 12px;
+    bottom: 44px;
+    z-index: 9;
+    min-width: 148px;
+    max-width: 210px;
+    max-height: 46%;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid #333c34;
+    background: rgba(16, 21, 17, 0.92);
+    backdrop-filter: blur(8px);
+    color: #cfd6ce;
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.3);
+}
+
+.strata-legend .lg-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 10px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+}
+
+.strata-legend .lg-head span {
+    font: 8px Bahnschrift, sans-serif;
+    letter-spacing: 0.14em;
+    color: #b98548;
+}
+
+.strata-legend .lg-head b {
+    font-size: 10px;
+    color: #aeb6ad;
+    font-weight: 400;
+}
+
+.strata-legend .lg-body {
+    overflow: auto;
+    padding: 0 10px 8px;
+}
+
+.strata-legend .lg-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 2px 0;
+    font-size: 10px;
+    color: #b9c1b8;
+    white-space: nowrap;
+}
+
+.strata-legend .lg-row i {
+    width: 12px;
+    height: 8px;
+    flex-shrink: 0;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+/* ── 虚拟钻孔结果卡 ── */
+.virtual-card {
+    position: absolute;
+    right: 12px;
+    top: 64px;
+    z-index: 9;
+    width: 230px;
+    max-height: 56%;
+    display: flex;
+    flex-direction: column;
+    padding: 9px 11px 10px;
+    border: 1px solid #2f4a52;
+    background: rgba(13, 22, 24, 0.94);
+    backdrop-filter: blur(8px);
+    color: #cfe2e4;
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
+}
+
+.virtual-card .vc-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+}
+
+.virtual-card .vc-head span {
+    font: 8px Bahnschrift, sans-serif;
+    letter-spacing: 0.14em;
+    color: #5fb7c4;
+}
+
+.virtual-card .vc-head button {
+    border: 0;
+    background: transparent;
+    color: #7d8d90;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.virtual-card strong {
+    margin: 4px 0 2px;
+    font-size: 13px;
+    color: #e4f0f1;
+}
+
+.virtual-card small {
+    color: #77909a;
+    font-size: 9px;
+}
+
+.virtual-card .vc-layers {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    margin-top: 7px;
+}
+
+.virtual-card .vc-layer {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+    font-size: 10px;
+}
+
+.virtual-card .vc-layer i {
+    width: 12px;
+    height: 8px;
+    flex-shrink: 0;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.virtual-card .vc-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #c3d4d6;
+}
+
+.virtual-card .vc-depth {
+    color: #7d99a1;
+    font-family: Consolas, monospace;
+}
+
+.virtual-card .vc-empty {
+    padding: 12px 0;
+    text-align: center;
+    color: #77878a;
+    font-size: 10px;
+}
+
+.virtual-card .vc-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 9px;
+}
+
+.virtual-card .vc-actions button {
+    flex: 1;
+    padding: 5px 0;
+    border: 1px solid #37525a;
+    background: #16333a;
+    color: #9fd4dd;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.virtual-card .vc-actions button:disabled {
+    opacity: .4;
+    cursor: not-allowed;
+}
+
+.virtual-card .vc-actions button:hover:not(:disabled) {
+    background: #1d434c;
 }
 
 /* ── 沉陷对比图例 ── */

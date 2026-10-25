@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { reactive, ref } from 'vue'
 
-export type WorkspaceDock = 'overview' | 'borehole' | 'table' | 'performance'
+export type WorkspaceDock = 'overview' | 'borehole' | 'table' | 'records' | 'performance'
 
 export interface RenderPerformance {
     fps: number

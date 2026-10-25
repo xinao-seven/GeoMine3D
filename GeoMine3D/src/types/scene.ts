@@ -40,3 +40,13 @@ export interface MeasurementRecord {
   start: { x: number; y: number; z: number }
   end: { x: number; y: number; z: number }
 }
+
+/** 标注记录镜像（来自 AnnotationTool，或持久化恢复），坐标为场景世界坐标 */
+export interface AnnotationRecord {
+  id: string
+  text: string
+  position: { x: number; y: number; z: number }
+  createdAt: number
+  /** 持久化到服务端后的记录 id（本地模式为 null） */
+  serverId?: string | null
+}

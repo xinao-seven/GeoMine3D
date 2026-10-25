@@ -106,6 +106,44 @@ export interface AnalysisOverview {
     workingface_status: Array<{ status: string; count: number; avg_length: number | null; avg_width: number | null }>
 }
 
+export interface BoundaryLine {
+    name: string
+    points: number[][]
+    bbox: number[]
+}
+
+export interface BoundariesPayload {
+    mine: BoundaryLine[]
+    workingfaces: BoundaryLine[]
+}
+
+export interface AnnotationRecordApi {
+    id: string
+    project_id: string
+    position_x: number
+    position_y: number
+    position_z: number
+    title: string
+    content: string | null
+    color: string
+    created_at: string
+}
+
+export interface VirtualBoreholeResult {
+    x: number
+    y: number
+    layers: Array<{
+        layer_name: string
+        top_depth: number
+        bottom_depth: number
+        thickness: number
+        color: string
+        sample_count: number
+    }>
+    used_neighbors: number
+    nearest_distance_m: number | null
+}
+
 interface DataResponse<T> { data: T }
 interface PageResponse<T> { data: T[]; meta: { page: number; page_size: number; total: number } }
 
@@ -169,6 +207,30 @@ export const workspaceApi = {
     },
     async getAnalysisOverview(projectId: string) {
         return (await workspaceClient.get<DataResponse<AnalysisOverview>>(`/projects/${projectId}/analysis/overview`)).data.data
+    },
+    async listBoundaries(projectId: string) {
+        return (await workspaceClient.get<DataResponse<BoundariesPayload>>(`/projects/${projectId}/boundaries`)).data.data
+    },
+    async listAnnotations(projectId: string) {
+        return (await workspaceClient.get<DataResponse<AnnotationRecordApi[]>>(`/projects/${projectId}/annotations`)).data.data
+    },
+    async createAnnotation(projectId: string, payload: {
+        title: string
+        content?: string | null
+        position_x: number
+        position_y: number
+        position_z: number
+        color?: string
+    }) {
+        return (await workspaceClient.post<DataResponse<AnnotationRecordApi>>(`/projects/${projectId}/annotations`, payload)).data.data
+    },
+    async deleteAnnotation(annotationId: string) {
+        await workspaceClient.delete(`/annotations/${annotationId}`)
+    },
+    async getVirtualBorehole(projectId: string, payload: { x: number; y: number; max_neighbors?: number }) {
+        return (await workspaceClient.post<DataResponse<VirtualBoreholeResult>>(
+            `/projects/${projectId}/analysis/virtual-borehole`, payload,
+        )).data.data
     },
 }
 

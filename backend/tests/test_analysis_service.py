@@ -4,6 +4,7 @@ from app.services.analysis_service import (
     depth_distribution,
     layer_frequency,
     thickness_distribution,
+    virtual_borehole,
     workingface_status,
 )
 
@@ -101,3 +102,54 @@ def test_build_overview_composes_summary_blocks() -> None:
     assert overview["total_drilling_depth"] == 360.0
     assert overview["max_borehole_depth"] == 240.0
     assert overview["thickness_distribution"][0]["layer_name"] == "1-2煤"
+
+
+V_BOREHOLES = [
+    {"id": "b1", "code": "B1", "x": 0, "y": 0},
+    {"id": "b2", "code": "B2", "x": 100, "y": 0},
+    {"id": "b3", "code": "B3", "x": 1000, "y": 1000},
+]
+V_SEGMENTS = {
+    "b1": [
+        {"layer_name": "1-2煤", "top_depth": 100, "bottom_depth": 104, "thickness": 4, "color": "#111111"},
+        {"layer_name": "粉砂岩", "top_depth": 104, "bottom_depth": 110, "thickness": 6, "color": "#222222"},
+    ],
+    "b2": [
+        {"layer_name": "1-2煤", "top_depth": 120, "bottom_depth": 126, "thickness": 6, "color": "#333333"},
+    ],
+    "b3": [
+        {"layer_name": "1-2煤", "top_depth": 200, "bottom_depth": 210, "thickness": 10, "color": "#444444"},
+    ],
+}
+
+
+def test_virtual_borehole_interpolates_layers_by_distance() -> None:
+    result = virtual_borehole(V_BOREHOLES, V_SEGMENTS, 50, 0, max_neighbors=8)
+
+    # 距 b1/b2 各 50m，b3 很远权重应可忽略
+    coal = next(layer for layer in result["layers"] if layer["layer_name"] == "1-2煤")
+    assert 100 < coal["top_depth"] < 120
+    assert coal["color"] == "#111111"  # 取最近邻 b1 的颜色
+    assert result["used_neighbors"] == 3
+    assert result["nearest_distance_m"] == 50.0
+
+
+def test_virtual_borehole_exact_hit_returns_nearest_values() -> None:
+    result = virtual_borehole(V_BOREHOLES, V_SEGMENTS, 0, 0, max_neighbors=8)
+
+    coal = next(layer for layer in result["layers"] if layer["layer_name"] == "1-2煤")
+    assert coal["top_depth"] == 100.0
+    assert coal["bottom_depth"] == 104.0
+
+
+def test_virtual_borehole_no_neighbors() -> None:
+    result = virtual_borehole([], V_SEGMENTS, 10, 10)
+    assert result["layers"] == []
+    assert result["used_neighbors"] == 0
+    assert result["nearest_distance_m"] is None
+
+
+def test_virtual_borehole_layers_sorted_by_top_depth() -> None:
+    result = virtual_borehole(V_BOREHOLES, V_SEGMENTS, 30, 0)
+    tops = [layer["top_depth"] for layer in result["layers"]]
+    assert tops == sorted(tops)

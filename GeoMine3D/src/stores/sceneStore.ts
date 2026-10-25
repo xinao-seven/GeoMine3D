@@ -8,6 +8,7 @@ import type {
     StratumLayerControl,
     ToolState,
     MeasurementRecord,
+    AnnotationRecord,
 } from '@/types'
 
 type ModelType = 'stratum' | 'borehole' | 'workingface' | 'roadway'
@@ -80,6 +81,11 @@ export const useSceneStore = defineStore('scene', () => {
     const measurements = ref<MeasurementRecord[]>([])
     // 最近一次测量距离（用于快捷展示）
     const lastMeasurementDistance = ref<number | null>(null)
+    // 标注镜像（SceneCanvas 从 AnnotationTool 同步），供管理面板展示
+    const annotations = ref<AnnotationRecord[]>([])
+    // 单条删除请求（由管理面板发起，SceneCanvas 监听消费）
+    const measurementRemoveRequest = ref<{ id: string; requestId: number } | null>(null)
+    const annotationRemoveRequest = ref<{ id: string; requestId: number } | null>(null)
 
     // 模型加载状态表，key 为 type:id
     const modelLoadStatus = reactive<Record<string, { loaded: boolean; loading: boolean }>>({})
@@ -156,6 +162,28 @@ export const useSceneStore = defineStore('scene', () => {
         lastMeasurementDistance.value = null
     }
 
+    /** 删除单条测量记录（本地列表；场景图元由 SceneCanvas 按删除请求移除） */
+    function removeMeasurement(id: string) {
+        measurements.value = measurements.value.filter(item => item.id !== id)
+        const remaining = measurements.value
+        lastMeasurementDistance.value = remaining.length ? remaining[remaining.length - 1].distance : null
+    }
+
+    /** 请求移除场景中的单条测量（图元 + 记录） */
+    function requestRemoveMeasurement(id: string) {
+        measurementRemoveRequest.value = { id, requestId: Date.now() }
+    }
+
+    /** 请求移除场景中的单条标注（图元 + 镜像 + 服务端持久化记录） */
+    function requestRemoveAnnotation(id: string) {
+        annotationRemoveRequest.value = { id, requestId: Date.now() }
+    }
+
+    /** SceneCanvas 将工具内标注快照同步到镜像 */
+    function setAnnotations(records: AnnotationRecord[]) {
+        annotations.value = records
+    }
+
     function getModelKey(type: ModelType, id: string) {
         return `${type}:${id}`
     }
@@ -207,6 +235,9 @@ export const useSceneStore = defineStore('scene', () => {
         selectObject(null)
         measurements.value = []
         lastMeasurementDistance.value = null
+        annotations.value = []
+        measurementRemoveRequest.value = null
+        annotationRemoveRequest.value = null
         loadRequest.value = null
         unloadRequest.value = null
         resetGroupOpacity()
@@ -261,6 +292,9 @@ export const useSceneStore = defineStore('scene', () => {
         toolState,
         measurements,
         lastMeasurementDistance,
+        annotations,
+        measurementRemoveRequest,
+        annotationRemoveRequest,
         modelLoadStatus,
         loadRequest,
         unloadRequest,
@@ -286,6 +320,10 @@ export const useSceneStore = defineStore('scene', () => {
         setExplodeGap,
         addMeasurement,
         clearMeasurements,
+        removeMeasurement,
+        requestRemoveMeasurement,
+        requestRemoveAnnotation,
+        setAnnotations,
         getModelKey,
         getModelLoadStatus,
         setModelLoadStatus,
