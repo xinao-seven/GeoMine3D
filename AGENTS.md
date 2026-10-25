@@ -47,7 +47,7 @@ backend/                    # Backend: FastAPI + SQLAlchemy + MySQL
 ├── app/                    # API, services, repositories, models and schemas
 ├── alembic/                # Database migrations
 ├── mcp_server.py           # 远程调试 MCP 服务（stdio）：把浏览器 __geomine 桥暴露为 MCP 工具
-├── scripts/                # Data import helpers
+├── scripts/                # Data import helpers（含 preprocess_basemap.py 底图预处理）
 └── tests/                  # Backend tests
 
 server/                     # Preserved legacy data service and source assets (do not modify)
@@ -82,6 +82,24 @@ server/                     # Preserved legacy data service and source assets (d
   （锦界 182 孔 → 16641 节点）；不含 roadways/working_faces/沉陷场（锦界专属）。
   `import_server_data.py` 重跑时按 `metadata.source=="modeling"` 跳过建模资产、按“项目含建模
   内容则不劫持”匹配同名项目。E2E 冒烟：`backend/scripts/smoke_modeling_job.py`。
+- 分析与出图功能（`/api/v1/projects/{id}/analysis/*`，纯函数在 `app/services/analysis_service.py`）：
+  - `overview` 厚度分布/深度分布/地层频率/工作面状态统计（前端 AnalysisDock 场景概览与体积储量页签消费）。
+  - `virtual-borehole`(POST) 任意点 IDW 插值虚拟钻孔；`reserves` 工作面 shp 圈闭面积×圈内钻孔
+    煤厚×密度估算资源量；`contours?layer=` 顶板埋深等值线（IDW 网格 + Marching Squares，
+    返回投影坐标线段）。
+  - `boundaries` 读取井田边界/工作面 shp 折线（pyshp，`settings.*_boundary_shp`，mtime 缓存）。
+- 三维工作台叠加层与工具（SceneCanvas 工具箱“显示/分析”分组）：矿区边界贴地线框
+  （`BoundaryOverlay`，钻孔孔口平均高程为基准面）、地层颜色图例、标注持久化
+  （`annotations` 表 API，项目模式自动保存/恢复）、测量/标注单条删除与 CSV 导出、
+  虚拟钻孔点击查询、剖面工具（两点定义剖面线 → `ClipTool.setCustomPlane` 任意垂直面裁剪 +
+  勘探线剖面图对话框，走廊 ±300m 钻孔投影）、分层体积估算（四面体符号体积/竖向比例）、
+  埋深等值线（`ContourOverlay` 按埋深配色）、地层 LOD（`StratumLodController` 按相机距离
+  切换 `web_package/lods/*_lod50.glb`，沉陷/炸开时自动抑制；由 catalog `source_file` 推导地址）。
+  场景保存/快照：头部按钮 → `scene_configs` API（视角/图层/剖切/炸开序列化）与 PNG 导出；
+  状态栏鼠标坐标读数（投影面求交 + 悬停表面点高程）。
+  GeoTIFF 底图：`scripts/preprocess_basemap.py` 把 UTM49N DEM 重投影到矿区 GK37 带生成
+  `/static/models/basemap/`（jpg+json），前端 `BasemapOverlay` 按元数据铺平面纹理；
+  交付包 `server/data/tif/20260211.tif` 实测有效区与矿区不重叠（偏东北约 25km），未生成底图。
 
 ## Key Conventions
 

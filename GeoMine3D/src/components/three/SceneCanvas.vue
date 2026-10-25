@@ -1084,19 +1084,21 @@ function computeStratumVolumes() {
     try {
         const items: Array<{ layerName: string; volumeM3: number; triangles: number }> = []
         const scale = Math.max(verticalScale.value, 1e-6)
-        const layerNameByModel = new Map<string, string>()
+        // mesh userData.id ↔ stratumLayers.key 的映射，用于把每个网格归到对应层名
+        const layerNameByKey = new Map<string, string>()
+        const fallbackByModel = new Map<string, string>()
         for (const layer of stratumLayers.value) {
-            if (!layerNameByModel.has(layer.modelId)) {
-                layerNameByModel.set(layer.modelId, layer.layerName)
+            layerNameByKey.set(layer.key, layer.layerName)
+            if (!fallbackByModel.has(layer.modelId)) {
+                fallbackByModel.set(layer.modelId, layer.layerName)
             }
         }
+        const perLayer = new Map<string, { volume: number; triangles: number }>()
         const a = new THREE.Vector3()
         const b = new THREE.Vector3()
         const c = new THREE.Vector3()
         const cb = new THREE.Vector3()
         for (const model of modelManager.getModelsByType('stratum')) {
-            let volume = 0
-            let triangles = 0
             model.object.updateWorldMatrix(true, true)
             model.object.traverse((child) => {
                 const mesh = child as THREE.Mesh
@@ -1104,9 +1106,12 @@ function computeStratumVolumes() {
                 const geometry = mesh.geometry as THREE.BufferGeometry
                 const positions = geometry.getAttribute('position')
                 if (!positions) return
+                const key = String(mesh.userData?.id || '')
+                const layerName = layerNameByKey.get(key) || fallbackByModel.get(model.id) || model.name
+                const bucket = perLayer.get(layerName) ?? { volume: 0, triangles: 0 }
                 const index = geometry.getIndex()
                 const triangleCount = Math.floor((index ? index.count : positions.count) / 3)
-                triangles += triangleCount
+                bucket.triangles += triangleCount
                 const matrix = mesh.matrixWorld
                 for (let i = 0; i < triangleCount; i += 1) {
                     const i0 = index ? index.getX(i * 3) : i * 3
@@ -1116,16 +1121,15 @@ function computeStratumVolumes() {
                     b.fromBufferAttribute(positions, i1).applyMatrix4(matrix)
                     c.fromBufferAttribute(positions, i2).applyMatrix4(matrix)
                     cb.copy(b).cross(c)
-                    volume += a.dot(cb)
+                    bucket.volume += a.dot(cb)
                 }
+                perLayer.set(layerName, bucket)
             })
-            volume = Math.abs(volume / 6) / scale
-            if (volume > 0) {
-                items.push({
-                    layerName: layerNameByModel.get(model.id) || model.name,
-                    volumeM3: Math.round(volume),
-                    triangles,
-                })
+        }
+        for (const [layerName, bucket] of perLayer) {
+            const volumeM3 = Math.round(Math.abs(bucket.volume / 6) / scale)
+            if (volumeM3 > 0) {
+                items.push({ layerName, volumeM3, triangles: bucket.triangles })
             }
         }
         items.sort((x, y) => y.volumeM3 - x.volumeM3)
@@ -1721,6 +1725,9 @@ const toolGroups = computed<ToolGroup[]>(() => [
                         { label: '样本钻孔', value: String(contourData.value.sample_count) },
                     ],
                 }]
+                : []),
+            ...(contourEnabled.value && contourData.value && !contourData.value.levels.length
+                ? [{ kind: 'note' as const, text: `「${currentContourLayer.value}」埋深恒定（如顶层埋深为 0），无等值线；点击“切换等值线地层”换一层。`, warn: true }]
                 : []),
             ...(contourEnabled.value && !isProjectMode.value
                 ? [{ kind: 'note' as const, text: '等值线需要项目模式（本地演示无钻孔库）。', warn: true }]
