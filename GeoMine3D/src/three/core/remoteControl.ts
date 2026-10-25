@@ -1,10 +1,16 @@
 import * as THREE from 'three'
 
+import { installBridgeTelemetry } from './bridgeTelemetry'
+import { startRemoteBridgeClient } from './remoteBridgeClient'
+
 /**
  * 远程控制桥：把场景引擎的关键能力暴露到 `window.__geomine`，
  * 供浏览器控制台、自动化截图脚本和演示工具调用。
  *
  * 安装条件：开发环境，或 URL 显式带 `?remote=1`（生产构建下默认不安装）。
+ * 启用时还会通过 remoteBridgeClient 连接后端 WS 中继（/api/v1/remote/ws），
+ * 使 MCP 服务（backend/mcp_server.py）能远程调用这些命令，见
+ * docs/远程调试MCP指南.md。`eval` 逃生舱仅在 URL 显式带 ?remote=1 时放行。
  *
  * 典型用法（浏览器控制台）：
  *   __geomine.setView({ azimuth: 45, elevation: 35, distanceFactor: 1.2 })
@@ -26,12 +32,14 @@ export interface RemoteControlOptions {
     getSettlementManager?: () => any
 }
 
-export function installRemoteControl(options: RemoteControlOptions) {
-    const enabled = import.meta.env.DEV ||
-        new URLSearchParams(window.location.search).has('remote')
-    if (!enabled) return
+export function installRemoteControl(options: RemoteControlOptions): () => void {
+    const params = new URLSearchParams(window.location.search)
+    const explicitRemote = params.has('remote')
+    const enabled = import.meta.env.DEV || explicitRemote
+    if (!enabled) return () => {}
 
     const { sceneManager, cameraManager, rendererManager, controlsManager, modelManager } = options
+    const telemetry = installBridgeTelemetry()
 
     const scene = () => sceneManager.scene as THREE.Scene
     const camera = () => cameraManager.camera as THREE.PerspectiveCamera
@@ -304,7 +312,36 @@ export function installRemoteControl(options: RemoteControlOptions) {
             }
         },
 
-        /** 引擎原始句柄（调试用） */
+        /** 渲染统计：draw calls/三角面/几何与纹理数/程序数/视口与 FPS */
+        renderStats() {
+            const renderer = rendererManager.renderer
+            const info = renderer.info
+            const size = renderer.getSize(new THREE.Vector2())
+            return {
+                render: {
+                    calls: info.render.calls,
+                    triangles: info.render.triangles,
+                    lines: info.render.lines,
+                    points: info.render.points,
+                },
+                memory: { geometries: info.memory.geometries, textures: info.memory.textures },
+                programs: info.programs?.length ?? 0,
+                viewport: { width: size.x, height: size.y, pixelRatio: renderer.getPixelRatio() },
+                fps: telemetry.fps(),
+            }
+        },
+
+        /** 页面控制台日志（含未捕获异常/Promise 拒绝）；level ∈ all|log|info|warn|error */
+        getConsoleLogs(level = 'all', limit = 200) {
+            return telemetry.getLogs(level, limit)
+        },
+
+        clearConsoleLogs() {
+            telemetry.clearLogs()
+            return { cleared: true }
+        },
+
+        /** 引擎原始句柄（调试用，仅限浏览器控制台；不会经桥暴露） */
         handles: {
             sceneManager, cameraManager, rendererManager, controlsManager, modelManager,
             get store() { return store() },
@@ -358,4 +395,18 @@ export function installRemoteControl(options: RemoteControlOptions) {
 
     ;(window as any).__geomine = api
     console.info('[GeoMine3D] 远程控制桥已安装：window.__geomine')
+
+    // 桥接到后端中继，供 MCP 服务远程调用；返回清理函数随画布卸载
+    return startRemoteBridgeClient({
+        api: api as unknown as Record<string, unknown>,
+        telemetry,
+        getProjectId: parseWorkspaceProjectId,
+        getAllowEval: () => explicitRemote,
+    })
+}
+
+/** 从路由路径取 projectId（/workspace/:projectId），取不到时用 default */
+function parseWorkspaceProjectId(): string {
+    const match = /^\/workspace\/([^/?#]+)/.exec(window.location.pathname)
+    return match?.[1] ? decodeURIComponent(match[1]) : 'default'
 }

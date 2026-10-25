@@ -166,6 +166,8 @@ let measureTool: MeasureTool
 let annotationTool: AnnotationTool
 let axisGizmoTool: AxisGizmoTool | null = null
 let boundingBoxTool: BoundingBoxTool | null = null
+// 远程控制桥(含 WS 中继客户端)的清理函数,随画布卸载
+let disposeRemoteBridge: (() => void) | null = null
 let stratumExplodeTool: StratumExplodeTool | null = null
 let animFrameId: number
 let resizeObserver: ResizeObserver
@@ -1201,7 +1203,7 @@ async function initScene() {
     // 远程控制桥:开发环境或 URL 带 ?remote=1 时,把场景引擎暴露给
     // 控制台/自动化脚本(相机球坐标定位、地层颜色、剖切/炸开、PNG 截图导出等),
     // 例:__geomine.setView({ azimuth: 45, elevation: 35 }) / __geomine.capture({ background: '#ffffff' })
-    installRemoteControl({
+    disposeRemoteBridge = installRemoteControl({
         sceneManager, cameraManager, rendererManager, controlsManager, modelManager,
         getClipTool: () => clipTool,
         getExplodeTool: () => stratumExplodeTool,
@@ -1342,6 +1344,8 @@ onDeactivated(() => {
 })
 
 onUnmounted(() => {
+    disposeRemoteBridge?.()
+    disposeRemoteBridge = null
     sceneStore.activateTool(null)
     sceneStore.resetSceneSession()
     // geoRoot 随画布销毁,竖向倍率也要回默认,否则下次进来状态不一致

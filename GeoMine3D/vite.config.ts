@@ -18,6 +18,8 @@ export default defineConfig({
             '/api': {
                 target: backendTarget,
                 changeOrigin: true,
+                // 远程调试桥客户端走 /api/v1/remote/ws，需要 WS 代理
+                ws: true,
             },
             '/static': {
                 target: backendTarget,

@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     borehole_strata_file: str = "boreholes/地层汇总14层.xlsx"
     frontend_dist_dir: Path = Path("../GeoMine3D/dist")
     serve_frontend: bool = True
+    # 远程调试中继(WebSocket /api/v1/remote/ws + /remote/invoke):供 backend/mcp_server.py
+    # 把命令转发到浏览器工作台的 __geomine 桥;整体关闭时不影响常规 API。
+    remote_debug_enabled: bool = True
 
     @property
     def log_level_name(self) -> str:

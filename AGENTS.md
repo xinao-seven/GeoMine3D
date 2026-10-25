@@ -46,6 +46,7 @@ GeoMine3D/                  # Frontend: Vue3 + TS + Vite + Three.js + ECharts
 backend/                    # Backend: FastAPI + SQLAlchemy + MySQL
 ├── app/                    # API, services, repositories, models and schemas
 ├── alembic/                # Database migrations
+├── mcp_server.py           # 远程调试 MCP 服务（stdio）：把浏览器 __geomine 桥暴露为 MCP 工具
 ├── scripts/                # Data import helpers
 └── tests/                  # Backend tests
 
@@ -64,6 +65,11 @@ server/                     # Preserved legacy data service and source assets (d
 - 原始交付包静态目录：`backend/app/main.py` 将 `server/static/models` 挂载在 `/static/models`，
   前端可直接取 `catalog` 资产与大体积固定数据集（如沉陷位移场 `/static/models/settlement/`）；
   模型详情/版本下载仍走 `/api/v1/models/{id}/file`。
+- 远程调试 MCP：`backend/mcp_server.py`（stdio）把浏览器 `window.__geomine` 桥暴露为 29 个
+  MCP 工具，链路 MCP → `POST /api/v1/remote/invoke` → WS `/api/v1/remote/ws` → 浏览器
+  `remoteBridgeClient.ts`。门控：开发环境默认启用，生产需页面 URL 带 `?remote=1`（`run_js`
+  仅 `?remote=1` 时放行）；总开关 `settings.remote_debug_enabled`。详见
+  `docs/远程调试MCP指南.md`。注意 `mcp` 依赖固定在 1.x（2.x 强制 starlette>=1，会破坏 fastapi 0.116）。
 
 ## Key Conventions
 
