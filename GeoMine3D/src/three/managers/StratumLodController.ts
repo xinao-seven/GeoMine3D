@@ -26,8 +26,17 @@ const TICK_INTERVAL_MS = 800
  * 由 catalog 模型的 source_file 推导 50% 抽稀 LOD 的静态地址。
  * web_package/L01.glb → /static/models/web_package/lods/L01_lod50.glb；
  * 上传模型 / 无 source_file 的模型不参与 LOD。
+ *
+ * 后端注册时已把逐层 LOD 的公开地址写进 metadata.lod_urls（server_static 与
+ * upload 两种存储范围都能算对），优先用它；旧数据回退到路径约定。
  */
 export function deriveLodUrl(model: ModelItem): string | null {
+    // 闭合壳(空心版本)没有 LOD:减面 LOD 只对应渲染轨,且壳不需要远景简化
+    if (model.metadata?.geometry_variant === 'shell') return null
+    const lodUrls = model.metadata?.lod_urls as Record<string, string> | undefined
+    if (lodUrls && typeof lodUrls.lod50 === 'string' && lodUrls.lod50) {
+        return lodUrls.lod50
+    }
     const sourceFile = String(model.metadata?.source_file || '')
     const lower = sourceFile.toLowerCase()
     if (!lower.endsWith('.glb')) return null
@@ -53,7 +62,8 @@ function disposeObject(object: THREE.Object3D) {
  *
  * 高/低模是同一父节点下的兄弟对象，按相机距离切换 visible（低模由
  * StratumModelLoader 用同一份元数据加载，材质/竖向比例与高模一致）。
- * 沉陷对比与地层炸开启用时抑制切换并回退高模，避免位移/错位作用在低模上。
+ * 沉陷对比、地层炸开、剖切启用时抑制切换并回退高模：位移/错位作用在低模上会
+ * 失真，而剖切会打开模型内部——低模经过减面，内部壁已被抹平、切面呈空心。
  */
 export class StratumLodController {
     private entries = new Map<string, LodEntry>()

@@ -42,6 +42,9 @@ export class StratumModelLoader {
     // 合并模型通过 layer_colors / layer_names 按 mesh 名(L01…)映射每层样式。
     async load(model: ModelItem): Promise<THREE.Group> {
         const meta: Record<string, any> = model.metadata ?? {}
+        // 双轨几何:shell = 闭合壳(空心版本),图层名/节点名加后缀以区分,并跳过 LOD
+        const isShellVariant = meta.geometry_variant === 'shell'
+        const variantLabel = isShellVariant ? '（空心壳）' : ''
         const catalogColor = typeof meta.color_hex === 'string' && meta.color_hex
             ? new THREE.Color(meta.color_hex)
             : null
@@ -107,10 +110,14 @@ export class StratumModelLoader {
                         edgeLines.visible = false
                         mesh.add(edgeLines)
 
-                        const layerName = layerNames[meshCode]
+                        const baseLayerName = layerNames[meshCode]
                             || (meshes.length === 1
                                 ? model.name
                                 : (mesh.name?.trim() || `${model.name}_layer_${meshIndex + 1}`))
+                        // 单层模型名已含“（空心壳）”时不再重复追加
+                        const layerName = variantLabel && !baseLayerName.endsWith(variantLabel)
+                            ? `${baseLayerName}${variantLabel}`
+                            : baseLayerName
                         mesh.userData = {
                             id: `${model.id}::${meshIndex}`,
                             name: layerName,

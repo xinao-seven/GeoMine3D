@@ -108,19 +108,34 @@
                     </button>
                     <div v-show="!collapsed[panelKey('asset', group.key)]" class="group-body">
                         <div v-for="model in group.items" :key="model.id" class="resource-row"
-                            :class="{ 'is-loaded': modelStatus(model).loaded }">
+                            :class="{
+                                'is-loaded': variantStatus(model, 'render').loaded,
+                                'is-shell-loaded': variantStatus(model, 'shell').loaded,
+                            }">
                             <button class="resource-main"
-                                :disabled="modelStatus(model).loading || modelStatus(model).loaded"
-                                @click="loadModel(model)">
+                                :disabled="variantStatus(model, 'render').loading || variantStatus(model, 'render').loaded"
+                                :title="hasShell(model) ? '加载含内部棱柱壁版本(剖切后内部可见)' : undefined"
+                                @click="toggleVariant(model, 'render')">
                                 <span class="resource-symbol" :class="group.key" :style="symbolStyle(model)">{{
                                     group.symbol }}</span>
                                 <span class="resource-name"><strong>{{ model.name }}</strong><small>{{ subtitle(model)
                                         }}</small></span>
-                                <span class="load-state">{{ modelStatus(model).loaded ? '已加载' :
-                                    modelStatus(model).loading ? '加载中' : '加载' }}</span>
+                                <span class="load-state">{{ variantStatus(model, 'render').loaded ? '已加载' :
+                                    variantStatus(model, 'render').loading ? '加载中' : '加载' }}</span>
                             </button>
-                            <button v-if="modelStatus(model).loaded" class="remove-state" title="从场景移除"
-                                @click="removeModel(model)">移除</button>
+                            <!-- 双轨几何:同一模型可选加载含壁渲染版或闭合壳（空心）版，二者互斥 -->
+                            <button v-if="hasShell(model)" class="variant-state"
+                                :class="{ active: variantStatus(model, 'shell').loaded }"
+                                :title="variantStatus(model, 'shell').loaded
+                                    ? '移除空心版本(闭合壳)'
+                                    : '加载空心版本(闭合壳):剖切后内部为空，用于对照/分析'"
+                                :disabled="variantStatus(model, 'shell').loading"
+                                @click="toggleVariant(model, 'shell')">
+                                {{ variantStatus(model, 'shell').loaded ? '空心壳 ✕' :
+                                    variantStatus(model, 'shell').loading ? '加载中' : '空心壳' }}
+                            </button>
+                            <button v-if="variantStatus(model, 'render').loaded" class="remove-state" title="从场景移除"
+                                @click="toggleVariant(model, 'render')">移除</button>
                         </div>
                         <p v-if="!group.items.length" class="empty-copy">当前项目暂无{{ group.label }}</p>
                     </div>
@@ -269,9 +284,10 @@ function onOpacityInput(type: SceneType, value: number | number[]) {
 function subtitle(asset: ModelAssetRecord) {
     const meta = asset.metadata_json || {}
     const file = String(meta.source_file || '').split('/').pop()
-    if (meta.combined) return `全层位合并${file ? ` · ${file}` : ''}`
-    if (meta.layer_index != null) return `层序 ${meta.layer_index}${file ? ` · ${file}` : ''}`
-    return file || asset.model_type
+    const suffix = hasShell(asset) ? ' · 含壁/空心壳双版本' : ''
+    if (meta.combined) return `全层位合并${file ? ` · ${file}` : ''}${suffix}`
+    if (meta.layer_index != null) return `层序 ${meta.layer_index}${file ? ` · ${file}` : ''}${suffix}`
+    return `${file || asset.model_type}${suffix}`
 }
 
 /** 分层模型用 catalog 配色作为符号色,便于与三维地层对应 */
@@ -294,7 +310,60 @@ function readableOnDark(hex: string) {
     return `#${channels.map(c => lift(c).toString(16).padStart(2, '0')).join('')}`
 }
 
-// ==================== 模型加载 ====================
+// ==================== 模型加载(双轨几何) ====================
+
+/** 几何轨:render = 含内部棱柱壁的渲染网格;shell = 闭合壳(空心版本) */
+type GeometryVariant = 'render' | 'shell'
+
+/** 壳版本在场景/加载状态表中用独立 id,避免与含壁版本互相覆盖 */
+function variantIdOf(asset: ModelAssetRecord, variant: GeometryVariant) {
+    return variant === 'shell' ? `${asset.id}::shell` : asset.id
+}
+
+/** catalog 是否提供了闭合壳(旧交付包没有) */
+function hasShell(asset: ModelAssetRecord) {
+    return Boolean(asset.metadata_json?.shell_file)
+}
+
+function variantStatus(asset: ModelAssetRecord, variant: GeometryVariant) {
+    return sceneStore.getModelLoadStatus(renderType(asset), variantIdOf(asset, variant))
+}
+
+function loadModelVariant(asset: ModelAssetRecord, variant: GeometryVariant) {
+    const type = renderType(asset)
+    const id = variantIdOf(asset, variant)
+    const isShell = variant === 'shell'
+    const model: ModelItem = {
+        id,
+        name: isShell ? `${asset.name}（空心壳）` : asset.name,
+        type,
+        version: 'current',
+        format: 'glb',
+        description: isShell ? '闭合壳（剖切后内部为空，供对照/分析）' : '含内部棱柱壁（剖切后内部可见）',
+        fileName: isShell ? `${asset.name}_shell.glb` : `${asset.name}.glb`,
+        fileUrl: workspaceApi.modelFileUrl(asset.id, variant),
+        // geometry_variant 供加载器/图层树区分两套几何(文件名与图层名后缀、跳过 LOD)
+        metadata: { ...asset.metadata_json, geometry_variant: variant },
+    }
+    sceneStore.requestLoadModel({ type, id: model.id, name: model.name, model })
+}
+
+/**
+ * 切换某个模型的几何轨:点击已加载的轨→移除;否则先卸载另一轨(两套几何重合,同时加载会重叠)。
+ * 旧交付包无 shell_file 时只有含壁版可用。
+ */
+function toggleVariant(asset: ModelAssetRecord, variant: GeometryVariant) {
+    const current = variantStatus(asset, variant)
+    if (current.loaded || current.loading) {
+        sceneStore.requestUnloadModel({ type: renderType(asset), id: variantIdOf(asset, variant) })
+        return
+    }
+    const other: GeometryVariant = variant === 'shell' ? 'render' : 'shell'
+    if (variantStatus(asset, other).loaded) {
+        sceneStore.requestUnloadModel({ type: renderType(asset), id: variantIdOf(asset, other) })
+    }
+    loadModelVariant(asset, variant)
+}
 
 async function loadResources() {
     if (localMode.value) return
@@ -305,24 +374,6 @@ async function loadResources() {
             workspaceApi.listBoreholes(projectId.value),
         ])
     } finally { loading.value = false }
-}
-
-function loadModel(asset: ModelAssetRecord) {
-    const type = renderType(asset)
-    const model: ModelItem = {
-        id: asset.id, name: asset.name, type, version: 'current', format: 'glb', description: '',
-        fileName: `${asset.name}.glb`, fileUrl: workspaceApi.modelFileUrl(asset.id),
-        metadata: asset.metadata_json,
-    }
-    sceneStore.requestLoadModel({ type, id: model.id, name: model.name, model })
-}
-
-function modelStatus(asset: ModelAssetRecord) {
-    return sceneStore.getModelLoadStatus(renderType(asset), asset.id)
-}
-
-function removeModel(asset: ModelAssetRecord) {
-    sceneStore.requestUnloadModel({ type: renderType(asset), id: asset.id })
 }
 
 // ==================== 钻孔 ====================
@@ -390,13 +441,15 @@ function loadedChildren(type: SceneType): SceneChild[] {
             }))
     }
     return models.value
-        .filter(asset => renderType(asset) === type && modelStatus(asset).loaded)
-        .map(asset => ({
-            key: asset.id,
-            label: asset.name,
-            color: asset.metadata_json?.color_hex || DEFAULT_CHILD_COLOR[type],
-            remove: () => removeModel(asset),
-        }))
+        .filter(asset => renderType(asset) === type)
+        .flatMap(asset => (['render', 'shell'] as GeometryVariant[])
+            .filter(variant => variantStatus(asset, variant).loaded)
+            .map((variant): SceneChild => ({
+                key: variantIdOf(asset, variant),
+                label: variant === 'shell' ? `${asset.name}（空心壳）` : asset.name,
+                color: asset.metadata_json?.color_hex || DEFAULT_CHILD_COLOR[type],
+                remove: () => toggleVariant(asset, variant),
+            })))
 }
 
 const SCENE_GROUPS: { type: SceneType; label: string }[] = [
@@ -1010,6 +1063,36 @@ onMounted(loadResources)
 
 .remove-state:hover {
     color: #ff8a5c;
+}
+
+/* 双轨几何切换按钮(“含壁”为主按钮，“空心壳”为次按钮) */
+.variant-state {
+    flex: none;
+    margin-right: 4px;
+    padding: 7px 8px;
+    border: 1px solid #4a3a24;
+    border-radius: 4px;
+    background: transparent;
+    color: #a9803f;
+    font: 10px Bahnschrift, sans-serif;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.variant-state:hover:not(:disabled) {
+    border-color: #c49154;
+    color: #e0b06a;
+}
+
+.variant-state.active {
+    border-color: #6f8fa8;
+    background: rgba(110, 150, 180, .14);
+    color: #9ec7e0;
+}
+
+.variant-state:disabled {
+    opacity: .55;
+    cursor: default;
 }
 
 .resource-symbol {

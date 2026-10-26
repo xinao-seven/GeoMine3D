@@ -17,6 +17,7 @@ from app.models.asset import ModelAsset, ModelVersion
 from app.models.borehole import Borehole, BoreholeSegment
 from app.models.project import Project
 from app.models.workspace import ImportRun, WorkingFace
+from app.services.model_paths import combined_variant_metadata, variant_metadata
 
 
 # 分层配色:与当前分层表(地层汇总14层.xlsx)的 14 个层位一一对应。
@@ -338,6 +339,16 @@ class ServerDataImportService:
             "removed_stale_boreholes": removed,
         }
 
+    async def upsert_models_from_catalog(
+        self, project: Project, catalog: dict[str, Any]
+    ) -> int:
+        """按交付包 catalog 注册/更新模型资产(导入与交付包重建脚本共用)。
+
+        catalog 必须是 ``settings.source_model_catalog_path`` 所在目录的交付包;
+        旧资产不入 catalog 的会被清除(建模任务产物除外)。
+        """
+        return await self._upsert_models(project, catalog)
+
     async def _upsert_models(self, project: Project, catalog: dict[str, Any]) -> int:
         """按交付包 catalog.json 逐层注册模型资产,不在 catalog 中的旧资产一并清除。"""
         package_dir = self.model_catalog_path.parent
@@ -376,6 +387,10 @@ class ServerDataImportService:
             asset.name = layer.get("name_cn") or code
             asset.model_type = "stratum"
             asset.status = "ready"
+            # 双轨产物:渲染轨(含内部棱柱壁)+ 分析轨(闭合壳)。见 model_paths。
+            variants = variant_metadata(
+                self.model_root, "server_static", package_dir, code, layer
+            )
             asset.metadata_json = {
                 "source": package_name,
                 "source_file": relative_path,
@@ -386,6 +401,7 @@ class ServerDataImportService:
                 "bbox": layer.get("bounds_local"),
                 "stats": layer.get("stats"),
                 "lods": layer.get("lods") or [],
+                **variants,
                 "local_coordinates": True,
                 "vertical_scale": vertical_scale,
             }
@@ -421,6 +437,10 @@ class ServerDataImportService:
                 "layer_colors": layer_colors,
                 "layer_names": layer_names,
                 "format": "glb",
+                # 合并场景也有双轨:model_combined.glb(含壁) / model_combined_shell.glb(壳)
+                **combined_variant_metadata(
+                    self.model_root, "server_static", package_dir
+                ),
                 "local_coordinates": True,
                 "vertical_scale": vertical_scale,
             }
@@ -428,13 +448,16 @@ class ServerDataImportService:
             await self._assign_asset_version(asset, combined_path, relative_path)
 
         # 井巷工程模型(巷道 + 工作面),与地层同一局部坐标系,注册为独立可加载资源。
+        # 兼容两种 catalog 写法:旧包 workings_glb(文件名直接作键)与建模引擎的
+        # workings(roadways/working_faces 分节)。
         workings = catalog.get("workings") or {}
+        workings_glb = catalog.get("workings_glb") or {}
         workings_specs = (
             ("roadways", "巷道模型", "roadway"),
             ("working_faces", "工作面模型", "working_face"),
         )
         for section, asset_name, model_type in workings_specs:
-            info = workings.get(section) or {}
+            info = workings.get(section) or workings_glb.get(f"{section}.glb") or {}
             file_name = str(info.get("file") or f"{section}.glb")
             glb_path = package_dir / file_name
             if not glb_path.is_file():

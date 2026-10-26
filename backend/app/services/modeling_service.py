@@ -33,6 +33,7 @@ from app.models.borehole import Borehole, BoreholeSegment
 from app.models.modeling import ModelingJob
 from app.models.project import Project
 from app.models.workspace import ImportRun
+from app.services.model_paths import combined_variant_metadata, variant_metadata
 from app.services.server_import_service import file_sha256
 
 # 建模引擎是 backend 顶层包;uvicorn 不一定以 backend 为工作目录启动,兜底注入 sys.path。
@@ -390,15 +391,31 @@ async def _register_results(
     }
 
 
+async def register_models_from_catalog(
+    session: AsyncSession,
+    project: Project,
+    package_dir: Path,
+    catalog: dict[str, Any],
+    vertical_scale: float,
+    job: ModelingJob | None = None,
+) -> int:
+    """公开入口:按建模交付包 catalog 注册模型资产(任务流程与重建脚本共用)。"""
+    return await _register_models(session, job, project, package_dir, catalog, vertical_scale)
+
+
 async def _register_models(
     session: AsyncSession,
-    job: ModelingJob,
+    job: ModelingJob | None,
     project: Project,
     package_dir: Path,
     catalog: dict[str, Any],
     vertical_scale: float,
 ) -> int:
-    """按 catalog 注册分层 GLB 与合并 GLB(与锦界导入 service 的元数据契约一致)。"""
+    """按 catalog 注册分层 GLB 与合并 GLB(与锦界导入 service 的元数据契约一致)。
+
+    双轨产物:``source_file``=渲染轨(含内部棱柱壁),``shell_file``=分析轨(闭合壳)。
+    ``job`` 可为 None(交付包重建脚本无任务上下文,仅在 metadata 中省略 job_id)。
+    """
     existing_rows = await session.scalars(
         select(ModelAsset).where(
             ModelAsset.project_id == project.id,
@@ -429,14 +446,16 @@ async def _register_models(
         asset.current_version_id = version.id
 
     def _base_metadata(relative_path: str) -> dict[str, Any]:
-        return {
+        meta: dict[str, Any] = {
             "source": MODELING_SOURCE_TAG,
             "source_file": relative_path,
-            "job_id": job.id,
             "format": "glb",
             "local_coordinates": True,
             "vertical_scale": vertical_scale,
         }
+        if job is not None:
+            meta["job_id"] = job.id
+        return meta
 
     for layer in layers:
         code = str(layer.get("code") or "").strip()
@@ -453,6 +472,8 @@ async def _register_models(
         asset.name = layer.get("name_cn") or code
         asset.model_type = "stratum"
         asset.status = "ready"
+        # 双轨产物:渲染轨(含内部棱柱壁)+ 分析轨(闭合壳)。见 model_paths。
+        variants = variant_metadata(settings.upload_path, "upload", package_dir, code, layer)
         asset.metadata_json = {
             **_base_metadata(relative_path),
             "catalog_code": code,
@@ -461,6 +482,7 @@ async def _register_models(
             "bbox": layer.get("bounds_local"),
             "stats": layer.get("stats"),
             "lods": layer.get("lods") or [],
+            **variants,
         }
         await session.flush()
         await _assign_version(asset, glb_path, relative_path)
@@ -489,6 +511,8 @@ async def _register_models(
                 for layer in layers
                 if layer.get("code")
             },
+            # 合并场景也有双轨:model_combined.glb(含壁) / model_combined_shell.glb(壳)
+            **combined_variant_metadata(settings.upload_path, "upload", package_dir),
         }
         await session.flush()
         await _assign_version(asset, combined_path, relative_path)

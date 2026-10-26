@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, File, Form, Response, UploadFile, status
 from fastapi.responses import FileResponse
@@ -14,6 +14,7 @@ from app.schemas.asset import (
     ModelUploadResult,
 )
 from app.schemas.common import DataResponse
+from app.services.model_paths import resolve_variant_path
 from app.services.workspace_service import ModelService
 
 
@@ -40,7 +41,21 @@ async def get_model(model_id: str, session: DbSession):
 
 
 @router.get("/models/{model_id}/file", response_class=FileResponse)
-async def get_model_file(model_id: str, session: DbSession):
+async def get_model_file(
+    model_id: str,
+    session: DbSession,
+    variant: Literal["render", "shell"] = "render",
+):
+    """下载模型文件。
+
+    ``variant`` 选择几何轨(建模引擎对同一个分段体元集合同时导出两套产物):
+
+    - ``render``(默认):``L*.glb`` / ``model_combined.glb``,含内部棱柱壁,
+      剖切后内部为柱状实体、无需补面;非水密,渲染端需 ``DoubleSide``。
+    - ``shell``:``shells/*_shell.glb``,闭合水密壳,供剖面求交/体积/等值线等
+      数值分析。旧交付包没有分析轨时返回 404(不会隐式回退到渲染网格,
+      否则分析代码会与内部壁求交得到错误结果)。
+    """
     asset = await ModelService(session).get_or_404(model_id)
     if not asset.current_version_id:
         raise AppError("MODEL_FILE_NOT_FOUND", "模型尚未上传文件", status_code=404)
@@ -54,12 +69,30 @@ async def get_model_file(model_id: str, session: DbSession):
     root = roots.get(version.storage_scope)
     if root is None:
         raise AppError("MODEL_STORAGE_INVALID", "模型存储位置无效", status_code=500)
-    root = root.resolve()
-    path = (root / version.file_path).resolve()
-    if root not in path.parents or not path.is_file():
+    metadata = asset.metadata_json or {}
+    relative_path = resolve_variant_path(metadata, variant, version.file_path)
+    if relative_path is None:
+        if variant == "shell":
+            raise AppError(
+                "MODEL_SHELL_NOT_FOUND",
+                "该模型没有分析轨(闭合壳)产物,请用 variant=render 或重新生成交付包",
+                status_code=404,
+            )
         raise AppError("MODEL_FILE_NOT_FOUND", "模型文件不存在", status_code=404)
+    root = root.resolve()
+    path = (root / relative_path).resolve()
+    if root not in path.parents or not path.is_file():
+        code = "MODEL_SHELL_NOT_FOUND" if variant == "shell" else "MODEL_FILE_NOT_FOUND"
+        raise AppError(code, f"模型文件不存在: {relative_path}", status_code=404)
     media_type = "model/gltf+json" if path.suffix.lower() == ".gltf" else "model/gltf-binary"
-    return FileResponse(path, filename=path.name, media_type=media_type)
+    return FileResponse(
+        path,
+        filename=path.name,
+        media_type=media_type,
+        # 同一 URL 的交付包会随重新生成而变(旧包为闭合壳、新包含内部壁),
+        # 浏览器启发式缓存会导致“时而空心”的不可复现现象,这里强制回源校验。
+        headers={"Cache-Control": "no-cache, must-revalidate"},
+    )
 
 
 @router.patch("/models/{model_id}", response_model=DataResponse[ModelAssetRead])

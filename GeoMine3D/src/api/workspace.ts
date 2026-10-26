@@ -234,8 +234,14 @@ export const workspaceApi = {
     async getBorehole(boreholeId: string) {
         return (await workspaceClient.get<DataResponse<BoreholeRecord>>(`/boreholes/${boreholeId}`)).data.data
     },
-    modelFileUrl(modelId: string) {
-        return `/api/v1/models/${modelId}/file`
+    /**
+     * 模型下载地址。variant 选择几何轨：
+     * - render（默认）：含内部棱柱壁的渲染网格（剖切后内部为柱状实体）；
+     * - shell：闭合壳，供剖面求交/体积/等值线等分析（旧包可能没有）。
+     */
+    modelFileUrl(modelId: string, variant?: 'render' | 'shell') {
+        const query = variant && variant !== 'render' ? `?variant=${variant}` : ''
+        return `/api/v1/models/${modelId}/file${query}`
     },
     async createModelingJob(form: FormData) {
         return (await workspaceClient.post<DataResponse<ModelingJobRecord>>('/modeling-jobs', form, {

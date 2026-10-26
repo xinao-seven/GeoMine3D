@@ -205,6 +205,17 @@ def write_readme(catalog: dict, package_dir: Path) -> None:
         f"`y_global = y_local + {catalog['origin_restore']['y_origin_m']:.3f}`,"
         f"`z_global = z_local + {catalog['origin_restore']['z_origin_m']:.3f}`;",
         "",
+        "## 双轨模型(渲染 / 分析,2026-10-26)",
+        "",
+        "- **渲染轨(含内部棱柱壁,非水密)**:根目录 `L*.glb` 与 `model_combined.glb` 为“含内部棱柱壁”",
+        "  的网格(相邻体元共享侧面按无向键单份保留),剖切后内部为柱状实体、无需补面;",
+        "  底面整体下移 0.05m 以消除相邻层共面 z-fighting。这是非水密网格,**不可用于体积/剖面求交**;",
+        "  渲染端材质必须是 `DoubleSide`(共享壁只留一份,单面会看穿到相邻体元)。",
+        "- **分析轨(shell)**:`shells/L*_shell.glb` 为闭合水密壳(仅保留单侧使用面),",
+        "  供剖面求交/体积/等值线/散度定理校核等数值分析;与渲染轨顶点集一致;",
+        "  `model_combined_shell.glb` 为 14 层壳体的合并场景(同节点结构),供“空心版本”整体对照。",
+        "- **LOD**:`lods/` 减面自渲染轨(保证远景切换不变空);不携带顶点属性。",
+        "",
         "## 双尺度模型",
         "",
         "- **原始尺寸**:根目录 `model_combined.glb` 与分层 `L*.glb`(真实高程,米);",
@@ -283,30 +294,46 @@ def build_web_package(
     regression = consistency_check(model, layer_names, total_volume)
 
     layer_entries, attrs_in_glb_all, layer_meshes = [], True, {}
+    shell_meshes: dict[str, trimesh.Trimesh] = {}
+    render_cells_total, shell_cells_total = 0, 0
     for li, layer in enumerate(model.layers):
         code = codes[li]
         color = tuple(int(colors[li][k:k + 2], 16) for k in (1, 3, 5))
         attrs = vertex_attribute_arrays(layer)
-        # 渲染网格(含内部棱柱壁)用于 L*.glb / 合并模型 / z20;
-        # 闭合壳用于 LOD 减面与 shells/(剖面求交等分析用途)。
+        # ── 双轨导出(见 catalog.variants) ──
+        # 渲染轨 render_mesh:含内部棱柱壁(相邻体元共享侧面单份保留)
+        #   → L*.glb / model_combined.glb / z20/ / lods/(减面自渲染网格);
+        #   剖切后内部呈柱状实体,无需补面;渲染端需 DoubleSide。
+        # 分析轨 surface_mesh:闭合水密壳
+        #   → shells/*_shell.glb,供剖面求交/体积/等值线等数值分析。
         render_mesh = layer.render_mesh if layer.render_mesh is not None else layer.surface_mesh
         tm = layer_to_trimesh(render_mesh, color, attrs)
         layer_meshes[code] = tm
         glb_info = export_layer_glb(tm, package_dir / f"{code}.glb")
         shell_tm = layer_to_trimesh(layer.surface_mesh, color, attrs)
+        shell_meshes[code] = shell_tm
         shell_info = export_layer_glb(
             shell_tm, package_dir / "shells" / f"{code}_shell.glb"
         )
+        render_cells = int(render_mesh.n_cells)
+        shell_cells = int(layer.surface_mesh.n_cells)
+        render_cells_total += render_cells
+        shell_cells_total += shell_cells
         if not glb_info["vertex_attributes_kept"]:
             attrs_in_glb_all = False
             np.savez_compressed(package_dir / "attributes" / f"{code}_attributes.npz", **attrs)
-        lods = export_lods(layer.surface_mesh, package_dir / "lods", code)
+        # LOD 必须来自渲染轨:壳体减面会在远景把内部壁减没(切回空心壳)。
+        lods = export_lods(render_mesh, package_dir / "lods", code)
         vtu_info = export_vtu(layer.volume_grid, package_dir / "vtu" / f"{code}.vtu")
         h = surfaces[li] - surfaces[li + 1]
         pts = layer.surface_mesh.points
         layer_entries.append({
             "index": li + 1, "code": code, "name_cn": layer_names[li],
-            "color_hex": colors[li], "glb": glb_info, "shell_glb": shell_info,
+            "color_hex": colors[li],
+            "glb": glb_info,               # 渲染轨(含内部壁)
+            "shell_glb": shell_info,       # 分析轨(闭合壳)
+            "render_cells": render_cells,
+            "shell_cells": shell_cells,
             "lods": lods, "vtu": vtu_info,
             "vertex_attributes_in_glb": glb_info["vertex_attributes_kept"],
             "bounds_local": {"min": pts.min(axis=0).tolist(), "max": pts.max(axis=0).tolist()},
@@ -332,6 +359,16 @@ def build_web_package(
     for code in codes:
         scene.add_geometry(layer_meshes[code], node_name=code)
     scene.export(str(combined_path), file_type="glb")
+
+    # 分析轨合并场景:14 层闭合壳。供前端“空心版本”整体加载按钮使用,
+    # 与渲染轨合并场景同名同节点结构,只是每层壳体。
+    combined_shell_path = package_dir / "model_combined_shell.glb"
+    if combined_shell_path.exists():
+        combined_shell_path.unlink()
+    shell_scene = trimesh.Scene()
+    for code in codes:
+        shell_scene.add_geometry(shell_meshes[code], node_name=code)
+    shell_scene.export(str(combined_shell_path), file_type="glb")
 
     # 双尺度固定产物:z 顶点预乘缩放系数的副本(显示端直接加载免缩放)。
     z20_dir = package_dir / "z20"
@@ -378,9 +415,46 @@ def build_web_package(
             "_pinchout_node": "该节点是否为该层数值尖灭候选(1/0)",
         },
         "element_type_map": {"1": "wedge(正常GTP)", "2": "pyramid(单顶点尖灭)", "3": "tetra(双顶点尖灭)"},
+        # 双轨产物说明:同一分层体元集合导出两套几何,渲染/分析各取所需。
+        # 后端注册:render → metadata.source_file,shell → metadata.shell_file;
+        # 下载走 GET /api/v1/models/{id}/file?variant=render|shell(默认 render)。
+        "variants": {
+            "render": {
+                "dir": ".",
+                "pattern": "{code}.glb",
+                "mesh": "render_mesh",
+                "material_side": "DoubleSide",
+                "note": "含内部棱柱壁(相邻体元共享侧面按无向键单份保留),底面整体下移"
+                        "0.05m 抗相邻层共面 z-fighting;剖切后内部为柱状实体,无需补面。"
+                        "非水密,不适合体积/剖面求交。",
+            },
+            "shell": {
+                "dir": "shells/",
+                "pattern": "{code}_shell.glb",
+                "mesh": "surface_mesh",
+                "note": "闭合水密壳(仅保留单侧使用面),用于剖面求交/体积/等值线/"
+                        "散度定理校核等数值分析。",
+            },
+            "lod": {
+                "dir": "lods/",
+                "pattern": "{code}_{name}.glb",
+                "mesh": "render_mesh(decimate_pro)",
+                "note": "减面自渲染轨,避免远景 LOD 切换后内部变空;不携带顶点属性。",
+            },
+            "z20": {
+                "dir": "z20/",
+                "pattern": "{code}_z20.glb",
+                "mesh": "render_mesh",
+                "note": "渲染轨几何 z 预乘 20 倍竖向夸张副本。",
+            },
+        },
         "edge_integrity": regression["edge_integrity"],
         "layers": layer_entries,
         "combined_glb": {"path": "model_combined.glb", "bytes": combined_path.stat().st_size},
+        "combined_shell_glb": {
+            "path": "model_combined_shell.glb",
+            "bytes": combined_shell_path.stat().st_size,
+        },
         "z20_models": {
             "scale_z": z_scale,
             "dir": "z20/",
@@ -390,6 +464,10 @@ def build_web_package(
         },
         "totals": {
             **{k: v for k, v in regression.items() if k != "edge_integrity"},
+            # total_cells/surface_cells 均为闭合壳(分析轨)单元数;渲染轨含内部壁,
+            # 单元数显著更大,单独给出以便核对包体积。
+            "render_cells": render_cells_total,
+            "shell_cells": shell_cells_total,
             "candidate_prisms": int(sum(l.candidate_prisms for l in model.layers)),
             "retained_prisms": int(sum(l.retained_prisms for l in model.layers)),
             "deleted_prisms": int(sum(l.deleted_prisms for l in model.layers)),
@@ -407,6 +485,8 @@ def build_web_package(
         "regression_pass": regression["pass"],
         "total_points": regression["total_points"],
         "total_cells": regression["total_cells"],
+        "render_cells": render_cells_total,
+        "shell_cells": shell_cells_total,
         "total_volume_m3": regression["total_volume_m3"],
         "manifold_layers": regression["manifold_layers"],
         "pinch_contact_layers": regression["pinch_contact_layers"],

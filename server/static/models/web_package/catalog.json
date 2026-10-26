@@ -1,8 +1,8 @@
 {
   "schema_version": "1.0-refined",
-  "generated_utc": "2026-09-03T01:30:46.716220+00:00",
+  "generated_utc": "2026-10-26T12:28:47.573199+00:00",
   "consumer": "three.js GLTFLoader(第6章可视化系统)",
-  "variant": "refined_14_layers(锚点-旋回-阈值细层化)",
+  "variant": "uploaded_boreholes_refined",
   "act_params": {
     "tau_m": 0.5,
     "coverage": 0.95,
@@ -26,7 +26,7 @@
   },
   "origin_restore": {
     "x_origin_m": 37428072.48500001,
-    "y_origin_m": 4300144.084999999,
+    "y_origin_m": 4300144.085,
     "z_origin_m": 1149.980019146534,
     "formulas": {
       "x_global_m": "x_local + x_origin_m",
@@ -34,8 +34,8 @@
       "z_global_m": "z_local + z_origin_m"
     },
     "display_recommendation": {
-      "z_scale": 20,
-      "note": "前端可用 mesh.scale.z = 20 竖向夸张,恢复真实比例时除回"
+      "z_scale": 20.0,
+      "note": "前端可用 mesh.scale.z = z_scale 竖向夸张,恢复真实比例时除回"
     }
   },
   "grid": {
@@ -49,13 +49,40 @@
   "attributes": {
     "_thickness_m": "顶点所在节点的地层厚度(m)",
     "_interface_std_mean_m": "顶点处上下界面GP标准差均值(m)",
-    "_node_index": "共享网格节点索引(与第4章npz/沉陷偏移场对齐)",
+    "_node_index": "共享网格节点索引",
     "_pinchout_node": "该节点是否为该层数值尖灭候选(1/0)"
   },
   "element_type_map": {
     "1": "wedge(正常GTP)",
     "2": "pyramid(单顶点尖灭)",
     "3": "tetra(双顶点尖灭)"
+  },
+  "variants": {
+    "render": {
+      "dir": ".",
+      "pattern": "{code}.glb",
+      "mesh": "render_mesh",
+      "material_side": "DoubleSide",
+      "note": "含内部棱柱壁(相邻体元共享侧面按无向键单份保留),底面整体下移0.05m 抗相邻层共面 z-fighting;剖切后内部为柱状实体,无需补面。非水密,不适合体积/剖面求交。"
+    },
+    "shell": {
+      "dir": "shells/",
+      "pattern": "{code}_shell.glb",
+      "mesh": "surface_mesh",
+      "note": "闭合水密壳(仅保留单侧使用面),用于剖面求交/体积/等值线/散度定理校核等数值分析。"
+    },
+    "lod": {
+      "dir": "lods/",
+      "pattern": "{code}_{name}.glb",
+      "mesh": "render_mesh(decimate_pro)",
+      "note": "减面自渲染轨,避免远景 LOD 切换后内部变空;不携带顶点属性。"
+    },
+    "z20": {
+      "dir": "z20/",
+      "pattern": "{code}_z20.glb",
+      "mesh": "render_mesh",
+      "note": "渲染轨几何 z 预乘 20 倍竖向夸张副本。"
+    }
   },
   "edge_integrity": [
     {
@@ -79,15 +106,15 @@
       "boundary_edges": 0,
       "non_manifold_edges": 1,
       "is_manifold": false,
-      "semantic_integral_rel_dev": 2.190502359580306e-09,
-      "note": "尖灭相触(上下片零厚度贴合)非流形边,用户决策不修复;体积以解析公式与语义定向积分双重校验"
+      "semantic_integral_rel_dev": 2.190502675149969e-09,
+      "note": "尖灭相触(上下片零厚度贴合)非流形边,不做拓扑修复;体积以解析公式与语义定向积分双重校验"
     },
     {
       "layer": "L04",
       "boundary_edges": 0,
       "non_manifold_edges": 0,
       "is_manifold": true,
-      "semantic_integral_rel_dev": 6.764452833286539e-11,
+      "semantic_integral_rel_dev": 6.764483734250794e-11,
       "note": ""
     },
     {
@@ -95,8 +122,8 @@
       "boundary_edges": 0,
       "non_manifold_edges": 19,
       "is_manifold": false,
-      "semantic_integral_rel_dev": 1.0058510022266718e-08,
-      "note": "尖灭相触(上下片零厚度贴合)非流形边,用户决策不修复;体积以解析公式与语义定向积分双重校验"
+      "semantic_integral_rel_dev": 1.005851022028727e-08,
+      "note": "尖灭相触(上下片零厚度贴合)非流形边,不做拓扑修复;体积以解析公式与语义定向积分双重校验"
     },
     {
       "layer": "L06",
@@ -104,38 +131,38 @@
       "non_manifold_edges": 4,
       "is_manifold": false,
       "semantic_integral_rel_dev": 9.889933281023125e-10,
-      "note": "尖灭相触(上下片零厚度贴合)非流形边,用户决策不修复;体积以解析公式与语义定向积分双重校验"
+      "note": "尖灭相触(上下片零厚度贴合)非流形边,不做拓扑修复;体积以解析公式与语义定向积分双重校验"
     },
     {
       "layer": "L07",
       "boundary_edges": 0,
       "non_manifold_edges": 18,
       "is_manifold": false,
-      "semantic_integral_rel_dev": 1.328392188796511e-09,
-      "note": "尖灭相触(上下片零厚度贴合)非流形边,用户决策不修复;体积以解析公式与语义定向积分双重校验"
+      "semantic_integral_rel_dev": 1.3283919831441354e-09,
+      "note": "尖灭相触(上下片零厚度贴合)非流形边,不做拓扑修复;体积以解析公式与语义定向积分双重校验"
     },
     {
       "layer": "L08",
       "boundary_edges": 0,
       "non_manifold_edges": 7,
       "is_manifold": false,
-      "semantic_integral_rel_dev": 4.144818315919572e-10,
-      "note": "尖灭相触(上下片零厚度贴合)非流形边,用户决策不修复;体积以解析公式与语义定向积分双重校验"
+      "semantic_integral_rel_dev": 4.144816599108368e-10,
+      "note": "尖灭相触(上下片零厚度贴合)非流形边,不做拓扑修复;体积以解析公式与语义定向积分双重校验"
     },
     {
       "layer": "L09",
       "boundary_edges": 0,
       "non_manifold_edges": 7,
       "is_manifold": false,
-      "semantic_integral_rel_dev": 1.9119437554955108e-09,
-      "note": "尖灭相触(上下片零厚度贴合)非流形边,用户决策不修复;体积以解析公式与语义定向积分双重校验"
+      "semantic_integral_rel_dev": 1.911943571741465e-09,
+      "note": "尖灭相触(上下片零厚度贴合)非流形边,不做拓扑修复;体积以解析公式与语义定向积分双重校验"
     },
     {
       "layer": "L10",
       "boundary_edges": 0,
       "non_manifold_edges": 0,
       "is_manifold": true,
-      "semantic_integral_rel_dev": 7.723639447028385e-11,
+      "semantic_integral_rel_dev": 7.723660323873704e-11,
       "note": ""
     },
     {
@@ -143,7 +170,7 @@
       "boundary_edges": 0,
       "non_manifold_edges": 0,
       "is_manifold": true,
-      "semantic_integral_rel_dev": 2.3299251330394115e-09,
+      "semantic_integral_rel_dev": 2.3299274917215976e-09,
       "note": ""
     },
     {
@@ -151,7 +178,7 @@
       "boundary_edges": 0,
       "non_manifold_edges": 0,
       "is_manifold": true,
-      "semantic_integral_rel_dev": 2.2904089683457226e-09,
+      "semantic_integral_rel_dev": 2.29040908376084e-09,
       "note": ""
     },
     {
@@ -159,7 +186,7 @@
       "boundary_edges": 0,
       "non_manifold_edges": 0,
       "is_manifold": true,
-      "semantic_integral_rel_dev": 2.583159260259192e-10,
+      "semantic_integral_rel_dev": 2.5831613995941595e-10,
       "note": ""
     },
     {
@@ -167,8 +194,8 @@
       "boundary_edges": 0,
       "non_manifold_edges": 3,
       "is_manifold": false,
-      "semantic_integral_rel_dev": 6.693651652291049e-11,
-      "note": "尖灭相触(上下片零厚度贴合)非流形边,用户决策不修复;体积以解析公式与语义定向积分双重校验"
+      "semantic_integral_rel_dev": 6.69368287362776e-11,
+      "note": "尖灭相触(上下片零厚度贴合)非流形边,不做拓扑修复;体积以解析公式与语义定向积分双重校验"
     }
   ],
   "layers": [
@@ -178,30 +205,39 @@
       "name_cn": "风积砂层",
       "color_hex": "#D9C7A3",
       "glb": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L01.glb",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\L01.glb",
+        "bytes": 2995168,
+        "vertex_attributes_kept": true
+      },
+      "shell_glb": {
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\shells\\L01_shell.glb",
         "bytes": 1839988,
         "vertex_attributes_kept": true
       },
+      "render_cells": 113385,
+      "shell_cells": 65165,
       "lods": [
         {
           "name": "lod50",
           "target_reduction": 0.5,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L01_lod50.glb",
-          "bytes": 591616,
-          "vertices": 16413,
-          "triangles": 32826
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L01_lod50.glb",
+          "bytes": 1230236,
+          "vertices": 21503,
+          "triangles": 80951
         },
         {
           "name": "lod80",
           "target_reduction": 0.8,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L01_lod80.glb",
-          "bytes": 237084,
-          "vertices": 6565,
-          "triangles": 13130
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L01_lod80.glb",
+          "bytes": 552316,
+          "vertices": 13579,
+          "triangles": 32382
         }
       ],
       "vtu": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L01.vtu",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\vtu\\L01.vtu",
         "bytes": 1670045
       },
       "vertex_attributes_in_glb": true,
@@ -228,7 +264,7 @@
           "tetra": 80
         },
         "volume_m3": 3268866454.8142414,
-        "mean_thickness_m": 19.94038013730523,
+        "mean_thickness_m": 19.940380137305226,
         "surface_points": 32826,
         "surface_cells": 65165
       }
@@ -239,30 +275,39 @@
       "name_cn": "土层",
       "color_hex": "#CDBB8C",
       "glb": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L02.glb",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\L02.glb",
+        "bytes": 3026692,
+        "vertex_attributes_kept": true
+      },
+      "shell_glb": {
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\shells\\L02_shell.glb",
         "bytes": 1858804,
         "vertex_attributes_kept": true
       },
+      "render_cells": 114524,
+      "shell_cells": 65817,
       "lods": [
         {
           "name": "lod50",
           "target_reduction": 0.5,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L02_lod50.glb",
-          "bytes": 597664,
-          "vertices": 16581,
-          "triangles": 33162
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L02_lod50.glb",
+          "bytes": 1245928,
+          "vertices": 21946,
+          "triangles": 81816
         },
         {
           "name": "lod80",
           "target_reduction": 0.8,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L02_lod80.glb",
-          "bytes": 239496,
-          "vertices": 6632,
-          "triangles": 13264
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L02_lod80.glb",
+          "bytes": 542432,
+          "vertices": 12410,
+          "triangles": 32728
         }
       ],
       "vtu": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L02.vtu",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\vtu\\L02.vtu",
         "bytes": 1680634
       },
       "vertex_attributes_in_glb": true,
@@ -300,30 +345,39 @@
       "name_cn": "第4旋回泥岩层",
       "color_hex": "#8C6D5A",
       "glb": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L03.glb",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\L03.glb",
+        "bytes": 263392,
+        "vertex_attributes_kept": true
+      },
+      "shell_glb": {
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\shells\\L03_shell.glb",
         "bytes": 165844,
         "vertex_attributes_kept": true
       },
+      "render_cells": 10081,
+      "shell_cells": 5834,
       "lods": [
         {
           "name": "lod50",
           "target_reduction": 0.5,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L03_lod50.glb",
-          "bytes": 53488,
-          "vertices": 1470,
-          "triangles": 2926
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L03_lod50.glb",
+          "bytes": 107884,
+          "vertices": 1939,
+          "triangles": 6988
         },
         {
           "name": "lod80",
           "target_reduction": 0.8,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L03_lod80.glb",
-          "bytes": 21880,
-          "vertices": 592,
-          "triangles": 1170
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L03_lod80.glb",
+          "bytes": 51180,
+          "vertices": 1407,
+          "triangles": 2793
         }
       ],
       "vtu": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L03.vtu",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\vtu\\L03.vtu",
         "bytes": 147811
       },
       "vertex_attributes_in_glb": true,
@@ -350,7 +404,7 @@
           "tetra": 202
         },
         "volume_m3": 23609939.321617275,
-        "mean_thickness_m": 0.14232839459054625,
+        "mean_thickness_m": 0.14232839459054628,
         "surface_points": 2934,
         "surface_cells": 5834
       }
@@ -361,30 +415,39 @@
       "name_cn": "第4旋回砂岩层",
       "color_hex": "#D98C5F",
       "glb": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L04.glb",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\L04.glb",
+        "bytes": 1800432,
+        "vertex_attributes_kept": true
+      },
+      "shell_glb": {
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\shells\\L04_shell.glb",
         "bytes": 1115960,
         "vertex_attributes_kept": true
       },
+      "render_cells": 68777,
+      "shell_cells": 39616,
       "lods": [
         {
           "name": "lod50",
           "target_reduction": 0.5,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L04_lod50.glb",
-          "bytes": 358896,
-          "vertices": 9950,
-          "triangles": 19896
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L04_lod50.glb",
+          "bytes": 739144,
+          "vertices": 13121,
+          "triangles": 48409
         },
         {
           "name": "lod80",
           "target_reduction": 0.8,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L04_lod80.glb",
-          "bytes": 144008,
-          "vertices": 3981,
-          "triangles": 7958
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L04_lod80.glb",
+          "bytes": 341092,
+          "vertices": 8996,
+          "triangles": 19363
         }
       ],
       "vtu": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L04.vtu",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\vtu\\L04.vtu",
         "bytes": 1018343
       },
       "vertex_attributes_in_glb": true,
@@ -410,8 +473,8 @@
           "pyramid": 645,
           "tetra": 642
         },
-        "volume_m3": 385778542.5589092,
-        "mean_thickness_m": 2.3363380325384653,
+        "volume_m3": 385778542.5589093,
+        "mean_thickness_m": 2.3363380325384657,
         "surface_points": 19898,
         "surface_cells": 39616
       }
@@ -422,30 +485,39 @@
       "name_cn": "第3旋回泥岩层",
       "color_hex": "#8C6D5A",
       "glb": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L05.glb",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\L05.glb",
+        "bytes": 792844,
+        "vertex_attributes_kept": true
+      },
+      "shell_glb": {
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\shells\\L05_shell.glb",
         "bytes": 505860,
         "vertex_attributes_kept": true
       },
+      "render_cells": 30597,
+      "shell_cells": 17832,
       "lods": [
         {
           "name": "lod50",
           "target_reduction": 0.5,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L05_lod50.glb",
-          "bytes": 162932,
-          "vertices": 4568,
-          "triangles": 8948
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L05_lod50.glb",
+          "bytes": 320932,
+          "vertices": 5777,
+          "triangles": 20903
         },
         {
           "name": "lod80",
           "target_reduction": 0.8,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L05_lod80.glb",
-          "bytes": 66272,
-          "vertices": 1883,
-          "triangles": 3578
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L05_lod80.glb",
+          "bytes": 154192,
+          "vertices": 4425,
+          "triangles": 8360
         }
       ],
       "vtu": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L05.vtu",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\vtu\\L05.vtu",
         "bytes": 439569
       },
       "vertex_attributes_in_glb": true,
@@ -483,30 +555,39 @@
       "name_cn": "第3旋回砂岩层",
       "color_hex": "#D98C5F",
       "glb": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L06.glb",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\L06.glb",
+        "bytes": 2488788,
+        "vertex_attributes_kept": true
+      },
+      "shell_glb": {
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\shells\\L06_shell.glb",
         "bytes": 1535672,
         "vertex_attributes_kept": true
       },
+      "render_cells": 94553,
+      "shell_cells": 54418,
       "lods": [
         {
           "name": "lod50",
           "target_reduction": 0.5,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L06_lod50.glb",
-          "bytes": 493768,
-          "vertices": 13689,
-          "triangles": 27396
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L06_lod50.glb",
+          "bytes": 1022640,
+          "vertices": 18045,
+          "triangles": 67110
         },
         {
           "name": "lod80",
           "target_reduction": 0.8,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L06_lod80.glb",
-          "bytes": 197880,
-          "vertices": 5470,
-          "triangles": 10958
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L06_lod80.glb",
+          "bytes": 469164,
+          "vertices": 12199,
+          "triangles": 26833
         }
       ],
       "vtu": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L06.vtu",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\vtu\\L06.vtu",
         "bytes": 1401470
       },
       "vertex_attributes_in_glb": true,
@@ -533,7 +614,7 @@
           "tetra": 407
         },
         "volume_m3": 911585243.1584432,
-        "mean_thickness_m": 5.577186556019665,
+        "mean_thickness_m": 5.577186556019666,
         "surface_points": 27388,
         "surface_cells": 54418
       }
@@ -544,30 +625,39 @@
       "name_cn": "第2旋回泥岩层",
       "color_hex": "#8C6D5A",
       "glb": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L07.glb",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\L07.glb",
+        "bytes": 2347600,
+        "vertex_attributes_kept": true
+      },
+      "shell_glb": {
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\shells\\L07_shell.glb",
         "bytes": 1456920,
         "vertex_attributes_kept": true
       },
+      "render_cells": 89492,
+      "shell_cells": 51624,
       "lods": [
         {
           "name": "lod50",
           "target_reduction": 0.5,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L07_lod50.glb",
-          "bytes": 468460,
-          "vertices": 12988,
-          "triangles": 25988
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L07_lod50.glb",
+          "bytes": 962696,
+          "vertices": 17061,
+          "triangles": 63099
         },
         {
           "name": "lod80",
           "target_reduction": 0.8,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L07_lod80.glb",
-          "bytes": 187764,
-          "vertices": 5191,
-          "triangles": 10394
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L07_lod80.glb",
+          "bytes": 456172,
+          "vertices": 12716,
+          "triangles": 25233
         }
       ],
       "vtu": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L07.vtu",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\vtu\\L07.vtu",
         "bytes": 1321559
       },
       "vertex_attributes_in_glb": true,
@@ -605,30 +695,39 @@
       "name_cn": "第2旋回砂岩层",
       "color_hex": "#D98C5F",
       "glb": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L08.glb",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\L08.glb",
+        "bytes": 2845976,
+        "vertex_attributes_kept": true
+      },
+      "shell_glb": {
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\shells\\L08_shell.glb",
         "bytes": 1758580,
         "vertex_attributes_kept": true
       },
+      "render_cells": 108190,
+      "shell_cells": 62314,
       "lods": [
         {
           "name": "lod50",
           "target_reduction": 0.5,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L08_lod50.glb",
-          "bytes": 565368,
-          "vertices": 15660,
-          "triangles": 31392
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L08_lod50.glb",
+          "bytes": 1165252,
+          "vertices": 20346,
+          "triangles": 76693
         },
         {
           "name": "lod80",
           "target_reduction": 0.8,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L08_lod80.glb",
-          "bytes": 226316,
-          "vertices": 6242,
-          "triangles": 12556
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L08_lod80.glb",
+          "bytes": 511540,
+          "vertices": 11884,
+          "triangles": 30679
         }
       ],
       "vtu": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L08.vtu",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\vtu\\L08.vtu",
         "bytes": 1614968
       },
       "vertex_attributes_in_glb": true,
@@ -655,7 +754,7 @@
           "tetra": 519
         },
         "volume_m3": 2777458331.8138037,
-        "mean_thickness_m": 16.90546772152181,
+        "mean_thickness_m": 16.905467721521806,
         "surface_points": 31357,
         "surface_cells": 62314
       }
@@ -666,30 +765,39 @@
       "name_cn": "第1旋回泥岩层",
       "color_hex": "#8C6D5A",
       "glb": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L09.glb",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\L09.glb",
+        "bytes": 2804316,
+        "vertex_attributes_kept": true
+      },
+      "shell_glb": {
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\shells\\L09_shell.glb",
         "bytes": 1737068,
         "vertex_attributes_kept": true
       },
+      "render_cells": 106817,
+      "shell_cells": 61576,
       "lods": [
         {
           "name": "lod50",
           "target_reduction": 0.5,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L09_lod50.glb",
-          "bytes": 558444,
-          "vertices": 15457,
-          "triangles": 31018
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L09_lod50.glb",
+          "bytes": 1150504,
+          "vertices": 20325,
+          "triangles": 75485
         },
         {
           "name": "lod80",
           "target_reduction": 0.8,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L09_lod80.glb",
-          "bytes": 223424,
-          "vertices": 6151,
-          "triangles": 12406
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L09_lod80.glb",
+          "bytes": 540024,
+          "vertices": 14754,
+          "triangles": 30183
         }
       ],
       "vtu": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L09.vtu",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\vtu\\L09.vtu",
         "bytes": 1591822
       },
       "vertex_attributes_in_glb": true,
@@ -715,8 +823,8 @@
           "pyramid": 843,
           "tetra": 707
         },
-        "volume_m3": 648743755.012025,
-        "mean_thickness_m": 3.948690953259306,
+        "volume_m3": 648743755.0120251,
+        "mean_thickness_m": 3.948690953259307,
         "surface_points": 30966,
         "surface_cells": 61576
       }
@@ -727,30 +835,39 @@
       "name_cn": "第1旋回砂岩层",
       "color_hex": "#D98C5F",
       "glb": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L10.glb",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\L10.glb",
+        "bytes": 2987108,
+        "vertex_attributes_kept": true
+      },
+      "shell_glb": {
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\shells\\L10_shell.glb",
         "bytes": 1834384,
         "vertex_attributes_kept": true
       },
+      "render_cells": 113088,
+      "shell_cells": 64982,
       "lods": [
         {
           "name": "lod50",
           "target_reduction": 0.5,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L10_lod50.glb",
-          "bytes": 589812,
-          "vertices": 16363,
-          "triangles": 32726
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L10_lod50.glb",
+          "bytes": 1224036,
+          "vertices": 21189,
+          "triangles": 80749
         },
         {
           "name": "lod80",
           "target_reduction": 0.8,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L10_lod80.glb",
-          "bytes": 236360,
-          "vertices": 6545,
-          "triangles": 13090
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L10_lod80.glb",
+          "bytes": 539064,
+          "vertices": 12565,
+          "triangles": 32292
         }
       ],
       "vtu": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L10.vtu",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\vtu\\L10.vtu",
         "bytes": 1674689
       },
       "vertex_attributes_in_glb": true,
@@ -776,8 +893,8 @@
           "pyramid": 78,
           "tetra": 76
         },
-        "volume_m3": 4568095906.93718,
-        "mean_thickness_m": 27.80911555885601,
+        "volume_m3": 4568095906.937179,
+        "mean_thickness_m": 27.809115558856014,
         "surface_points": 32726,
         "surface_cells": 64982
       }
@@ -788,30 +905,39 @@
       "name_cn": "煤顶泥岩层",
       "color_hex": "#7A8793",
       "glb": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L11.glb",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\L11.glb",
+        "bytes": 2175212,
+        "vertex_attributes_kept": true
+      },
+      "shell_glb": {
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\shells\\L11_shell.glb",
         "bytes": 1348420,
         "vertex_attributes_kept": true
       },
+      "render_cells": 82597,
+      "shell_cells": 47656,
       "lods": [
         {
           "name": "lod50",
           "target_reduction": 0.5,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L11_lod50.glb",
-          "bytes": 433600,
-          "vertices": 12025,
-          "triangles": 24046
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L11_lod50.glb",
+          "bytes": 896564,
+          "vertices": 16154,
+          "triangles": 58495
         },
         {
           "name": "lod80",
           "target_reduction": 0.8,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L11_lod80.glb",
-          "bytes": 173892,
-          "vertices": 4811,
-          "triangles": 9618
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L11_lod80.glb",
+          "bytes": 422992,
+          "vertices": 11798,
+          "triangles": 23386
         }
       ],
       "vtu": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L11.vtu",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\vtu\\L11.vtu",
         "bytes": 1200177
       },
       "vertex_attributes_in_glb": true,
@@ -838,7 +964,7 @@
           "tetra": 492
         },
         "volume_m3": 214797688.10880136,
-        "mean_thickness_m": 1.3177020617455915,
+        "mean_thickness_m": 1.3177020617455917,
         "surface_points": 24049,
         "surface_cells": 47656
       }
@@ -849,30 +975,39 @@
       "name_cn": "煤3-1",
       "color_hex": "#333333",
       "glb": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L12.glb",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\L12.glb",
+        "bytes": 3038988,
+        "vertex_attributes_kept": true
+      },
+      "shell_glb": {
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\shells\\L12_shell.glb",
         "bytes": 1865484,
         "vertex_attributes_kept": true
       },
+      "render_cells": 114944,
+      "shell_cells": 66048,
       "lods": [
         {
           "name": "lod50",
           "target_reduction": 0.5,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L12_lod50.glb",
-          "bytes": 599812,
-          "vertices": 16642,
-          "triangles": 33280
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L12_lod50.glb",
+          "bytes": 1235312,
+          "vertices": 20712,
+          "triangles": 82166
         },
         {
           "name": "lod80",
           "target_reduction": 0.8,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L12_lod80.glb",
-          "bytes": 240384,
-          "vertices": 6658,
-          "triangles": 13312
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L12_lod80.glb",
+          "bytes": 594856,
+          "vertices": 16647,
+          "triangles": 32860
         }
       ],
       "vtu": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L12.vtu",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\vtu\\L12.vtu",
         "bytes": 1633920
       },
       "vertex_attributes_in_glb": true,
@@ -899,7 +1034,7 @@
           "tetra": 0
         },
         "volume_m3": 516437066.808811,
-        "mean_thickness_m": 3.147718820165734,
+        "mean_thickness_m": 3.1477188201657342,
         "surface_points": 33282,
         "surface_cells": 66048
       }
@@ -910,30 +1045,39 @@
       "name_cn": "直接底层",
       "color_hex": "#C98E5B",
       "glb": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L13.glb",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\L13.glb",
+        "bytes": 3038992,
+        "vertex_attributes_kept": true
+      },
+      "shell_glb": {
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\shells\\L13_shell.glb",
         "bytes": 1865488,
         "vertex_attributes_kept": true
       },
+      "render_cells": 114944,
+      "shell_cells": 66048,
       "lods": [
         {
           "name": "lod50",
           "target_reduction": 0.5,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L13_lod50.glb",
-          "bytes": 599812,
-          "vertices": 16642,
-          "triangles": 33280
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L13_lod50.glb",
+          "bytes": 1250788,
+          "vertices": 21991,
+          "triangles": 82176
         },
         {
           "name": "lod80",
           "target_reduction": 0.8,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L13_lod80.glb",
-          "bytes": 240384,
-          "vertices": 6658,
-          "triangles": 13312
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L13_lod80.glb",
+          "bytes": 569032,
+          "vertices": 14484,
+          "triangles": 32870
         }
       ],
       "vtu": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L13.vtu",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\vtu\\L13.vtu",
         "bytes": 1664270
       },
       "vertex_attributes_in_glb": true,
@@ -971,30 +1115,39 @@
       "name_cn": "下伏岩层",
       "color_hex": "#8D7465",
       "glb": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\L14.glb",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\L14.glb",
+        "bytes": 3000864,
+        "vertex_attributes_kept": true
+      },
+      "shell_glb": {
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\shells\\L14_shell.glb",
         "bytes": 1843076,
         "vertex_attributes_kept": true
       },
+      "render_cells": 113613,
+      "shell_cells": 65289,
       "lods": [
         {
           "name": "lod50",
           "target_reduction": 0.5,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L14_lod50.glb",
-          "bytes": 592600,
-          "vertices": 16437,
-          "triangles": 32884
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L14_lod50.glb",
+          "bytes": 1221056,
+          "vertices": 20575,
+          "triangles": 81114
         },
         {
           "name": "lod80",
           "target_reduction": 0.8,
-          "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\lods\\L14_lod80.glb",
-          "bytes": 237420,
-          "vertices": 6571,
-          "triangles": 13152
+          "method": "vtkQuadricDecimation",
+          "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\lods\\L14_lod80.glb",
+          "bytes": 573412,
+          "vertices": 15275,
+          "triangles": 32444
         }
       ],
       "vtu": {
-        "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\vtu\\L14.vtu",
+        "path": "E:\\code\\GeoMine3D\\server\\static\\models\\web_package\\vtu\\L14.vtu",
         "bytes": 1658904
       },
       "vertex_attributes_in_glb": true,
@@ -1020,38 +1173,61 @@
           "pyramid": 90,
           "tetra": 78
         },
-        "volume_m3": 3054559531.559458,
-        "mean_thickness_m": 18.625238539241312,
+        "volume_m3": 3054559531.5594583,
+        "mean_thickness_m": 18.625238539241316,
         "surface_points": 32879,
         "surface_cells": 65289
       }
     }
   ],
   "combined_glb": {
-    "path": "E:\\code\\model-thesis-private\\experiments\\models\\chapters\\chapter05\\web_package_refined\\model_combined.glb",
+    "path": "model_combined.glb",
+    "bytes": 33336696
+  },
+  "combined_shell_glb": {
+    "path": "model_combined_shell.glb",
     "bytes": 20461876
   },
   "z20_models": {
     "scale_z": 20.0,
     "dir": "z20/",
     "files_bytes": {
-      "L01_z20.glb": 1839984,
-      "L02_z20.glb": 1858800,
-      "L03_z20.glb": 165844,
-      "L04_z20.glb": 1115960,
-      "L05_z20.glb": 505860,
-      "L06_z20.glb": 1535672,
-      "L07_z20.glb": 1456920,
-      "L08_z20.glb": 1758580,
-      "L09_z20.glb": 1737068,
-      "L10_z20.glb": 1834376,
-      "L11_z20.glb": 1348420,
-      "L12_z20.glb": 1865480,
-      "L13_z20.glb": 1865484,
-      "L14_z20.glb": 1843076,
-      "model_combined_z20.glb": 20461856
+      "L01_z20.glb": 2995168,
+      "L02_z20.glb": 3026692,
+      "L03_z20.glb": 263392,
+      "L04_z20.glb": 1800432,
+      "L05_z20.glb": 792840,
+      "L06_z20.glb": 2488788,
+      "L07_z20.glb": 2347596,
+      "L08_z20.glb": 2845976,
+      "L09_z20.glb": 2804316,
+      "L10_z20.glb": 2987104,
+      "L11_z20.glb": 2175208,
+      "L12_z20.glb": 3038984,
+      "L13_z20.glb": 3038992,
+      "L14_z20.glb": 3000860,
+      "model_combined_z20.glb": 33336680
     },
-    "note": "20倍竖向缩放副本(几何=真实尺度 z×20,顶点属性不变),显示端直接加载免缩放;根目录 GLB 为原始尺寸"
+    "note": "竖向缩放副本(几何=真实尺度 z×scale,顶点属性不变),显示端直接加载免缩放;根目录 GLB 为原始尺寸"
+  },
+  "totals": {
+    "pass": true,
+    "total_points": 369775,
+    "total_cells": 734219,
+    "total_volume_m3": 23180828709.79019,
+    "manifold_layers": 7,
+    "pinch_contact_layers": 7,
+    "render_cells": 1275602,
+    "shell_cells": 734219,
+    "candidate_prisms": 458752,
+    "retained_prisms": 364406,
+    "deleted_prisms": 94346,
+    "partial_pinchout_prisms": 9906
+  },
+  "build_performance": {
+    "delaunay_seconds": 0.14097920001950115,
+    "layer_build_seconds": 3.783421100000851,
+    "total_seconds": 23.08658504486084
   },
   "workings_glb": {
     "roadways.glb": {
@@ -1065,21 +1241,16 @@
       "z_datum_fix_20260915": "顶点z平移-13.9928m,使z_local严格基于本包z_origin_m"
     }
   },
-  "totals": {
-    "pass": true,
-    "total_points": 369775,
-    "total_cells": 734219,
-    "total_volume_m3": 23180828709.79019,
-    "manifold_layers": 7,
-    "pinch_contact_layers": 7,
-    "candidate_prisms": 458752,
-    "retained_prisms": 364406,
-    "deleted_prisms": 94346,
-    "partial_pinchout_prisms": 9906
-  },
-  "build_performance": {
-    "delaunay_seconds": 0.08795610000379384,
-    "layer_build_seconds": 2.9874463999876752,
-    "total_seconds": 16.046515226364136
+  "rebuild": {
+    "script": "backend/scripts/rebuild_web_package.py",
+    "npz": "E:\\code\\model-thesis-private\\experiments\\data\\chapters\\chapter04_uncertainty_order_projection\\model_visualization_refined\\square_direct_ard_pinchout_surfaces_refined.npz",
+    "z_origin_m": 1149.980019146534,
+    "z_scale": 20.0,
+    "preserved_keys": [
+      "act_params",
+      "consumer",
+      "source",
+      "workings_glb"
+    ]
   }
 }

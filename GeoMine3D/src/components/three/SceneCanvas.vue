@@ -1293,14 +1293,19 @@ watch(boundaryEnabled, (visible) => {
     boundaryOverlay?.setVisible(visible)
 })
 
-// LOD 开关 + 沉陷/炸开期间抑制
+// LOD 开关 + 沉陷/炸开/剖切期间抑制
 watch(lodEnabled, (enabled) => {
     lodController?.setEnabled(enabled)
 })
 
-watch([() => settlementStore.enabled, stratumExploded], ([settlementOn, exploded]) => {
-    lodController?.setSuppressed(settlementOn || exploded)
-})
+// 沉陷变形/地层炸开会移动几何;剖切会打开模型内部——这三类情况下 LOD 低模
+// 都会露馅(低模是减面产物,内部壁已被抹平,切面呈空心),故一律抑制并回退高模。
+watch(
+    [() => settlementStore.enabled, stratumExploded, () => toolState.value.clipEnabled],
+    ([settlementOn, exploded, clipping]) => {
+        lodController?.setSuppressed(settlementOn || exploded || clipping)
+    },
+)
 
 // 地层图例数据：按层名去重，保留登记顺序（自下而上）
 const legendItems = computed(() => {

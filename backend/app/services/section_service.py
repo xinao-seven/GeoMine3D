@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,6 +22,9 @@ import numpy as np
 import trimesh
 
 from app.core.config import settings
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -38,8 +42,14 @@ def resolve_layer_files(
 ) -> list[LayerModelFile]:
     """把 (asset_name, metadata, storage_scope, file_path) 行解析为按层序排序的文件清单。
 
-    文件根目录与 models API 的下载逻辑一致：upload → uploads/，
+    文件根目录与 models API 的下载逻辑一致:upload → uploads/,
     server_static → server/static/models/。缺失/无效的文件跳过。
+
+    几何轨选择(双轨产物):分层 GLB 的渲染轨含内部棱柱壁(非水密),
+    与平面求交会得到内部壁交线,因此优先用 metadata.shell_file(闭合壳);
+    旧包无 metadata.shell_file 时按 `shells/<code>_shell.glb` 约定回退;
+    两者都不存在(2026-10 之前的旧交付包,分层 GLB 本身即闭合壳)才用
+    渲染轨——并把所选文件写入日志,便于区分“新包缺壳”与“旧包无壳”。
     """
     roots = {
         "upload": settings.upload_path,
@@ -49,7 +59,7 @@ def resolve_layer_files(
     for asset_name, metadata, scope, file_path in rows:
         if not file_path:
             continue
-        # 合并模型(catalog_code=COMBINED,无 layer_index)不参与剖面，逐层壳体才有意义
+        # 合并模型(catalog_code=COMBINED,无 layer_index)不参与剖面,逐层壳体才有意义
         layer_index = metadata.get("layer_index")
         if not isinstance(layer_index, (int, float)) or int(layer_index) < 1:
             continue
@@ -57,11 +67,20 @@ def resolve_layer_files(
         if root is None:
             continue
         path = (root / file_path).resolve()
-        # 新交付包的分层 GLB 含内部棱柱壁(剖切视觉用)，剖面求交改用
-        # shells/ 下的闭合壳；旧包没有 shells/ 时回退分层 GLB 本身。
-        shell_path = path.parent / "shells" / f"{path.stem}_shell.glb"
-        if shell_path.is_file():
-            path = shell_path
+        shell_rel = metadata.get("shell_file")
+        if isinstance(shell_rel, str) and shell_rel:
+            candidate = (root / shell_rel).resolve()
+        else:
+            candidate = path.parent / "shells" / f"{path.stem}_shell.glb"
+        if candidate.is_file():
+            path = candidate
+        elif (path.parent / "shells").is_dir():
+            # 新包缺该层壳文件:告警并跳过——拿渲染轨求交会得到一串内部壁交线
+            logger.warning(
+                "剖面分析跳过 %s:交付包有 shells/ 但缺少 %s",
+                metadata.get("catalog_code") or path.stem, candidate.name,
+            )
+            continue
         if not path.is_file():
             continue
         code = str(metadata.get("catalog_code") or Path(file_path).stem)

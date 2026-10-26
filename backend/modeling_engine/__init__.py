@@ -1,7 +1,14 @@
 """GeoMine3D 钻孔地质建模引擎(移植自毕业论文细层化管线)。
 
 输入: 14层汇总长表(钻孔名称/地层名称/深度/厚度) + 钻孔位置表(name/x/y/z);
-输出: web 交付包(catalog.json + 分层 GLB/LOD/VTU + 20 倍竖向缩放副本)。
+输出: web 交付包(catalog.json + 双轨几何 + LOD/VTU + 20 倍竖向缩放副本)。
+
+几何双轨(2026-10-26):
+- 渲染轨 ``L*.glb`` / ``model_combined.glb`` / ``z20/`` / ``lods/``:含内部棱柱壁
+  (相邻体元共享侧面单份保留),剖切后内部呈柱状实体、无需补面;非水密,渲染端必须
+  ``DoubleSide``,不可用于体积/剖面求交;
+- 分析轨 ``shells/*_shell.glb``:闭合水密壳(``surface_mesh``),供剖面求交/体积/
+  等值线等数值分析。两轨顶点集一致,逐顶点属性共用。
 
 管线对应论文仓库的:
 - chapter04 build_refined_surfaces.py → surfaces.py(共享趋势+逐界面ARD GP + 保序投影/尖灭折叠)

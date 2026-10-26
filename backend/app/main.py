@@ -26,11 +26,12 @@ settings.upload_path.mkdir(parents=True, exist_ok=True)
 class NoCacheStaticFiles(StaticFiles):
     """不缓存静态模型资产。
 
-    原因:`/static/models` 下的文件会随数据重跑而变(位移场每次重导 sha256 都变),
-    而 FastAPI 的 SPA 兜底路由曾用 `FileResponse(index.html)` 以 **HTTP 200**
-    应答过同一个 URL。浏览器据此做了启发式缓存(响应里只有 etag/last-modified,
-    没有 cache-control → 允许启发式新鲜度),于是后端修好后前端仍拿到旧的 HTML,
-    报出 `Unexpected token '<'` 这类难以定位的错误。
+    原因:`/static/models`(及上传目录)下的文件会随数据重跑而变(交付包重新生成时
+    同名 GLB 从“闭合壳”换成“含内部棱柱壁”的渲染网格),而 FastAPI 的 SPA 兜底
+    路由曾用 `FileResponse(index.html)` 以 **HTTP 200** 应答过同一个 URL。浏览器
+    据此做了启发式缓存(响应里只有 etag/last-modified,没有 cache-control →
+    允许启发式新鲜度),于是后端修好后前端仍拿到旧的 HTML 或旧的 GLB,
+    表现出“模型内部时而空心、时而正常”这类难以复现的问题。
     这里统一加 no-cache,彻底消除这类“看不见的缓存”故障。
     """
 
@@ -117,7 +118,12 @@ async def request_context(request: Request, call_next):
 
 register_exception_handlers(app)
 app.include_router(api_router, prefix=settings.api_v1_prefix)
-app.mount(settings.model_public_prefix, StaticFiles(directory=settings.upload_path), name="uploads")
+# 上传目录同样可能是交付包产物(建模任务重建 web_package),同样不走浏览器缓存。
+app.mount(
+    settings.model_public_prefix,
+    NoCacheStaticFiles(directory=settings.upload_path),
+    name="uploads",
+)
 
 # 原始交付包静态目录:server/static/models 下的资产(catalog 模型、井巷、
 # 以及沉陷位移场)按 /static/models/... 直接取。

@@ -11,6 +11,10 @@
 进度逐行打到 stdout;最终结果(孔数/层序/原点/体积/耗时/被跳过的孔)写入
 --result-json 指向的文件,供后端注册数据库时消费。任何一步失败以非零码退出,
 stderr 带完整堆栈。
+
+产物为双轨几何(见 modeling_engine/__init__.py):根目录 ``L*.glb``/
+``model_combined.glb``/``z20/``/``lods/`` 为含内部棱柱壁的渲染轨,
+``shells/*_shell.glb`` 为闭合壳分析轨。
 """
 from __future__ import annotations
 

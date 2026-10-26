@@ -82,6 +82,16 @@ def export_lods(
     """
     生成减面 LOD。减面只服务视觉分级,不保证属性与拓扑,
     因此 LOD 文件只带顶点色,不带自定义属性。
+
+    两类输入网格的减面策略不同(2026-10-26):
+
+    - 闭合壳(preserve_topology=True + decimate_pro):保拓扑折叠,结果仍水密;
+    - 渲染轨(含内部棱柱壁,非水密):VTK 的“保拓扑”模式在非流形/开放网格上
+      几乎不能折叠任何边(实测减面率为 0,远景 LOD 等于没做),因此检测到
+      未生效时自动回退到 vtkQuadricDecimation(自动融合顶点)。
+
+    回退结果仍保留大部分内部壁,远景切换不会出现“内部突然变空”;
+    需要数值分析请用 shells/ 的闭合壳而不是 LOD。
     """
     reductions = reductions or {"lod50": 0.5, "lod80": 0.8}
     tri = mesh.triangulate()
@@ -90,6 +100,11 @@ def export_lods(
         decimated = tri.decimate_pro(
             reduction=reduction, preserve_topology=True
         )
+        method = "decimate_pro(preserve_topology)"
+        if decimated.n_cells > tri.n_cells * 0.9:
+            # 保拓扑模式对非水密网格失效:改用二次误差减面
+            decimated = tri.decimate(reduction)
+            method = "vtkQuadricDecimation"
         tm = trimesh.Trimesh(
             vertices=np.asarray(decimated.points, dtype=np.float32),
             faces=decimated.faces.reshape(-1, 4)[:, 1:].astype(np.int64),
@@ -102,6 +117,7 @@ def export_lods(
         entries.append({
             "name": name,
             "target_reduction": reduction,
+            "method": method,
             "path": str(path),
             "bytes": path.stat().st_size,
             "vertices": int(decimated.n_points),

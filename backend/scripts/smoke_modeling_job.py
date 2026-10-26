@@ -69,6 +69,22 @@ def main() -> int:
         file_response = client.get(f"{BASE}/api/v1/models/{l01['id']}/file")
         assert file_response.status_code == 200 and len(file_response.content) > 1_000_000
         print(f"模型文件下载 ✓ ({len(file_response.content) / 1e6:.2f} MB)")
+        assert file_response.headers.get("cache-control") == "no-cache, must-revalidate", \
+            "模型下载缺少 no-cache"
+
+        # 双轨产物:metadata 应同时给出渲染轨(source_file)与分析轨(shell_file)、LOD 地址
+        meta = l01["metadata_json"]
+        assert meta["source_file"].endswith("/L01.glb"), meta["source_file"]
+        assert meta["shell_file"].endswith("/shells/L01_shell.glb"), meta["shell_file"]
+        assert meta["lod_urls"]["lod50"].startswith("/uploads/"), meta["lod_urls"]
+        shell_response = client.get(f"{BASE}/api/v1/models/{l01['id']}/file?variant=shell")
+        assert shell_response.status_code == 200, shell_response.text
+        assert len(shell_response.content) < len(file_response.content), \
+            "闭合壳应比重渲染网格小"
+        print(
+            f"双轨产物 ✓ 渲染 {len(file_response.content) / 1e6:.2f} MB / "
+            f"壳 {len(shell_response.content) / 1e6:.2f} MB;LOD {meta['lod_urls']['lod50']}"
+        )
 
         if not keep:
             delete = client.delete(f"{BASE}/api/v1/projects/{project_id}")

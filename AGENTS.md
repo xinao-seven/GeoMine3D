@@ -83,11 +83,23 @@ server/                     # Preserved legacy data service and source assets (d
   `import_server_data.py` 重跑时按 `metadata.source=="modeling"` 跳过建模资产、按“项目含建模
   内容则不劫持”匹配同名项目。E2E 冒烟：`backend/scripts/smoke_modeling_job.py`。
   渲染网格保留内部三棱柱壁（`LayerResult.render_mesh`，`keep_shared_walls` 把相邻体元共享侧面
-  单份保留）：L*.glb/model_combined/z20 用含壁网格，剖切后内部呈柱状实体；`shells/` 存逐层闭合
-  壳（surface_mesh）供剖面求交等分析；LOD/VTU 仍由闭合壳/体网格导出。渲染网格相邻层底面整体
-  下移 `RENDER_INTERFACE_GAP=0.05m` 抗界面共面闪烁（当前已部署锦界包生成于该改动前）。
-  `build_web_package` 支持 `--z-origin` 显式高程基准（替换既有包时保持对齐）。
+  单份保留）：L*.glb/model_combined/z20/lods 用含壁网格，剖切后内部呈柱状实体；`shells/` 存逐层闭合
+  壳（surface_mesh）供剖面求交等分析。渲染网格相邻层底面整体下移 `RENDER_INTERFACE_GAP=0.05m`
+  抗界面共面闪烁。`build_web_package` 支持 `--z-origin` 显式高程基准（替换既有包时保持对齐）。
   锦界交付包已用本引擎重新生成替换（原包备份 `server/static/models/_backup_web_package_20261026/`）。
+- **几何双轨（渲染轨 / 分析轨）**：每个交付包同时含两套几何，注册进库时分别写到
+  `metadata.source_file`（渲染轨 `L*.glb`，含内部壁、非水密、渲染端必须 `DoubleSide`）与
+  `metadata.shell_file`（分析轨 `shells/L*_shell.glb`，闭合壳），另存 `metadata.lod_urls`
+  （逐层 LOD 的公开地址，LOD 自渲染轨减面，上传项目也能用）。下载接口
+  `GET /api/v1/models/{id}/file?variant=render|shell`（默认 `render`；旧包无分析轨时 404 而
+  不是隐式回退）。剖面/体积/等值线一律读壳（`section_service.resolve_layer_files` 优先
+  `metadata.shell_file`）。前端在剖切/炸开/沉陷期间抑制 LOD 切低模（低模内部壁已被减面抹平）。
+  既有包重建：`python scripts/rebuild_web_package.py --package <交付包> --npz <曲面npz>
+  [--project-id <项目>]`（保持原 `z_origin`，保留 `act_params/source/workings_glb` 等元数据，
+  `--project-id` 时同步刷新资产 metadata 与版本 size/hash）。
+  合并场景同样双轨：`model_combined.glb`（含壁）与 `model_combined_shell.glb`（壳，约 20MB/包）。
+- 工作台资源树对每个带 `metadata.shell_file` 的模型提供两个加载按钮：主按钮=含壁版、
+  `空心壳`按钮=闭合壳版（互斥，场景图层名带“（空心壳）”后缀，壳版本不参与 LOD）。
 - 分析与出图功能（`/api/v1/projects/{id}/analysis/*`，纯函数在 `app/services/analysis_service.py`）：
   - `overview` 厚度分布/深度分布/地层频率/工作面状态统计（前端 AnalysisDock 场景概览与体积储量页签消费）。
   - `virtual-borehole`(POST) 任意点 IDW 插值虚拟钻孔；`reserves` 工作面 shp 圈闭面积×圈内钻孔
