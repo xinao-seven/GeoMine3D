@@ -82,7 +82,7 @@ export class StratumModelLoader {
                         const lambertMaterial = new THREE.MeshLambertMaterial({
                             color: layerColor,
                             transparent: true,
-                            opacity: 0.95,
+                            opacity: 1,
                             side: THREE.DoubleSide,
                             emissive: 0x0d121f,
                             emissiveIntensity: 0.08,

@@ -165,6 +165,24 @@ export interface ContoursResponse {
     sample_count: number
 }
 
+/** 勘探线剖面（剖线 × 分层 GLB 闭合壳求交） */
+export interface SectionProfileResponse {
+    a: { x: number; y: number }
+    b: { x: number; y: number }
+    length_m: number
+    z_origin_m: number
+    z_range: [number | null, number | null]
+    layer_count: number
+    layers: Array<{
+        code: string
+        name: string
+        color: string
+        /** 每条闭环为 [ [s 沿线距离 m, z 真实标高 m], ... ] */
+        loops: number[][][]
+    }>
+    skipped: string[]
+}
+
 /** 由 scripts/preprocess_basemap.py 生成的底图元数据（静态资源） */
 export interface BasemapMeta {
     image: string
@@ -285,6 +303,11 @@ export const workspaceApi = {
     async getContours(projectId: string, layer: string, step?: number) {
         return (await workspaceClient.get<DataResponse<ContoursResponse>>(
             `/projects/${projectId}/analysis/contours`, { params: { layer, ...(step ? { step } : {}) } },
+        )).data.data
+    },
+    async getSectionProfile(projectId: string, payload: { ax: number; ay: number; bx: number; by: number }) {
+        return (await workspaceClient.post<DataResponse<SectionProfileResponse>>(
+            `/projects/${projectId}/analysis/section`, payload,
         )).data.data
     },
 }

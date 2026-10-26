@@ -33,3 +33,6 @@ backend/pytest-cache-files-*/
 WebGIS面试题与项目难点总结.md
 archive/
 
+
+# 交付包替换前的本地备份（体积大，仅留本机回滚用）
+server/static/models/_backup_web_package_*/

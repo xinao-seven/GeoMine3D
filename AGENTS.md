@@ -82,11 +82,20 @@ server/                     # Preserved legacy data service and source assets (d
   （锦界 182 孔 → 16641 节点）；不含 roadways/working_faces/沉陷场（锦界专属）。
   `import_server_data.py` 重跑时按 `metadata.source=="modeling"` 跳过建模资产、按“项目含建模
   内容则不劫持”匹配同名项目。E2E 冒烟：`backend/scripts/smoke_modeling_job.py`。
+  渲染网格保留内部三棱柱壁（`LayerResult.render_mesh`，`keep_shared_walls` 把相邻体元共享侧面
+  单份保留）：L*.glb/model_combined/z20 用含壁网格，剖切后内部呈柱状实体；`shells/` 存逐层闭合
+  壳（surface_mesh）供剖面求交等分析；LOD/VTU 仍由闭合壳/体网格导出。渲染网格相邻层底面整体
+  下移 `RENDER_INTERFACE_GAP=0.05m` 抗界面共面闪烁（当前已部署锦界包生成于该改动前）。
+  `build_web_package` 支持 `--z-origin` 显式高程基准（替换既有包时保持对齐）。
+  锦界交付包已用本引擎重新生成替换（原包备份 `server/static/models/_backup_web_package_20261026/`）。
 - 分析与出图功能（`/api/v1/projects/{id}/analysis/*`，纯函数在 `app/services/analysis_service.py`）：
   - `overview` 厚度分布/深度分布/地层频率/工作面状态统计（前端 AnalysisDock 场景概览与体积储量页签消费）。
   - `virtual-borehole`(POST) 任意点 IDW 插值虚拟钻孔；`reserves` 工作面 shp 圈闭面积×圈内钻孔
     煤厚×密度估算资源量；`contours?layer=` 顶板埋深等值线（IDW 网格 + Marching Squares，
     返回投影坐标线段）。
+  - `section`(POST) 两点剖面线对分层闭合壳（`shells/*_shell.glb`）平面求交
+    （`app/services/section_service.py`，numpy 自实现三角面求交 + 环线组装，1mm 法向偏移规避
+    网格对齐退化），返回逐层 s-z 折线环；前端勘探线剖面图消费。
   - `boundaries` 读取井田边界/工作面 shp 折线（pyshp，`settings.*_boundary_shp`，mtime 缓存）。
 - 三维工作台叠加层与工具（SceneCanvas 工具箱“显示/分析”分组）：矿区边界贴地线框
   （`BoundaryOverlay`，钻孔孔口平均高程为基准面）、地层颜色图例、标注持久化
@@ -94,8 +103,9 @@ server/                     # Preserved legacy data service and source assets (d
   虚拟钻孔点击查询、剖面工具（两点定义剖面线 → `ClipTool.setCustomPlane` 任意垂直面裁剪 +
   勘探线剖面图对话框，走廊 ±300m 钻孔投影）、分层体积估算（四面体符号体积/竖向比例）、
   埋深等值线（`ContourOverlay` 按埋深配色）、地层 LOD（`StratumLodController` 按相机距离
-  切换 `web_package/lods/*_lod50.glb`，沉陷/炸开时自动抑制；由 catalog `source_file` 推导地址）。
-  场景保存/快照：头部按钮 → `scene_configs` API（视角/图层/剖切/炸开序列化）与 PNG 导出；
+  切换 `web_package/lods/*_lod50.glb`，沉陷/炸开时自动抑制；由 catalog `source_file` 推导地址；
+  LOD 由闭合壳减面生成、不含内部壁）。地层模型默认不透明（加载透明度 0.95→1.0，透明度仍由
+  图层控制）。场景保存/快照：头部按钮 → `scene_configs` API（视角/图层/剖切/炸开序列化）与 PNG 导出；
   状态栏鼠标坐标读数（投影面求交 + 悬停表面点高程）。
   GeoTIFF 底图：`scripts/preprocess_basemap.py` 把 UTM49N DEM 重投影到矿区 GK37 带生成
   `/static/models/basemap/`（jpg+json），前端 `BasemapOverlay` 按元数据铺平面纹理；
@@ -123,7 +133,7 @@ server/                     # Preserved legacy data service and source assets (d
 | Borehole strata (active) | `server/data/boreholes/地层汇总14层.xlsx`（182 孔 × 14 层，列语义 深度=层顶/厚度=层底，路径由 `settings.borehole_strata_file` 指定） |
 | Borehole strata (legacy) | `server/data/boreholes/地层汇总.旧表-已停用.xlsx.bak`（旧表，已停用；列语义 深度=层底/厚度=层厚） |
 | Borehole coordinates | `server/data/location/钻孔位置.xlsx`（210 孔，其中 28 孔无分层，导入时跳过） |
-| .glb models | `server/static/models/web_package/`（L01–L10 分层、model_combined、roadways、working_faces） |
+| .glb models | `server/static/models/web_package/`（L01–L14 分层、model_combined、roadways、working_faces；L*/合并为含内部棱柱壁的渲染网格，shells/ 为逐层闭合壳） |
 | 沉陷位移场 | `server/static/models/settlement/`（vertex_offsets.bin/.index.json，前端单模型变形用） |
 
 Models are registered from `web_package/catalog.json` (no static-directory scan); the project origin and vertical scale (20×) come from the catalog `origin_restore`, so boreholes and models share one datum.

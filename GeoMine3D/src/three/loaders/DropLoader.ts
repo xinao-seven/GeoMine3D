@@ -64,7 +64,7 @@ export class DropLoader {
                 const lambertMaterial = new THREE.MeshLambertMaterial({
                     color,
                     transparent: true,
-                    opacity: 0.95,
+                    opacity: 1,
                     side: THREE.DoubleSide,
                     emissive: 0x0d121f,
                     emissiveIntensity: 0.08,

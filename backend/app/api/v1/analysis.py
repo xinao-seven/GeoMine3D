@@ -4,8 +4,10 @@ from sqlalchemy import func, select
 
 from app.api.dependencies import DbSession
 from app.core.config import settings
-from app.models.asset import ModelAsset
+from app.core.exceptions import AppError
+from app.models.asset import ModelAsset, ModelVersion
 from app.models.borehole import Borehole, BoreholeSegment
+from app.models.project import Project
 from app.models.workspace import WorkingFace
 from app.schemas.common import DataResponse
 from app.services.analysis_service import (
@@ -15,6 +17,7 @@ from app.services.analysis_service import (
     virtual_borehole,
 )
 from app.services.boundary_service import read_polylines
+from app.services.section_service import compute_section, resolve_layer_files
 from app.services.workspace_service import ensure_project
 
 
@@ -25,6 +28,13 @@ class VirtualBoreholeRequest(BaseModel):
     x: float = Field(description="查询点东向投影坐标(米)")
     y: float = Field(description="查询点北向投影坐标(米)")
     max_neighbors: int = Field(default=8, ge=1, le=32)
+
+
+class SectionRequest(BaseModel):
+    ax: float = Field(description="剖面线端点A东向投影坐标(米)")
+    ay: float = Field(description="剖面线端点A北向投影坐标(米)")
+    bx: float = Field(description="剖面线端点B东向投影坐标(米)")
+    by: float = Field(description="剖面线端点B北向投影坐标(米)")
 
 
 async def fetch_borehole_data(session: DbSession, project_id: str):
@@ -192,4 +202,46 @@ async def get_layer_contours(
     result = burial_depth_contours(samples, step=step)
     result["layer"] = layer
     result["sample_count"] = len(samples)
+    return DataResponse(data=result)
+
+
+@router.post(
+    "/projects/{project_id}/analysis/section",
+    response_model=DataResponse[dict],
+)
+async def create_section_profile(
+    project_id: str, payload: SectionRequest, session: DbSession
+):
+    """勘探线剖面：剖线 × 分层 GLB 闭合壳求交，返回逐层 (沿线距离, 标高) 矢量剖面。"""
+    project = await session.get(Project, project_id)
+    if project is None:
+        raise AppError("PROJECT_NOT_FOUND", "项目不存在", status_code=404)
+
+    rows = (
+        await session.execute(
+            select(
+                ModelAsset.name,
+                ModelAsset.metadata_json,
+                ModelVersion.storage_scope,
+                ModelVersion.file_path,
+            )
+            .join(ModelVersion, ModelVersion.id == ModelAsset.current_version_id)
+            .where(ModelAsset.project_id == project_id, ModelAsset.model_type == "stratum")
+        )
+    ).all()
+    layer_rows = [
+        (row.name, row.metadata_json or {}, row.storage_scope, row.file_path) for row in rows
+    ]
+    layers = resolve_layer_files(layer_rows)
+    if not layers:
+        raise AppError("SECTION_NO_LAYER_MODELS", "项目缺少分层模型，无法生成剖面", status_code=400)
+
+    result = compute_section(
+        layers,
+        payload.ax,
+        payload.ay,
+        payload.bx,
+        payload.by,
+        {"x": project.origin_x, "y": project.origin_y, "z": project.origin_z},
+    )
     return DataResponse(data=result)

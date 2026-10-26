@@ -69,15 +69,16 @@
             </div>
         </el-dialog>
 
-        <el-dialog v-model="workspace.sectionDialogVisible" title="勘探线剖面图（沿线钻孔投影）" width="min(1100px, 94vw)"
-            append-to-body class="section-dialog" @opened="renderSectionChart" @closed="disposeSectionChart">
+        <el-dialog v-model="workspace.sectionDialogVisible" title="勘探线剖面图（分层模型剖面 + 沿线钻孔投影）"
+            width="min(1100px, 94vw)" append-to-body class="section-dialog" @opened="renderSectionChart"
+            @closed="disposeSectionChart">
             <div class="section-toolbar">
                 <span class="section-meta">{{ sectionMetaText }}</span>
-                <el-button size="small" :disabled="!boreholesInSection.length" @click="exportSectionChart">导出 PNG</el-button>
+                <el-button size="small" :disabled="!sectionHasContent" @click="exportSectionChart">导出 PNG</el-button>
             </div>
-            <div ref="sectionChartRef" class="section-chart"></div>
-            <p v-if="!boreholesInSection.length" class="section-empty">
-                剖面线走廊（±300m）内没有已加载分层数据的钻孔——请先在左侧资源面板加载钻孔。
+            <div v-loading="sectionProfileLoading" ref="sectionChartRef" class="section-chart"></div>
+            <p v-if="!sectionHasContent" class="section-empty">
+                暂无可绘制内容——剖面线走廊（±300m）内没有已加载分层数据的钻孔，或项目缺少分层模型。
             </p>
         </el-dialog>
 
@@ -104,7 +105,7 @@ import SceneCanvas from '@/components/three/SceneCanvas.vue'
 import ResourceExplorer from '@/components/workspace/ResourceExplorer.vue'
 import InspectorPanel from '@/components/workspace/InspectorPanel.vue'
 import AnalysisDock from '@/components/workspace/AnalysisDock.vue'
-import { workspaceApi, type ProjectRecord, type SceneRecord } from '@/api/workspace'
+import { workspaceApi, type ProjectRecord, type SceneRecord, type SectionProfileResponse } from '@/api/workspace'
 import { useSceneStore, useWorkspaceStore, useBoreholeStore } from '@/stores'
 import type { SceneSnapshot } from '@/stores/sceneStore'
 import { boreholeLayerColor } from '@/constants/strataColors'
@@ -240,12 +241,25 @@ interface SectionHole {
     name: string
     s: number
     t: number
+    collarElevation: number
     layers: BoreholeLayer[]
+}
+
+interface SectionPolygon {
+    name: string
+    color: string
+    points: number[][]
 }
 
 const sectionChartRef = ref<HTMLDivElement>()
 let sectionChart: import('echarts').ECharts | null = null
 const boreholesInSection = ref<SectionHole[]>([])
+const sectionProfile = ref<SectionProfileResponse | null>(null)
+const sectionProfileLoading = ref(false)
+const sectionProfileError = ref('')
+
+const sectionHasContent = computed(() =>
+    Boolean(boreholesInSection.value.length || sectionProfile.value?.layers.length))
 
 const sectionMetaText = computed(() => {
     const a = sceneStore.sectionState.pointA
@@ -253,10 +267,22 @@ const sectionMetaText = computed(() => {
     if (!a || !b) return '剖面线未定义'
     const length = Math.hypot(b.x - a.x, b.y - a.y)
     const bearing = (Math.atan2(b.x - a.x, b.y - a.y) * 180 / Math.PI + 360) % 360
-    return `方位角 ${bearing.toFixed(1)}° · 长度 ${length.toFixed(0)} m · 沿线钻孔 ${boreholesInSection.value.length} 个（走廊 ±${SECTION_CORRIDOR_M}m）`
+    const parts = [
+        `方位角 ${bearing.toFixed(1)}°`,
+        `长度 ${length.toFixed(0)} m`,
+        `沿线钻孔 ${boreholesInSection.value.length} 个（走廊 ±${SECTION_CORRIDOR_M}m）`,
+    ]
+    if (sectionProfile.value) {
+        parts.push(`模型剖面 ${sectionProfile.value.layer_count} 层`)
+    } else if (sectionProfileError.value) {
+        parts.push('模型剖面不可用（仅钻孔投影）')
+    } else if (sectionProfileLoading.value) {
+        parts.push('模型剖面计算中…')
+    }
+    return parts.join(' · ')
 })
 
-/** 把剖面线走廊内的钻孔投影到剖面线坐标系（s=沿线距离, t=偏距） */
+/** 把剖面线走廊内的钻孔投影到剖面线坐标系（s=沿线距离, t=偏距），并换算孔口标高 */
 function computeSectionHoles(): SectionHole[] {
     const a = sceneStore.sectionState.pointA
     const b = sceneStore.sectionState.pointB
@@ -276,14 +302,51 @@ function computeSectionHoles(): SectionHole[] {
         if (s < -50 || s > length + 50) continue
         const t = Math.abs(vx * uy - vy * ux)
         if (t > SECTION_CORRIDOR_M) continue
-        holes.push({ name: item.name, s, t, layers: item.layers })
+        holes.push({ name: item.name, s, t, collarElevation: item.location.z, layers: item.layers })
     }
     holes.sort((x, y) => x.s - y.s)
     return holes
 }
 
-function buildSectionOption(holes: SectionHole[]) {
-    const maxDepth = Math.max(1, ...holes.flatMap(hole => hole.layers.map(layer => layer.bottomDepth)))
+/** 拉取后端分层模型剖面（剖线 × 分层 GLB 闭合壳求交） */
+async function loadSectionProfile() {
+    const projectId = String(route.params.projectId)
+    const a = sceneStore.sectionState.pointA
+    const b = sceneStore.sectionState.pointB
+    sectionProfile.value = null
+    sectionProfileError.value = ''
+    if (projectId === 'local' || !a || !b) return
+    sectionProfileLoading.value = true
+    try {
+        sectionProfile.value = await workspaceApi.getSectionProfile(projectId, {
+            ax: a.x, ay: a.y, bx: b.x, by: b.y,
+        })
+    } catch {
+        sectionProfileError.value = 'unavailable'
+    } finally {
+        sectionProfileLoading.value = false
+    }
+}
+
+function buildSectionOption(holes: SectionHole[], profile: SectionProfileResponse | null) {
+    // 剖面多边形：(s, 标高) 闭环，绘制顺序自下而上，后画的层覆盖在上面
+    const polygons: SectionPolygon[] = (profile?.layers ?? [])
+        .flatMap(layer => layer.loops.map(points => ({ name: layer.name, color: layer.color, points })))
+
+    const elevations: number[] = []
+    for (const poly of polygons) {
+        for (const [, z] of poly.points) elevations.push(z)
+    }
+    for (const hole of holes) {
+        elevations.push(hole.collarElevation)
+        for (const layer of hole.layers) elevations.push(hole.collarElevation - layer.bottomDepth)
+    }
+    const length = profile?.length_m
+        ?? Math.ceil(Math.max(1, holes.length ? holes[holes.length - 1].s : 1))
+    const zMin = elevations.length ? Math.min(...elevations) : 0
+    const zMax = elevations.length ? Math.max(...elevations) : 100
+    const zPad = Math.max(10, (zMax - zMin) * 0.06)
+
     // 柱宽取相邻孔距中位数的 45%，夹在 8~40
     const gaps: number[] = []
     for (let i = 1; i < holes.length; i += 1) gaps.push(holes[i].s - holes[i - 1].s)
@@ -291,91 +354,157 @@ function buildSectionOption(holes: SectionHole[]) {
     const medianGap = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 120
     const barWidth = Math.min(40, Math.max(8, medianGap * 0.45))
 
-    const data = holes.flatMap((hole, holeIndex) =>
+    const barData = holes.flatMap(hole =>
         hole.layers.map((layer, layerIndex) => ({
-            value: [hole.s, layer.topDepth],
-            holeIndex,
+            value: [hole.s, hole.collarElevation - layer.topDepth],
+            holeIndex: holes.indexOf(hole),
             layerIndex,
             layer,
-        }))
-    )
+        })))
+
+    const series: Record<string, any>[] = [
+        {
+            name: '地层剖面',
+            type: 'custom',
+            renderItem: (params: any, api: any) => {
+                const poly = polygons[params.dataIndex]
+                if (!poly || poly.points.length < 3) return null
+                const shape = {
+                    points: poly.points.map(([s, z]) => {
+                        const c = api.coord([s, z])
+                        return { x: c[0], y: c[1] }
+                    }),
+                }
+                return {
+                    type: 'polygon',
+                    shape,
+                    style: {
+                        fill: poly.color,
+                        opacity: 0.92,
+                        stroke: 'rgba(0,0,0,0.4)',
+                        lineWidth: 0.6,
+                    },
+                }
+            },
+            data: polygons.map((_, index) => index),
+            encode: { x: 0, y: 1 },
+            clip: true,
+            z: 2,
+            tooltip: {
+                formatter: (params: any) => {
+                    const poly = polygons[params.dataIndex]
+                    if (!poly) return ''
+                    return `<b>${poly.name}</b>`
+                },
+            },
+        },
+        {
+            name: '钻孔柱状',
+            type: 'custom',
+            renderItem: (params: any, api: any) => {
+                const bar = barData[params.dataIndex]
+                const hole = holes[bar.holeIndex]
+                const layer = bar.layer
+                const topElev = hole.collarElevation - layer.topDepth
+                const bottomElev = hole.collarElevation - layer.bottomDepth
+                const x0 = api.coord([hole.s - barWidth / 2, topElev])
+                const x1 = api.coord([hole.s + barWidth / 2, topElev])
+                const y1 = api.coord([hole.s, bottomElev])
+                return {
+                    type: 'rect',
+                    shape: {
+                        x: x0[0],
+                        y: x0[1],
+                        width: Math.max(2, x1[0] - x0[0]),
+                        height: Math.max(1, y1[1] - x0[1]),
+                    },
+                    style: {
+                        fill: boreholeLayerColor(layer.color, bar.holeIndex),
+                        opacity: 0.95,
+                        stroke: 'rgba(255,255,255,0.25)',
+                        lineWidth: 0.5,
+                    },
+                }
+            },
+            data: barData,
+            encode: { x: 0, y: 1 },
+            clip: true,
+            z: 3,
+            tooltip: {
+                formatter: (params: any) => {
+                    const bar = barData[params.dataIndex]
+                    if (!bar) return ''
+                    const hole = holes[bar.holeIndex]
+                    const layer = bar.layer
+                    return `<b>${hole.name}</b><br/>${layer.layerName}<br/>顶深 ${layer.topDepth} m · 底深 ${layer.bottomDepth} m<br/>偏距 ${hole.t.toFixed(0)} m`
+                },
+            },
+        },
+        {
+            name: '孔口标注',
+            type: 'custom',
+            renderItem: (params: any, api: any) => {
+                const hole = holes[params.dataIndex]
+                if (!hole) return null
+                const point = api.coord([hole.s, hole.collarElevation])
+                return {
+                    type: 'text',
+                    style: {
+                        text: hole.name,
+                        x: point[0],
+                        y: point[1] - 4,
+                        fill: '#9aa39a',
+                        fontSize: 9,
+                        align: 'center',
+                    },
+                }
+            },
+            data: holes.map((_, index) => index),
+            z: 4,
+            silent: true,
+        },
+    ]
 
     return {
         backgroundColor: 'transparent',
-        tooltip: {
-            trigger: 'item',
-            formatter: (params: any) => {
-                const d = params.data
-                const layer = d?.layer
-                const hole = holes[d?.holeIndex]
-                if (!layer || !hole) return ''
-                return `<b>${hole.name}</b><br/>${layer.layerName}<br/>顶深 ${layer.topDepth} m · 底深 ${layer.bottomDepth} m<br/>偏距 ${hole.t.toFixed(0)} m`
-            },
-        },
+        tooltip: { trigger: 'item' },
         grid: { left: 56, right: 24, top: 30, bottom: 34 },
         xAxis: {
             type: 'value',
             name: '沿线距离 m',
             nameTextStyle: { color: '#77807a', fontSize: 10 },
             min: 0,
-            max: Math.ceil(Math.max(1, holes.length ? holes[holes.length - 1].s : 1)),
+            max: length,
             axisLabel: { color: '#8b948c', fontSize: 10 },
             splitLine: { lineStyle: { color: '#1f251f' } },
         },
         yAxis: {
             type: 'value',
-            inverse: true,
-            name: '深度 m',
+            name: '标高 m',
             nameTextStyle: { color: '#77807a', fontSize: 10 },
-            max: Math.ceil(maxDepth * 1.05),
+            min: Math.floor(zMin - zPad),
+            max: Math.ceil(zMax + zPad),
             axisLabel: { color: '#8b948c', fontSize: 10 },
             splitLine: { lineStyle: { color: '#1f251f' } },
         },
-        series: [
-            {
-                type: 'custom',
-                renderItem: (params: any, api: any) => {
-                    const d = params.data
-                    const hole = holes[d.holeIndex]
-                    const layer = d.layer
-                    const x0 = api.coord([hole.s - barWidth / 2, layer.topDepth])
-                    const x1 = api.coord([hole.s + barWidth / 2, layer.topDepth])
-                    const y1 = api.coord([hole.s, layer.bottomDepth])
-                    return {
-                        type: 'rect',
-                        shape: {
-                            x: x0[0],
-                            y: x0[1],
-                            width: Math.max(2, x1[0] - x0[0]),
-                            height: Math.max(1, y1[1] - x0[1]),
-                        },
-                        style: {
-                            fill: boreholeLayerColor(layer.color, d.layerIndex),
-                            opacity: 0.92,
-                            stroke: 'rgba(255,255,255,0.25)',
-                            lineWidth: 0.5,
-                        },
-                    }
-                },
-                data,
-                encode: { x: 0, y: 1 },
-                clip: true,
-            },
-        ],
+        series,
     }
 }
 
 async function renderSectionChart() {
     boreholesInSection.value = computeSectionHoles()
+    if (!sectionProfile.value && !sectionProfileError.value) {
+        await loadSectionProfile()
+    }
     if (!sectionChartRef.value) return
     const echarts = await import('echarts')
     if (!sectionChartRef.value) return
     if (!sectionChart) sectionChart = echarts.init(sectionChartRef.value)
-    if (!boreholesInSection.value.length) {
+    if (!sectionHasContent.value) {
         sectionChart.clear()
         return
     }
-    sectionChart.setOption(buildSectionOption(boreholesInSection.value), true)
+    sectionChart.setOption(buildSectionOption(boreholesInSection.value, sectionProfile.value), true)
 }
 
 function disposeSectionChart() {
@@ -394,7 +523,11 @@ function exportSectionChart() {
 
 // 剖面线第二点落定后自动打开剖面图
 watch(() => sceneStore.sectionState.pointB, (pointB) => {
-    if (pointB) workspace.openSectionDialog()
+    if (pointB) {
+        sectionProfile.value = null
+        sectionProfileError.value = ''
+        workspace.openSectionDialog()
+    }
 })
 watch(() => workspace.sectionDialogVisible, (visible) => {
     if (visible) void renderSectionChart()
