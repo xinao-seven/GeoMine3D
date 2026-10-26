@@ -37,6 +37,7 @@ def run(
     boundary_padding_m: float = 200.0,
     pinchout_threshold_m: float = 0.5,
     z_scale: float = 20.0,
+    z_origin_m: float | None = None,
     surfaces_npz_path: Path | None = None,
 ) -> dict:
     from modeling_engine import data_io, package_builder, surfaces
@@ -99,6 +100,7 @@ def run(
         layer_names=inputs.layers,
         package_dir=out_dir,
         z_scale=z_scale,
+        z_origin_m=z_origin_m,
         source_meta={
             "strata_file": strata_path.name,
             "location_file": location_path.name,
@@ -153,6 +155,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--boundary-padding", type=float, default=200.0)
     parser.add_argument("--pinchout-threshold", type=float, default=0.5)
     parser.add_argument("--z-scale", type=float, default=20.0)
+    parser.add_argument("--z-origin", type=float, default=None,
+                        help="显式高程基准(米);替换既有交付包时传入原包基准以保持对齐")
     parser.add_argument("--save-surfaces", default=None, help="中间曲面 npz 输出路径")
     args = parser.parse_args(argv)
 
@@ -166,6 +170,7 @@ def main(argv: list[str] | None = None) -> int:
             boundary_padding_m=args.boundary_padding,
             pinchout_threshold_m=args.pinchout_threshold,
             z_scale=args.z_scale,
+            z_origin_m=args.z_origin,
             surfaces_npz_path=Path(args.save_surfaces) if args.save_surfaces else None,
         )
         return 0

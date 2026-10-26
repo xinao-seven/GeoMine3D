@@ -236,10 +236,15 @@ def build_web_package(
     layer_names: list[str],
     package_dir: Path,
     z_scale: float = 20.0,
+    z_origin_m: float | None = None,
     source_meta: dict[str, Any] | None = None,
     progress: callable | None = None,
 ) -> dict[str, Any]:
-    """由校正后曲面构建完整交付包,返回 {catalog, model, summary}。"""
+    """由校正后曲面构建完整交付包,返回 {catalog, model, summary}。
+
+    z_origin_m: 显式指定高程基准(局部 z = 真实高程 - z_origin_m)。
+    缺省用全部界面高程均值;替换既有交付包时应传入原包基准以保持对齐。
+    """
     t_start = time.time()
     if surfaces.ndim != 2 or surfaces.shape[0] != len(layer_names) + 1:
         raise ValueError(
@@ -250,10 +255,12 @@ def build_web_package(
     if pinchout_masks.shape != (len(layer_names), len(xy_global)):
         raise ValueError("尖灭掩膜形状与层数/节点数不一致")
 
-    for sub in ("lods", "vtu", "attributes"):
+    for sub in ("lods", "vtu", "attributes", "shells"):
         (package_dir / sub).mkdir(parents=True, exist_ok=True)
 
     origin = np.array([xy_global[:, 0].mean(), xy_global[:, 1].mean(), surfaces.mean()])
+    if z_origin_m is not None:
+        origin[2] = float(z_origin_m)
     xy_local = xy_global - origin[:2]
     surfaces_local = surfaces - origin[2]
 
@@ -280,9 +287,16 @@ def build_web_package(
         code = codes[li]
         color = tuple(int(colors[li][k:k + 2], 16) for k in (1, 3, 5))
         attrs = vertex_attribute_arrays(layer)
-        tm = layer_to_trimesh(layer.surface_mesh, color, attrs)
+        # 渲染网格(含内部棱柱壁)用于 L*.glb / 合并模型 / z20;
+        # 闭合壳用于 LOD 减面与 shells/(剖面求交等分析用途)。
+        render_mesh = layer.render_mesh if layer.render_mesh is not None else layer.surface_mesh
+        tm = layer_to_trimesh(render_mesh, color, attrs)
         layer_meshes[code] = tm
         glb_info = export_layer_glb(tm, package_dir / f"{code}.glb")
+        shell_tm = layer_to_trimesh(layer.surface_mesh, color, attrs)
+        shell_info = export_layer_glb(
+            shell_tm, package_dir / "shells" / f"{code}_shell.glb"
+        )
         if not glb_info["vertex_attributes_kept"]:
             attrs_in_glb_all = False
             np.savez_compressed(package_dir / "attributes" / f"{code}_attributes.npz", **attrs)
@@ -292,7 +306,8 @@ def build_web_package(
         pts = layer.surface_mesh.points
         layer_entries.append({
             "index": li + 1, "code": code, "name_cn": layer_names[li],
-            "color_hex": colors[li], "glb": glb_info, "lods": lods, "vtu": vtu_info,
+            "color_hex": colors[li], "glb": glb_info, "shell_glb": shell_info,
+            "lods": lods, "vtu": vtu_info,
             "vertex_attributes_in_glb": glb_info["vertex_attributes_kept"],
             "bounds_local": {"min": pts.min(axis=0).tolist(), "max": pts.max(axis=0).tolist()},
             "stats": {

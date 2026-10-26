@@ -28,6 +28,8 @@ from scipy.spatial import Delaunay
 
 VERTEX_ROUND_DECIMALS = 6
 NEGATIVE_TOL = -1e-8
+# 渲染网格相邻层底面的下移间距(真实米):消除相邻层底/顶面共面 z-fighting
+RENDER_INTERFACE_GAP = 0.05
 
 ELEMENT_CODES = {1: "wedge", 2: "pyramid", 3: "tetra"}
 
@@ -46,6 +48,7 @@ class LayerResult:
     element_counts: dict                # {"wedge": n, "pyramid": n, "tetra": n}
     analytic_volume_m3: float           # 式(5-11)解析体积
     surface_mesh: pv.PolyData
+    render_mesh: pv.PolyData | None     # 含内部棱柱壁的渲染网格(单份共享壁);None=同 surface_mesh
     volume_grid: pv.UnstructuredGrid
     vertex_node_index: np.ndarray       # 表面顶点 → 共享网格节点索引
     vertex_interface_index: np.ndarray  # 表面顶点 → 所属界面索引(逐顶点属性对齐用)
@@ -275,6 +278,18 @@ class PrismModel:
         surface, node_of_vertex = self._assemble_surface(
             uniq, t, b, layer_index, node_of_vertex
         )
+        # 渲染网格:保留内部棱柱壁(每对相邻体元的共享侧面只保留一份),
+        # 剖切后内部呈柱状实体而非空壳。顶点集合与 surface_mesh 完全一致,
+        # 逐顶点属性直接复用。
+        # 另将底面顶点整体下移 RENDER_INTERFACE_GAP:相邻两层的底面/顶面
+        # 几何完全共面,DoubleSide 下逐像素深度竞争会在剖切开敞处大面积
+        # 闪动(z-fighting);错开后彻底分离。真实间距 0.05m,竖向夸张后
+        # 1m,远小于最薄地层的显示厚度,视觉不可察;分析壳不受影响。
+        uniq_render = uniq.copy()
+        uniq_render[iface_of_vertex == layer_index + 1, 2] -= RENDER_INTERFACE_GAP
+        render_surface, _ = self._assemble_surface(
+            uniq_render, t, b, layer_index, node_of_vertex, keep_shared_walls=True
+        )
         grid, elem_counts = self._assemble_volume_grid(
             uniq, t, b, collapsed, d_ret, cell_volume, layer_index, node_idx
         )
@@ -292,6 +307,7 @@ class PrismModel:
             element_counts=elem_counts,
             analytic_volume_m3=analytic_volume,
             surface_mesh=surface,
+            render_mesh=render_surface,
             volume_grid=grid,
             vertex_node_index=node_of_vertex,
             vertex_interface_index=iface_of_vertex,
@@ -317,8 +333,14 @@ class PrismModel:
         return node_inv[order][pos]
 
     # ------------------------------------------------------------------
-    def _assemble_surface(self, uniq, t, b, layer_index, node_of_vertex=None):
-        """分层表面网格:顶/底三角 + 侧面(退化折叠) + 无向键去重。"""
+    def _assemble_surface(self, uniq, t, b, layer_index, node_of_vertex=None,
+                          keep_shared_walls=False):
+        """分层表面网格:顶/底三角 + 侧面(退化折叠) + 无向键去重。
+
+        keep_shared_walls=True 时,相邻棱柱的共享侧面不删除、各保留一份,
+        得到"内部三棱柱面可见"的渲染网格(顶点集与去重网格完全一致);
+        默认 False 维持封闭壳语义(体积/边完整性诊断/剖面求交都依赖它)。
+        """
         # 侧面四边形 (t_a, t_b, b_b, b_a)
         sides = np.stack(
             [
@@ -343,10 +365,18 @@ class PrismModel:
         keys = np.full((n3 + len(all4), 4), -1, dtype=np.int64)
         keys[:n3, :3] = np.sort(all3, axis=1)
         keys[n3:] = np.sort(all4, axis=1)
-        _, inverse, counts = np.unique(keys, axis=0, return_inverse=True,
-                                       return_counts=True)
-        inverse = inverse.reshape(-1)
-        keep = counts[inverse] == 1
+        if keep_shared_walls:
+            # 每个唯一面(按无向顶点键)保留一份:封闭壳面 + 内部棱柱壁单份
+            _, first_of_key, _ = np.unique(
+                keys, axis=0, return_index=True, return_counts=True
+            )
+            keep = np.zeros(len(keys), dtype=bool)
+            keep[first_of_key] = True
+        else:
+            _, inverse, counts = np.unique(keys, axis=0, return_inverse=True,
+                                           return_counts=True)
+            inverse = inverse.reshape(-1)
+            keep = counts[inverse] == 1
         kept3 = all3[keep[:n3]]
         kept4 = all4[keep[n3:]]
 
