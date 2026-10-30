@@ -17,6 +17,7 @@ from app.models.scene import SceneConfig
 from app.schemas.asset import ModelAssetCreate, ModelAssetUpdate
 from app.schemas.borehole import BoreholeCreate, BoreholeSegmentInput, BoreholeUpdate
 from app.schemas.scene import SceneConfigCreate, SceneConfigUpdate
+from app.services.model_paths import relative_to_root, user_upload_dir
 
 
 async def ensure_project(session: AsyncSession, project_id: str) -> None:
@@ -82,7 +83,7 @@ class ModelService:
             )
             or 1
         )
-        asset_dir = settings.upload_path / "models" / asset_id
+        asset_dir = user_upload_dir(asset.id)
         asset_dir.mkdir(parents=True, exist_ok=True)
         target = asset_dir / f"v{next_version}{suffix}"
         sha256 = hashlib.sha256()
@@ -106,7 +107,8 @@ class ModelService:
         version = ModelVersion(
             model_id=asset.id,
             version=next_version,
-            file_path=str(target.relative_to(settings.upload_path)).replace("\\", "/"),
+            file_path=relative_to_root(target),
+            storage_scope="server_static",
             file_size=total,
             content_hash=sha256.hexdigest(),
             draco_compressed=draco,

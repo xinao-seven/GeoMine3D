@@ -48,11 +48,17 @@ backend/                    # Backend: FastAPI + SQLAlchemy + MySQL
 ├── alembic/                # Database migrations
 ├── mcp_server.py           # 远程调试 MCP 服务（stdio）：把浏览器 __geomine 桥暴露为 MCP 工具
 ├── scripts/                # Data import helpers（含 preprocess_basemap.py 底图预处理）
+├── uploads/                # 仅运行期上传物：建模任务输入 Excel 与引擎日志（模型产物不在这里）
 └── tests/                  # Backend tests
 
-server/                     # Preserved legacy data service and source assets (do not modify)
+server/                     # 业务数据与模型文件的唯一存放处（原 legacy Flask 服务已移除）
 ├── data/                   # JSON/Excel/SHP/TIFF business data files
-└── static/models/          # .glb model files
+└── static/models/          # 模型文件唯一根目录，对外挂载 /static/models
+    ├── web_package/        #   锦界交付包（L01–L14、合并场景、shells/、lods/、z20/、vtu/）
+    ├── projects/<pid>/web_package/  # 上传钻孔 Excel 生成的交付包（运行期，gitignore）
+    ├── user_uploads/<asset_id>/     # 手动上传的模型版本（运行期，gitignore）
+    ├── settlement/         #   沉陷位移场固定数据集
+    └── _backup_web_package_20261026/ #   交付包重建前的本机回滚备份（gitignore）
 ```
 
 ## Architecture
@@ -62,9 +68,13 @@ server/                     # Preserved legacy data service and source assets (d
 - The primary frontend is the project center (`/projects`) and the `/workspace/:projectId` visualization workbench.
 - **Drag-and-drop** .glb files onto scene to load models.
 - FastAPI success payloads are wrapped as `{data}` (list endpoints add `meta`); errors return `{code, message, details, requestId}`. OpenAPI docs at `/docs`.
-- 原始交付包静态目录：`backend/app/main.py` 将 `server/static/models` 挂载在 `/static/models`，
-  前端可直接取 `catalog` 资产与大体积固定数据集（如沉陷位移场 `/static/models/settlement/`）；
-  模型详情/版本下载仍走 `/api/v1/models/{id}/file`。
+- **单一模型目录**：所有模型文件都在 `server/static/models`（`settings.source_model_path`），
+  `backend/app/main.py` 把它整体挂载在 `/static/models`（NoCacheStaticFiles）；不再有 `/uploads`
+  静态挂载。`metadata.source_file/shell_file/lod_files`、`model_versions.file_path` 一律是相对该根
+  目录的路径，路径解析集中在 `app/services/model_paths.py`；`model_versions.storage_scope` 仅为历史
+  兼容字段（新写入统一 `server_static`，解析时不分叉）。历史目录（`uploads/projects/`、`uploads/models/`）
+  由 `backend/scripts/migrate_models_single_root.py` 迁移。
+  模型详情/版本下载仍走 `/api/v1/models/{id}/file?variant=render|shell`。
 - 远程调试 MCP：`backend/mcp_server.py`（stdio）把浏览器 `window.__geomine` 桥暴露为 29 个
   MCP 工具，链路 MCP → `POST /api/v1/remote/invoke` → WS `/api/v1/remote/ws` → 浏览器
   `remoteBridgeClient.ts`。门控：开发环境默认启用，生产需页面 URL 带 `?remote=1`（`run_js`
@@ -75,9 +85,9 @@ server/                     # Preserved legacy data service and source assets (d
   `POST /api/v1/modeling-jobs`（202）→ 建独立项目 + `modeling_jobs` 行 → 子进程
   `python -m modeling_engine.generate`（同一 venv，共享趋势+ARD GP 插值 → 保序投影/尖灭折叠
   → TIN-GTP 建模 → GLB/LOD/VTU/z20 + catalog.json，约 25s）→ 注册进库
-  （模型 `storage_scope="upload"`、`metadata.source="modeling"`；钻孔分层颜色按层名映射；
-  `origin_restore` 写回 project）。产物在 `uploads/projects/<project_id>/web_package/`，
-  任务输入/日志在 `uploads/modeling-jobs/<job_id>/`，删项目时一并清理。
+  （`metadata.source="modeling"`；钻孔分层颜色按层名映射；`origin_restore` 写回 project）。
+  产物在模型根下的 `projects/<project_id>/web_package/`（与锦界包同构），
+  任务输入/日志在 `backend/uploads/modeling-jobs/<job_id>/`，删项目时两者一并清理。
   层序由上传表的层顶深度自动推导（不再需要 strat_order_refined.json）；网格规模由数据决定
   （锦界 182 孔 → 16641 节点）；不含 roadways/working_faces/沉陷场（锦界专属）。
   `import_server_data.py` 重跑时按 `metadata.source=="modeling"` 跳过建模资产、按“项目含建模

@@ -32,11 +32,12 @@ class Settings(BaseSettings):
         default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"]
     )
     upload_dir: Path = Path("uploads")
-    model_public_prefix: str = "/uploads"
-    max_upload_size_mb: int = 1024
-    source_data_dir: Path = Path("../server/data")
+    # 模型文件唯一根目录(对外挂载 /static/models):锦界交付包、上传建模交付包、
+    # 手动上传版本与固定数据集都在这里,见 app/services/model_paths.py。
     source_model_dir: Path = Path("../server/static/models")
     source_model_catalog: Path = Path("../server/static/models/web_package/catalog.json")
+    max_upload_size_mb: int = 1024
+    source_data_dir: Path = Path("../server/data")
     # 钻孔数据源(相对 source_data_dir)。分层表换版本时只需改这里。
     borehole_location_file: str = "location/钻孔位置.xlsx"
     borehole_strata_file: str = "boreholes/地层汇总14层.xlsx"

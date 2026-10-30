@@ -5,7 +5,6 @@ import shutil
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.exceptions import AppError
 from app.core.logging import get_logger
 from app.models.modeling import ModelingJob
@@ -65,9 +64,8 @@ class ProjectService:
 
     @staticmethod
     def _remove_job_files(project_id: str, job_ids: list[str]) -> None:
-        """删除项目落库数据后,清理建模交付包与任务输入目录(失败仅记日志)。"""
-        for path in collect_project_files(project_id, job_ids):
-            target = settings.upload_path / path
+        """删除项目落库数据后,清理建模交付包(模型根下 projects/<pid>)与任务输入目录。"""
+        for target in collect_project_files(project_id, job_ids):
             try:
                 shutil.rmtree(target)
             except FileNotFoundError:

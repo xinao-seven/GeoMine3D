@@ -28,9 +28,9 @@ chapter04_uncertainty_order_projection/model_visualization_refined/\\
 square_direct_ard_pinchout_surfaces_refined.npz \\
         --project-id d8fafee7-3d51-47cd-b586-c632c1069c36
 
-    # 上传建模项目交付包(曲面 npz 由建模任务留在 uploads/modeling-jobs/<id>/)
+    # 上传建模项目交付包(曲面 npz 由建模任务留在 backend/uploads/modeling-jobs/<id>/)
     python scripts/rebuild_web_package.py \\
-        --package uploads/projects/<pid>/web_package \\
+        --package ../server/static/models/projects/<pid>/web_package \\
         --npz uploads/modeling-jobs/<job>/surfaces.npz \\
         --project-id <pid>
 
@@ -56,6 +56,7 @@ from app.core.config import settings  # noqa: E402
 from app.core.database import AsyncSessionFactory  # noqa: E402
 from app.models.modeling import ModelingJob  # noqa: E402
 from app.models.project import Project  # noqa: E402
+from app.services.model_paths import PROJECTS_DIR  # noqa: E402
 from app.services.modeling_service import register_models_from_catalog  # noqa: E402
 from app.services.server_import_service import ServerDataImportService  # noqa: E402
 from modeling_engine import package_builder  # noqa: E402
@@ -94,27 +95,28 @@ def _layer_names_from_catalog(catalog: dict[str, Any]) -> list[str]:
 async def _refresh_database(
     package_dir: Path, catalog: dict[str, Any], project_id: str, vertical_scale: float
 ) -> str:
-    """按交付包位置判定存储范围,复用导入/建模服务的注册逻辑刷新资产行。"""
+    """按交付包位置复用导入/建模服务的注册逻辑刷新资产行。
+
+    模型文件只有一个根目录(``settings.source_model_path``):
+    - ``web_package/``(锦界交付包)→ catalog 导入服务,按 catalog 全量对账;
+    - ``projects/<pid>/web_package/``(上传建模)→ 建模注册逻辑。
+    """
     source_root = settings.source_model_path.resolve()
-    upload_root = settings.upload_path.resolve()
     resolved = package_dir.resolve()
+    if not resolved.is_relative_to(source_root):
+        raise SystemExit(f"交付包必须位于模型根目录 {source_root} 之下,当前为 {resolved}")
 
     async with AsyncSessionFactory() as session:
         project = await session.get(Project, project_id)
         if project is None:
             raise SystemExit(f"项目不存在: {project_id}")
 
-        if resolved.is_relative_to(source_root):
-            expected = settings.source_model_catalog_path.parent.resolve()
-            if resolved != expected:
-                raise SystemExit(
-                    f"server_static 交付包必须位于 {expected} (与 SOURCE_MODEL_CATALOG 一致),"
-                    f"当前为 {resolved}"
-                )
+        if resolved == settings.source_model_catalog_path.parent.resolve():
+            # 锦界交付包必须与 SOURCE_MODEL_CATALOG 指向同一个目录
             service = ServerDataImportService(session)
             count = await service.upsert_models_from_catalog(project, catalog)
             scope = "server_static"
-        elif resolved.is_relative_to(upload_root):
+        elif resolved.is_relative_to(source_root / PROJECTS_DIR):
             job_row = await session.scalar(
                 select(ModelingJob)
                 .where(ModelingJob.project_id == project_id)
@@ -124,10 +126,11 @@ async def _refresh_database(
             count = await register_models_from_catalog(
                 session, project, package_dir, catalog, vertical_scale, job_row
             )
-            scope = "upload"
+            scope = "server_static"
         else:
             raise SystemExit(
-                f"交付包需位于 {source_root} 或 {upload_root} 之下,当前为 {resolved}"
+                f"交付包需位于 {settings.source_model_catalog_path.parent} 或 "
+                f"{source_root / PROJECTS_DIR} 之下,当前为 {resolved}"
             )
 
         await session.commit()

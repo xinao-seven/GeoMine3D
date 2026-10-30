@@ -388,9 +388,7 @@ class ServerDataImportService:
             asset.model_type = "stratum"
             asset.status = "ready"
             # 双轨产物:渲染轨(含内部棱柱壁)+ 分析轨(闭合壳)。见 model_paths。
-            variants = variant_metadata(
-                self.model_root, "server_static", package_dir, code, layer
-            )
+            variants = variant_metadata(package_dir, code, layer)
             asset.metadata_json = {
                 "source": package_name,
                 "source_file": relative_path,
@@ -438,9 +436,7 @@ class ServerDataImportService:
                 "layer_names": layer_names,
                 "format": "glb",
                 # 合并场景也有双轨:model_combined.glb(含壁) / model_combined_shell.glb(壳)
-                **combined_variant_metadata(
-                    self.model_root, "server_static", package_dir
-                ),
+                **combined_variant_metadata(package_dir),
                 "local_coordinates": True,
                 "vertical_scale": vertical_scale,
             }

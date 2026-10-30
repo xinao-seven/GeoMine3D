@@ -44,12 +44,14 @@ GeoMine3D/                  # Frontend: Vue3 + TS + Vite + Three.js + ECharts
 backend/                    # Backend: FastAPI + SQLAlchemy + MySQL
 ├── app/                    # API, services, repositories, models and schemas
 ├── alembic/                # Database migrations
-├── scripts/                # Data import helpers
+├── scripts/                # Data import / migration helpers
+├── uploads/                # 仅运行期上传物:建模任务输入 Excel 与引擎日志
 └── tests/                  # Backend tests
 
-server/                     # Preserved legacy data service and source assets
+server/                     # 业务数据与模型文件的唯一存放处(原 legacy Flask 服务已移除)
 ├── data/                   # JSON/Excel/SHP/TIFF business data files
-└── static/models/          # .glb model files
+└── static/models/          # 模型根目录(挂载 /static/models):web_package/、projects/<pid>/、
+                            # user_uploads/<asset_id>/、settlement/
 ```
 
 ## Architecture

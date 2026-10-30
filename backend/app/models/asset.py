@@ -49,7 +49,10 @@ class ModelVersion(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     file_path: Mapped[str] = mapped_column(String(500), nullable=False)
-    storage_scope: Mapped[str] = mapped_column(String(24), default="upload", nullable=False)
+    # 历史字段:模型文件已统一到单一模型根目录,新写入一律 server_static。
+    storage_scope: Mapped[str] = mapped_column(
+        String(24), default="server_static", nullable=False
+    )
     file_size: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     draco_compressed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

@@ -21,7 +21,7 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 import trimesh
 
-from app.core.config import settings
+from app.services.model_paths import model_root
 
 
 logger = logging.getLogger(__name__)
@@ -42,8 +42,8 @@ def resolve_layer_files(
 ) -> list[LayerModelFile]:
     """把 (asset_name, metadata, storage_scope, file_path) 行解析为按层序排序的文件清单。
 
-    文件根目录与 models API 的下载逻辑一致:upload → uploads/,
-    server_static → server/static/models/。缺失/无效的文件跳过。
+    文件路径一律相对模型根目录(见 app/services/model_paths.py);
+    storage_scope 只为兼容历史查询保留,不参与路径解析。缺失/无效的文件跳过。
 
     几何轨选择(双轨产物):分层 GLB 的渲染轨含内部棱柱壁(非水密),
     与平面求交会得到内部壁交线,因此优先用 metadata.shell_file(闭合壳);
@@ -51,20 +51,14 @@ def resolve_layer_files(
     两者都不存在(2026-10 之前的旧交付包,分层 GLB 本身即闭合壳)才用
     渲染轨——并把所选文件写入日志,便于区分“新包缺壳”与“旧包无壳”。
     """
-    roots = {
-        "upload": settings.upload_path,
-        "server_static": settings.source_model_path,
-    }
+    root = model_root()
     layers: list[LayerModelFile] = []
-    for asset_name, metadata, scope, file_path in rows:
+    for asset_name, metadata, _scope, file_path in rows:
         if not file_path:
             continue
         # 合并模型(catalog_code=COMBINED,无 layer_index)不参与剖面,逐层壳体才有意义
         layer_index = metadata.get("layer_index")
         if not isinstance(layer_index, (int, float)) or int(layer_index) < 1:
-            continue
-        root = roots.get(scope)
-        if root is None:
             continue
         path = (root / file_path).resolve()
         shell_rel = metadata.get("shell_file")

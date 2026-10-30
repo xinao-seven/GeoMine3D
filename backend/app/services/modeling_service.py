@@ -1,14 +1,15 @@
 """钻孔 Excel 异步建模服务:上传 → 子进程建模引擎 → 数据注册。
 
 链路:
-1. create_job(): 保存上传 Excel 到 uploads/modeling-jobs/<job_id>/inputs/,
-   创建独立 Project 与 pending 状态的 ModelingJob;
+1. create_job(): 保存上传 Excel 到 uploads/modeling-jobs/<job_id>/inputs/(相对
+   upload_path),创建独立 Project 与 pending 状态的 ModelingJob;
 2. run_modeling_job(): 以子进程运行 backend/modeling_engine(与后端同一
    Python 环境,避免阻塞事件循环),stdout 逐行写入 engine.log 并节流刷新
-   job.message 供前端轮询;
+   job.message 供前端轮询;交付包写到模型根目录下的
+   projects/<project_id>/web_package/(与锦界包同构,见 model_paths);
 3. _register_results(): 按 engine 产出的 catalog.json 注册分层模型资产
-   (storage_scope="upload", metadata source="modeling"),按层名映射注册
-   钻孔与分层,origin_restore 写回 project。
+   (storage_scope="server_static", metadata source="modeling"),按层名映射
+   注册钻孔与分层,origin_restore 写回 project。
 
 建模任务串行执行(asyncio.Semaphore),失败时回滚注册事务并记录 error_message。
 """
@@ -33,7 +34,13 @@ from app.models.borehole import Borehole, BoreholeSegment
 from app.models.modeling import ModelingJob
 from app.models.project import Project
 from app.models.workspace import ImportRun
-from app.services.model_paths import combined_variant_metadata, variant_metadata
+from app.services.model_paths import (
+    combined_variant_metadata,
+    model_root,
+    project_package_dir,
+    relative_to_root,
+    variant_metadata,
+)
 from app.services.server_import_service import file_sha256
 
 # 建模引擎是 backend 顶层包;uvicorn 不一定以 backend 为工作目录启动,兜底注入 sys.path。
@@ -54,14 +61,17 @@ def _semaphore() -> asyncio.Semaphore:
 
 
 def job_input_dir(job_id: str) -> Path:
+    """任务输入/日志目录(Excel、engine.log),仍在 uploads 下,不属于模型资产。"""
     return settings.upload_path / "modeling-jobs" / job_id
 
 
 def project_output_dir(project_id: str) -> Path:
-    return settings.upload_path / "projects" / project_id
+    """项目交付包目录:模型根目录下的 projects/<project_id>/web_package。"""
+    return project_package_dir(project_id)
 
 
 def relative_to_upload(path: Path) -> str:
+    """任务输入文件的相对路径(相对 upload_path)。"""
     return path.resolve().relative_to(settings.upload_path.resolve()).as_posix()
 
 
@@ -120,7 +130,8 @@ class ModelingService:
             params_json=params,
             input_strata_path="",
             input_location_path="",
-            output_dir=relative_to_upload(project_output_dir(project.id) / "web_package"),
+            # output_dir 相对**模型根目录**(与 metadata.file_path 同一基准)
+            output_dir=relative_to_root(project_output_dir(project.id)),
         )
         self.session.add(job)
         await self.session.flush()
@@ -220,7 +231,9 @@ def _engine_command(job: ModelingJob, *, strata: Path, location: Path, out_dir: 
 async def _execute_engine(job: ModelingJob, session: AsyncSession) -> dict[str, Any]:
     strata = settings.upload_path / job.input_strata_path
     location = settings.upload_path / job.input_location_path
-    out_dir = settings.upload_path / job.output_dir
+    if not job.output_dir:
+        raise EngineFailure("建模任务缺少输出目录")
+    out_dir = model_root() / job.output_dir
     job_dir = job_input_dir(job.id)
     log_path = job_dir / "engine.log"
     result_json = job_dir / "result.json"
@@ -294,7 +307,7 @@ async def _register_results(
     session: AsyncSession, job: ModelingJob, project: Project, result: dict[str, Any]
 ) -> dict[str, Any]:
     """按引擎产出注册:project 原点/比例、钻孔+分层(层名配色)、分层模型资产。"""
-    package_dir = settings.upload_path / job.output_dir
+    package_dir = model_root() / job.output_dir
     catalog = json.loads((package_dir / "catalog.json").read_text(encoding="utf-8"))
     restore = catalog.get("origin_restore") or {}
     vertical_scale = float(
@@ -438,7 +451,7 @@ async def _register_models(
             version = ModelVersion(model_id=asset.id, version=1)
             session.add(version)
         version.file_path = relative_path
-        version.storage_scope = "upload"
+        version.storage_scope = "server_static"
         version.file_size = glb_path.stat().st_size
         version.content_hash = file_sha256(glb_path)
         version.draco_compressed = False
@@ -464,7 +477,7 @@ async def _register_models(
         glb_path = package_dir / f"{code}.glb"
         if not glb_path.is_file():
             raise EngineFailure(f"catalog 中的模型文件不存在: {glb_path}")
-        relative_path = relative_to_upload(glb_path)
+        relative_path = relative_to_root(glb_path)
         asset = existing.get(relative_path)
         if asset is None:
             asset = ModelAsset(project_id=project.id)
@@ -473,7 +486,7 @@ async def _register_models(
         asset.model_type = "stratum"
         asset.status = "ready"
         # 双轨产物:渲染轨(含内部棱柱壁)+ 分析轨(闭合壳)。见 model_paths。
-        variants = variant_metadata(settings.upload_path, "upload", package_dir, code, layer)
+        variants = variant_metadata(package_dir, code, layer)
         asset.metadata_json = {
             **_base_metadata(relative_path),
             "catalog_code": code,
@@ -489,7 +502,7 @@ async def _register_models(
 
     combined_path = package_dir / "model_combined.glb"
     if combined_path.is_file():
-        relative_path = relative_to_upload(combined_path)
+        relative_path = relative_to_root(combined_path)
         asset = existing.get(relative_path)
         if asset is None:
             asset = ModelAsset(project_id=project.id)
@@ -512,7 +525,7 @@ async def _register_models(
                 if layer.get("code")
             },
             # 合并场景也有双轨:model_combined.glb(含壁) / model_combined_shell.glb(壳)
-            **combined_variant_metadata(settings.upload_path, "upload", package_dir),
+            **combined_variant_metadata(package_dir),
         }
         await session.flush()
         await _assign_version(asset, combined_path, relative_path)
@@ -538,7 +551,7 @@ async def fail_stale_modeling_jobs() -> int:
 
 
 def collect_project_files(project_id: str, job_ids: list[str]) -> list[Path]:
-    """项目删除时需要一并清理的文件目录。"""
-    dirs = [project_output_dir(project_id)]
+    """项目删除时需要一并清理的目录(交付包 + 任务输入/日志),均为绝对路径。"""
+    dirs = [project_output_dir(project_id).parent]
     dirs.extend(job_input_dir(job_id) for job_id in job_ids)
     return dirs

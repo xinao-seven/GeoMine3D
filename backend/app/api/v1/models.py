@@ -4,7 +4,6 @@ from fastapi import APIRouter, File, Form, Response, UploadFile, status
 from fastapi.responses import FileResponse
 
 from app.api.dependencies import DbSession
-from app.core.config import settings
 from app.core.exceptions import AppError
 from app.models.asset import ModelVersion
 from app.schemas.asset import (
@@ -14,7 +13,7 @@ from app.schemas.asset import (
     ModelUploadResult,
 )
 from app.schemas.common import DataResponse
-from app.services.model_paths import resolve_variant_path
+from app.services.model_paths import PUBLIC_PREFIX, resolve_model_file, resolve_variant_path
 from app.services.workspace_service import ModelService
 
 
@@ -62,13 +61,6 @@ async def get_model_file(
     version = await session.get(ModelVersion, asset.current_version_id)
     if version is None:
         raise AppError("MODEL_FILE_NOT_FOUND", "模型版本不存在", status_code=404)
-    roots = {
-        "upload": settings.upload_path,
-        "server_static": settings.source_model_path,
-    }
-    root = roots.get(version.storage_scope)
-    if root is None:
-        raise AppError("MODEL_STORAGE_INVALID", "模型存储位置无效", status_code=500)
     metadata = asset.metadata_json or {}
     relative_path = resolve_variant_path(metadata, variant, version.file_path)
     if relative_path is None:
@@ -79,9 +71,8 @@ async def get_model_file(
                 status_code=404,
             )
         raise AppError("MODEL_FILE_NOT_FOUND", "模型文件不存在", status_code=404)
-    root = root.resolve()
-    path = (root / relative_path).resolve()
-    if root not in path.parents or not path.is_file():
+    path = resolve_model_file(relative_path)
+    if path is None:
         code = "MODEL_SHELL_NOT_FOUND" if variant == "shell" else "MODEL_FILE_NOT_FOUND"
         raise AppError(code, f"模型文件不存在: {relative_path}", status_code=404)
     media_type = "model/gltf+json" if path.suffix.lower() == ".gltf" else "model/gltf-binary"
@@ -124,6 +115,6 @@ async def upload_model_version(
         data=ModelUploadResult(
             asset=ModelAssetRead.model_validate(asset),
             version=version,
-            file_url=f"{settings.model_public_prefix}/{version.file_path}",
+            file_url=f"{PUBLIC_PREFIX}/{version.file_path}",
         )
     )

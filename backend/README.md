@@ -1,6 +1,6 @@
 # GeoMine3D FastAPI Backend
 
-后端位于 `backend/app`，技术栈为 FastAPI、SQLAlchemy 2.0（asyncmy）、Alembic 和 MySQL 8。旧 Django 实现已经移除，历史源数据继续由 `server/data` 和 `server/static/models` 提供。
+后端位于 `backend/app`，技术栈为 FastAPI、SQLAlchemy 2.0（asyncmy）、Alembic 和 MySQL 8。旧 Django/Flask 实现均已移除，历史源数据与模型文件继续由 `server/data` 和 `server/static/models` 提供（后者是模型文件的唯一根目录，统一挂载 `/static/models`）。
 
 ## 本地启动
 
@@ -70,7 +70,7 @@ logger.info("...")
 - 数据源可通过 `.env` 覆盖：`SOURCE_DATA_DIR`、`SOURCE_MODEL_DIR`、`SOURCE_MODEL_CATALOG`、`BOREHOLE_LOCATION_FILE`、`BOREHOLE_STRATA_FILE`；
 - 命令可重复执行：业务记录按项目和业务键更新，不在 catalog 中的旧模型资产会被清除，每次执行新增一条 `import_runs` 审计记录；
 - 项目坐标原点取 catalog 的 `origin_restore`，保证钻孔与模型共用同一基准；
-- 模型文件不写入 MySQL：数据库只保存路径、版本、hash、包围盒等元数据；导入的 GLB 保存在 `server/static/models`，新上传版本保存在 `uploads/models`，生产环境可替换为对象存储。
+- 模型文件不写入 MySQL：数据库只保存路径、版本、hash、包围盒等元数据；所有模型文件都在 `server/static/models` 下（`web_package/`、`projects/<pid>/web_package/`、`user_uploads/<asset_id>/`、`settlement/`），统一挂载 `/static/models`，生产环境可替换为对象存储。
 
 ## 验证
 

@@ -14,9 +14,10 @@ class ModelingJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """钻孔 Excel 异步建模任务。
 
     生命周期: pending → running → completed | failed。
-    上传的分层/位置 Excel 与引擎日志都保存在 uploads/modeling-jobs/<id>/ 下,
-    生成的交付包写入 uploads/projects/<project_id>/web_package/,二者均为
-    相对 upload_path 的 POSIX 路径。
+    上传的分层/位置 Excel 与引擎日志保存在 ``uploads/modeling-jobs/<id>/``
+    (相对 ``upload_path``);生成的交付包写入模型根目录下的
+    ``projects/<project_id>/web_package/``(相对 ``source_model_path``)。
+    见 app/services/model_paths.py。
     """
 
     __tablename__ = "modeling_jobs"

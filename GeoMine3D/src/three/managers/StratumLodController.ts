@@ -24,20 +24,26 @@ const TICK_INTERVAL_MS = 800
 
 /**
  * 由 catalog 模型的 source_file 推导 50% 抽稀 LOD 的静态地址。
- * web_package/L01.glb → /static/models/web_package/lods/L01_lod50.glb；
- * 上传模型 / 无 source_file 的模型不参与 LOD。
+ * 所有模型文件都在服务端同一个模型根目录下、统一挂在 /static/models:
+ * web_package/L01.glb         → /static/models/web_package/lods/L01_lod50.glb
+ * projects/<id>/web_package/L01.glb → /static/models/projects/<id>/web_package/lods/L01_lod50.glb
  *
- * 后端注册时已把逐层 LOD 的公开地址写进 metadata.lod_urls（server_static 与
- * upload 两种存储范围都能算对），优先用它；旧数据回退到路径约定。
+ * 后端注册时已把逐层 LOD 的公开地址写进 metadata.lod_urls,优先用它;
+ * 旧数据才回退到上面的路径约定。合并场景（model_combined.glb）和闭合壳
+ * 没有 LOD 产物,直接不参与。
  */
 export function deriveLodUrl(model: ModelItem): string | null {
+    const meta: Record<string, any> = model.metadata ?? {}
     // 闭合壳(空心版本)没有 LOD:减面 LOD 只对应渲染轨,且壳不需要远景简化
-    if (model.metadata?.geometry_variant === 'shell') return null
-    const lodUrls = model.metadata?.lod_urls as Record<string, string> | undefined
+    if (meta.geometry_variant === 'shell') return null
+    const lodUrls = meta.lod_urls as Record<string, string> | undefined
     if (lodUrls && typeof lodUrls.lod50 === 'string' && lodUrls.lod50) {
         return lodUrls.lod50
     }
-    const sourceFile = String(model.metadata?.source_file || '')
+    // 合并场景交付包只有逐层 lods/ 文件,没有 model_combined_lod50.glb:
+    // 若按路径约定推导会拼出不存在的地址,每次拉远都白跑一次 404。
+    if (meta.combined) return null
+    const sourceFile = String(meta.source_file || '')
     const lower = sourceFile.toLowerCase()
     if (!lower.endsWith('.glb')) return null
     const basePath = sourceFile.slice(0, lower.lastIndexOf('.glb'))
@@ -167,9 +173,11 @@ export class StratumLodController {
             low.userData.overlayHelper = true
             entry.high.parent?.add(low)
             entry.low = low
-        } catch {
-            // LOD 文件缺失（如上传模型/旧交付包）时静默放弃该模型
+        } catch (error) {
+            // LOD 文件缺失（如合并场景/上传模型/旧交付包）时保留高模,
+            // 但要把地址打出来,否则“看起来没做 LOD”极难排查。
             entry.failed = true
+            console.warn('[GeoMine3D] 低模 LOD 加载失败，继续使用高模:', entry.lodUrl, error)
         } finally {
             entry.loading = false
         }

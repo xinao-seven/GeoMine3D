@@ -76,7 +76,7 @@ def main() -> int:
         meta = l01["metadata_json"]
         assert meta["source_file"].endswith("/L01.glb"), meta["source_file"]
         assert meta["shell_file"].endswith("/shells/L01_shell.glb"), meta["shell_file"]
-        assert meta["lod_urls"]["lod50"].startswith("/uploads/"), meta["lod_urls"]
+        assert meta["lod_urls"]["lod50"].startswith("/static/models/"), meta["lod_urls"]
         shell_response = client.get(f"{BASE}/api/v1/models/{l01['id']}/file?variant=shell")
         assert shell_response.status_code == 200, shell_response.text
         assert len(shell_response.content) < len(file_response.content), \

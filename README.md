@@ -265,7 +265,7 @@ pytest
 ### 静态资源与缓存
 
 - `/static/models` 由后端托管 `server/static/models`（交付包资产、沉陷位移场等），统一加 `Cache-Control: no-cache`，避免模型/位移场更新后被浏览器启发式缓存；
-- 模型文件本体不写入 MySQL，数据库只保存路径、版本、hash、包围盒等元数据：导入的 GLB 留在 `server/static/models`，新上传版本保存在 `backend/uploads/models`。
+- 模型文件本体不写入 MySQL，数据库只保存路径、版本、hash、包围盒等元数据；所有模型文件（锦界交付包、上传建模交付包、手动上传版本、沉陷位移场）都在 `server/static/models` 一个目录下，统一挂在 `/static/models`。
 
 ---
 

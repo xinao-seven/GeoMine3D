@@ -29,6 +29,10 @@ __pycache__/
 backend/uploads/
 backend/pytest-cache-files-*/
 
+# 运行期生成的模型交付包与手动上传版本(与锦界交付包同在 server/static/models 下)
+server/static/models/projects/
+server/static/models/user_uploads/
+
 # Interview prep notes (local only)
 WebGIS面试题与项目难点总结.md
 archive/

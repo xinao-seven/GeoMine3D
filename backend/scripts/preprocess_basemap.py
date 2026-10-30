@@ -29,8 +29,6 @@ sys.path.insert(0, str(BACKEND_DIR))
 
 import numpy as np
 
-from app.core.config import settings
-
 DEFAULT_SOURCE = Path("../server/data/tif/20260211.tif")
 DEFAULT_OUTPUT_DIR = Path("../server/static/models/basemap")
 MAX_SIDE_DEFAULT = 2048

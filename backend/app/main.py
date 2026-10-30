@@ -1,7 +1,6 @@
 import time
 import uuid
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +11,7 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.exceptions import error_payload, register_exception_handlers
 from app.core.logging import get_logger, request_id_var, setup_logging
+from app.services.model_paths import PUBLIC_PREFIX, ensure_model_dirs
 from app.services.modeling_service import fail_stale_modeling_jobs
 
 
@@ -20,7 +20,9 @@ logger = get_logger("app.main")
 access_logger = get_logger("app.access")
 
 settings.upload_path.mkdir(parents=True, exist_ok=True)
-(settings.upload_path / "models").mkdir(parents=True, exist_ok=True)
+# 模型文件只有一个根目录:锦界交付包 + 上传建模交付包(projects/) + 手动上传版本
+# (user_uploads/) + 固定数据集,统一对外挂载 /static/models。
+ensure_model_dirs()
 
 
 class NoCacheStaticFiles(StaticFiles):
@@ -118,23 +120,18 @@ async def request_context(request: Request, call_next):
 
 register_exception_handlers(app)
 app.include_router(api_router, prefix=settings.api_v1_prefix)
-# 上传目录同样可能是交付包产物(建模任务重建 web_package),同样不走浏览器缓存。
-app.mount(
-    settings.model_public_prefix,
-    NoCacheStaticFiles(directory=settings.upload_path),
-    name="uploads",
-)
-
-# 原始交付包静态目录:server/static/models 下的资产(catalog 模型、井巷、
-# 以及沉陷位移场)按 /static/models/... 直接取。
-# 不走 DB 版本表是因为沉陷位移场是几 MB 级的固定数据集,且需要与 GLB 的顶点顺序
-# 严格配对,用静态路径更稳。前端 vite 已把 /static 代理到本服务。
+# 模型静态目录:所有模型文件都在 settings.source_model_path 之下(catalog 资产、
+# 井巷、沉陷位移场、上传建模交付包、手动上传版本)。不走 DB 版本表是因为沉陷
+# 位移场是几 MB 级的固定数据集,且需要与 GLB 的顶点顺序严格配对。
+# 交付包会随数据重跑而变,统一 no-cache 避免浏览器启发式缓存拿到旧几何。
 if settings.source_model_path.is_dir():
     app.mount(
-        "/static/models",
+        PUBLIC_PREFIX,
         NoCacheStaticFiles(directory=settings.source_model_path),
         name="source-models",
     )
+else:
+    logger.warning("模型根目录不存在,静态模型将无法访问: %s", settings.source_model_path)
 
 
 @app.get("/health", tags=["system"])
@@ -144,7 +141,7 @@ async def health() -> dict[str, str]:
 
 # Host the built frontend (GeoMine3D/dist) so the whole service is reachable
 # through this single port on the LAN. Must stay after all API routes so the
-# catch-all never shadows /api, /docs, /uploads or /health.
+# catch-all never shadows /api, /docs, /static or /health.
 if settings.serve_frontend:
     _frontend_dist = settings.frontend_dist_path
     if _frontend_dist.is_dir():
