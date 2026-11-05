@@ -1,0 +1,21 @@
+[tool.ruff]
+# 只做后端(app/ 与 tests/)。目标 Python 版本与 .venv 一致。
+target-version = "py312"
+line-length = 100
+# 建模引擎与脚本里有大量长行注释/CLI 帮助字符串,行长交给 formatter 之外人工控制。
+extend-exclude = ["modeling_engine", "scripts", "alembic", "uploads"]
+
+[tool.ruff.lint]
+# E/F:pycodestyle+pyflakes(真正的错误与未使用);I:import 排序;UP:pyupgrade;B:bugbear
+select = ["E", "F", "I", "UP", "B"]
+ignore = [
+    "E501",  # 行长由 review 把关,不在 CI 里卡(超长 SQL/中文注释很难压到 100)
+    "B008",  # FastAPI 的 Depends()/File() 默认值写法就是这个模式
+]
+
+[tool.ruff.lint.per-file-ignores]
+# 测试里允许用 assert 与较宽泛的异常捕获
+"tests/*" = ["B011"]
+
+[tool.ruff.format]
+quote-style = "double"

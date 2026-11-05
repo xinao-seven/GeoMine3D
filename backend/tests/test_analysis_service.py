@@ -1,6 +1,6 @@
 from app.services.analysis_service import (
-    burial_depth_contours,
     build_overview,
+    burial_depth_contours,
     coal_thickness_by_borehole,
     depth_distribution,
     estimate_workingface_reserves,
@@ -13,7 +13,6 @@ from app.services.analysis_service import (
     virtual_borehole,
     workingface_status,
 )
-
 
 SEGMENTS = [
     {"borehole_id": "b1", "layer_name": "1-2煤", "top_depth": 100, "thickness": 4.0},

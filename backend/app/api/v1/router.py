@@ -1,7 +1,17 @@
 from fastapi import APIRouter
 
-from app.api.v1 import analysis, annotations, boreholes, boundaries, modeling, models, projects, remote, scenes, workspace
-
+from app.api.v1 import (
+    analysis,
+    annotations,
+    boreholes,
+    boundaries,
+    modeling,
+    models,
+    projects,
+    remote,
+    scenes,
+    workspace,
+)
 
 api_router = APIRouter()
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])

@@ -1,0 +1,4 @@
+# CI / 本地检查专用依赖(`pip install -r requirements-dev.txt` 会连带装运行期依赖)。
+-r requirements.txt
+ruff==0.7.4
+pytest-cov==5.0.0

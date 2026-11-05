@@ -5,7 +5,6 @@ from app.schemas.common import DataResponse
 from app.services.boundary_service import load_boundaries
 from app.services.workspace_service import ensure_project
 
-
 router = APIRouter()
 
 

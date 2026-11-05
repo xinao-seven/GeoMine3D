@@ -28,6 +28,8 @@ __pycache__/
 .venv/
 backend/uploads/
 backend/pytest-cache-files-*/
+backend/.coverage
+backend/htmlcov/
 
 # 运行期生成的模型交付包与手动上传版本(与锦界交付包同在 server/static/models 下)
 server/static/models/projects/

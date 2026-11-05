@@ -19,7 +19,6 @@ from app.models.project import Project
 from app.models.workspace import ImportRun, WorkingFace
 from app.services.model_paths import combined_variant_metadata, variant_metadata
 
-
 # 分层配色:与当前分层表(地层汇总14层.xlsx)的 14 个层位一一对应。
 # 选取标准:相邻与任意两层在色相/明度上可区分(最小 RGB 距离 33、色相差 ≥ 25°),
 # 且都亮于深色面板背景(亮度 ≥ 0.15),按层顶→层底顺序排列。

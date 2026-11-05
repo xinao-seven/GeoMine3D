@@ -8,7 +8,6 @@ from app.schemas.annotation import AnnotationCreate, AnnotationRead
 from app.schemas.common import DataResponse
 from app.services.workspace_service import ensure_project
 
-
 router = APIRouter()
 
 

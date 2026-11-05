@@ -6,7 +6,6 @@ from fastapi.responses import JSONResponse
 
 from app.core.logging import get_logger
 
-
 logger = get_logger("app.errors")
 
 

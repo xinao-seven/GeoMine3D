@@ -5,7 +5,6 @@ from app.schemas.common import DataResponse, PageResponse
 from app.schemas.project import ProjectCreate, ProjectRead, ProjectUpdate
 from app.services.project_service import ProjectService
 
-
 router = APIRouter()
 
 

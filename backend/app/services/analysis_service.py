@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from typing import Any, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any
 
 
 def thickness_distribution(

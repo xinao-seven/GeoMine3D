@@ -5,7 +5,6 @@ from app.schemas.common import DataResponse
 from app.schemas.scene import SceneConfigCreate, SceneConfigRead, SceneConfigUpdate
 from app.services.workspace_service import SceneService
 
-
 router = APIRouter()
 
 

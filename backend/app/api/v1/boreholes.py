@@ -10,7 +10,6 @@ from app.schemas.borehole import (
 from app.schemas.common import DataResponse
 from app.services.workspace_service import BoreholeService
 
-
 router = APIRouter()
 
 

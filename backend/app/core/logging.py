@@ -17,7 +17,6 @@ from contextvars import ContextVar
 
 from app.core.config import settings
 
-
 # 当前请求的关联 ID;不在请求上下文时用 "-" 占位。
 request_id_var: ContextVar[str] = ContextVar("request_id", default="-")
 
