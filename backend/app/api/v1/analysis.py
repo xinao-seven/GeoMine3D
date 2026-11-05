@@ -10,16 +10,16 @@ from app.models.borehole import Borehole, BoreholeSegment
 from app.models.project import Project
 from app.models.workspace import WorkingFace
 from app.schemas.common import DataResponse
+from app.services.analysis_cache import cached_result
 from app.services.analysis_service import (
-    burial_depth_contours,
     build_overview,
+    burial_depth_contours,
     estimate_workingface_reserves,
     virtual_borehole,
 )
 from app.services.boundary_service import read_polylines
 from app.services.section_service import compute_section, resolve_layer_files
 from app.services.workspace_service import ensure_project
-
 
 router = APIRouter()
 
@@ -149,8 +149,16 @@ async def create_virtual_borehole(
 
     boreholes, segments_by_borehole, _ = await fetch_borehole_data(session, project_id)
 
-    result = virtual_borehole(
-        boreholes, segments_by_borehole, payload.x, payload.y, payload.max_neighbors
+    # 缓存键直接用“真实输入”，钻孔一变键就变；不需要猜 TTL。
+    result = dict(
+        await cached_result(
+            "virtual_borehole",
+            [project_id, boreholes, segments_by_borehole, payload.x, payload.y,
+             payload.max_neighbors],
+            lambda: virtual_borehole(
+                boreholes, segments_by_borehole, payload.x, payload.y, payload.max_neighbors
+            ),
+        )
     )
     result["x"] = payload.x
     result["y"] = payload.y
@@ -199,7 +207,14 @@ async def get_layer_contours(
                 samples.append({"x": borehole["x"], "y": borehole["y"], "value": seg["top_depth"]})
                 break
 
-    result = burial_depth_contours(samples, step=step)
+    # 等值线只依赖“样本点 + 步长”，所以用它们当缓存键：换数据自然失效。
+    result = dict(
+        await cached_result(
+            "contours",
+            [layer.strip(), step, samples],
+            lambda: burial_depth_contours(samples, step=step),
+        )
+    )
     result["layer"] = layer
     result["sample_count"] = len(samples)
     return DataResponse(data=result)
@@ -224,6 +239,7 @@ async def create_section_profile(
                 ModelAsset.metadata_json,
                 ModelVersion.storage_scope,
                 ModelVersion.file_path,
+                ModelVersion.content_hash,
             )
             .join(ModelVersion, ModelVersion.id == ModelAsset.current_version_id)
             .where(ModelAsset.project_id == project_id, ModelAsset.model_type == "stratum")
@@ -236,12 +252,12 @@ async def create_section_profile(
     if not layers:
         raise AppError("SECTION_NO_LAYER_MODELS", "项目缺少分层模型，无法生成剖面", status_code=400)
 
-    result = compute_section(
-        layers,
-        payload.ax,
-        payload.ay,
-        payload.bx,
-        payload.by,
-        {"x": project.origin_x, "y": project.origin_y, "z": project.origin_z},
+    # 版本内容哈希入键：交付包一重建(内容变化)缓存就自然失效。
+    dataset = [(row.file_path, row.content_hash or "") for row in rows]
+    origin = {"x": project.origin_x, "y": project.origin_y, "z": project.origin_z}
+    result = await cached_result(
+        "section",
+        [dataset, origin, payload.ax, payload.ay, payload.bx, payload.by],
+        lambda: compute_section(layers, payload.ax, payload.ay, payload.bx, payload.by, origin),
     )
     return DataResponse(data=result)

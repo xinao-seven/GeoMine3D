@@ -7,6 +7,10 @@ import sys
 import time
 from pathlib import Path
 
+# Windows 控制台默认 GBK,脚本里的 ✓ 会抛 UnicodeEncodeError;统一按 UTF-8 输出。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 import httpx
 
 BASE = "http://127.0.0.1:8000"

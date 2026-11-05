@@ -8,6 +8,10 @@ python-multipart==0.0.20
 openpyxl==3.1.5
 pyproj==3.7.2
 pyshp==2.3.1
+# Redis:建模任务队列 / 进度推送 / 分析结果缓存(单容器服务见 docker-compose.yml)
+redis[hiredis]==5.2.1
+# 测试替身:让任务队列/缓存用例不需要真实 Redis 服务
+fakeredis==2.26.2
 # 1.x 与 fastapi 0.116 所需的 starlette<0.48 兼容;mcp 2.x 强制 starlette>=1 会破坏后端
 mcp==1.30.0
 Pillow==11.3.0
@@ -23,3 +27,5 @@ pytest==8.4.1
 pytest-asyncio==1.1.0
 httpx==0.28.1
 tifffile==6.1.0  # 底图预处理脚本(scripts/preprocess_basemap.py)可选依赖
+# Prometheus 指标(/metrics):缓存命中率、建模任务时长与状态
+prometheus-client==0.21.0

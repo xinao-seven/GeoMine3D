@@ -12,6 +12,9 @@ class ModelingJobRead(BaseModel):
     status: str
     stage: str | None
     message: str | None
+    attempts: int = 0
+    # 实时百分比来自 Redis 快照(引擎阶段埋点),库里的建模任务不存进度
+    percent: float = 0.0
     params_json: dict[str, Any]
     output_dir: str | None
     result_json: dict[str, Any] | None

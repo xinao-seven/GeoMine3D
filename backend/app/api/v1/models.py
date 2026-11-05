@@ -1,6 +1,8 @@
+import hashlib
+from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, File, Form, Response, UploadFile, status
+from fastapi import APIRouter, File, Form, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse
 
 from app.api.dependencies import DbSession
@@ -16,8 +18,34 @@ from app.schemas.common import DataResponse
 from app.services.model_paths import PUBLIC_PREFIX, resolve_model_file, resolve_variant_path
 from app.services.workspace_service import ModelService
 
-
 router = APIRouter()
+
+
+def _file_etag(path: Path, content_hash: str | None) -> str:
+    """强校验器:优先用库里记录的内容哈希(sha256),没有则回退到 mtime+size。
+
+    为什么不用 Starlette 内置的那一个:它在 ``__call__`` 里才生成,构造响应时拿不到;
+    而条件请求必须在读文件之前判断。顺手把 ETag 升级成**内容哈希**,与“内容寻址”
+    的整体思路一致(重建交付包后 mtime 可能碰巧相同,内容哈希不会)。
+    """
+    if content_hash:
+        return f'"{content_hash[:32]}"'
+    stat = path.stat()
+    base = f"{stat.st_mtime}-{stat.st_size}"
+    return f'"{hashlib.md5(base.encode(), usedforsecurity=False).hexdigest()}"'
+
+
+def _etag_matches(if_none_match: str | None, etag: str) -> bool:
+    """实现 RFC 9110 的条件请求:``*`` / 逐个 etag 比对(容忍弱校验前缀 W/)。"""
+    if not if_none_match:
+        return False
+    if if_none_match.strip() == "*":
+        return True
+    target = etag.strip().lstrip("W/")
+    for candidate in if_none_match.split(","):
+        if candidate.strip().lstrip("W/") == target:
+            return True
+    return False
 
 
 @router.get("/projects/{project_id}/models", response_model=DataResponse[list[ModelAssetRead]])
@@ -43,6 +71,7 @@ async def get_model(model_id: str, session: DbSession):
 async def get_model_file(
     model_id: str,
     session: DbSession,
+    request: Request,
     variant: Literal["render", "shell"] = "render",
 ):
     """下载模型文件。
@@ -76,13 +105,21 @@ async def get_model_file(
         code = "MODEL_SHELL_NOT_FOUND" if variant == "shell" else "MODEL_FILE_NOT_FOUND"
         raise AppError(code, f"模型文件不存在: {relative_path}", status_code=404)
     media_type = "model/gltf+json" if path.suffix.lower() == ".gltf" else "model/gltf-binary"
+    # 同一 URL 的交付包会随重新生成而变(旧包为闭合壳、新包含内部壁),因此不下发
+    # 长缓存;但配合 ETag 协商,回源时只需要一个 304(几十字节)而不是重下 20MB+。
+    etag = _file_etag(path, version.content_hash)
+    cache_control = "no-cache, must-revalidate"
+    # Starlette 0.47 的 FileResponse 支持 Range(206) 但**不做**条件请求,这里补 304。
+    if _etag_matches(request.headers.get("if-none-match"), etag):
+        return Response(
+            status_code=status.HTTP_304_NOT_MODIFIED,
+            headers={"ETag": etag, "Cache-Control": cache_control},
+        )
     return FileResponse(
         path,
         filename=path.name,
         media_type=media_type,
-        # 同一 URL 的交付包会随重新生成而变(旧包为闭合壳、新包含内部壁),
-        # 浏览器启发式缓存会导致“时而空心”的不可复现现象,这里强制回源校验。
-        headers={"Cache-Control": "no-cache, must-revalidate"},
+        headers={"Cache-Control": cache_control, "ETag": etag},
     )
 
 

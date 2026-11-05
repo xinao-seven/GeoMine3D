@@ -21,7 +21,6 @@ from app.core.exceptions import AppError
 from app.core.logging import get_logger
 from app.schemas.common import DataResponse
 
-
 router = APIRouter()
 logger = get_logger("app.remote")
 
@@ -65,14 +64,14 @@ class BrowserSession:
         try:
             await self.send({"type": "invoke", "id": invoke_id, "command": command, "args": args})
             payload = await asyncio.wait_for(future, timeout_s)
-        except asyncio.TimeoutError:
+        except TimeoutError as exc:
             raise AppError(
                 "REMOTE_TIMEOUT",
                 f"浏览器 {timeout_s:.0f}s 内未返回命令 {command} 的结果（页面可能已关闭或命令卡住）",
                 status_code=504,
-            )
-        except ConnectionError:
-            raise AppError("REMOTE_SESSION_CLOSED", "浏览器会话已断开", status_code=502)
+            ) from exc
+        except ConnectionError as exc:
+            raise AppError("REMOTE_SESSION_CLOSED", "浏览器会话已断开", status_code=502) from exc
         finally:
             self._pending.pop(invoke_id, None)
 

@@ -1,6 +1,7 @@
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import JSON, ForeignKey, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -28,6 +29,11 @@ class ModelingJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(24), default="pending", nullable=False, index=True)
     stage: Mapped[str | None] = mapped_column(String(64))
     message: Mapped[str | None] = mapped_column(Text)
+    # 重试与存活:attempts 在每次“开始执行”时 +1;last_heartbeat_at 由 worker
+    # 定期刷新,用于判定“状态是 running 但没人实际在跑”的僵死任务。
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     params_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     input_strata_path: Mapped[str] = mapped_column(String(500), nullable=False)
     input_location_path: Mapped[str] = mapped_column(String(500), nullable=False)

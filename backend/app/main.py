@@ -4,16 +4,22 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.exceptions import error_payload, register_exception_handlers
 from app.core.logging import get_logger, request_id_var, setup_logging
+from app.core.metrics import render_metrics
+from app.core.redis_client import close_redis, ping_redis
 from app.services.model_paths import PUBLIC_PREFIX, ensure_model_dirs
+from app.services.modeling_queue import (
+    recover_pending_jobs,
+    start_modeling_worker,
+    stop_modeling_worker,
+)
 from app.services.modeling_service import fail_stale_modeling_jobs
-
 
 setup_logging()
 logger = get_logger("app.main")
@@ -26,20 +32,30 @@ ensure_model_dirs()
 
 
 class NoCacheStaticFiles(StaticFiles):
-    """不缓存静态模型资产。
+    """模型资产的缓存策略:带内容指纹才允许长期缓存。
 
-    原因:`/static/models`(及上传目录)下的文件会随数据重跑而变(交付包重新生成时
+    历史背景:`/static/models` 下的文件会随数据重跑而变(交付包重新生成时
     同名 GLB 从“闭合壳”换成“含内部棱柱壁”的渲染网格),而 FastAPI 的 SPA 兜底
     路由曾用 `FileResponse(index.html)` 以 **HTTP 200** 应答过同一个 URL。浏览器
-    据此做了启发式缓存(响应里只有 etag/last-modified,没有 cache-control →
-    允许启发式新鲜度),于是后端修好后前端仍拿到旧的 HTML 或旧的 GLB,
-    表现出“模型内部时而空心、时而正常”这类难以复现的问题。
-    这里统一加 no-cache,彻底消除这类“看不见的缓存”故障。
+    据此做了启发式缓存,于是后端修好后前端仍拿到旧的 HTML 或旧的 GLB。
+
+    现在的策略分两档:
+
+    - **不带 ``?v=``**:沿用 ``no-cache, must-revalidate``,宁可多一次协商请求,
+      也不能让旧几何被启发式缓存住;
+    - **带 ``?v=<内容指纹前 8 位>``**:URL 已随内容变化(见 model_paths.public_url),
+      可以安全地下发 ``immutable`` + 1 年,首次加载后就不再重复拉 20MB+ 的 GLB。
     """
+
+    IMMUTABLE = "public, max-age=31536000, immutable"
+    REVALIDATE = "no-cache, must-revalidate"
 
     async def get_response(self, path: str, scope):
         response = await super().get_response(path, scope)
-        response.headers["Cache-Control"] = "no-cache, must-revalidate"
+        query = scope.get("query_string", b"").decode("latin-1")
+        response.headers["Cache-Control"] = (
+            self.IMMUTABLE if "v=" in query else self.REVALIDATE
+        )
         return response
 
 
@@ -52,12 +68,21 @@ async def lifespan(_: FastAPI):
         settings.log_level_name,
         settings.db_echo,
     )
-    # 上次进程退出时可能留下 pending/running 的建模任务(任务协程随进程消亡),
-    # 启动时统一标记为失败,避免前端无限轮询。
-    stale = await fail_stale_modeling_jobs()
-    if stale:
-        logger.warning("已将 %d 个中断的建模任务标记为失败", stale)
+    # Redis 是加速/协同层而非数据源:探活失败只警告,后端继续跑降级路径。
+    if await ping_redis():
+        logger.info("Redis 已连接 %s", settings.redis_url)
+        # 队列 worker 先起,再恢复上次进程死掉时留下的任务:
+        # 有 Redis 时重启不再丢任务(心跳过期→重新入队,超限→进死信)。
+        if await start_modeling_worker():
+            await recover_pending_jobs()
+    else:
+        # 降级路径:没有队列就无法恢复执行,只能标记失败避免前端无限轮询。
+        stale = await fail_stale_modeling_jobs()
+        if stale:
+            logger.warning("已将 %d 个中断的建模任务标记为失败", stale)
     yield
+    await stop_modeling_worker()
+    await close_redis()
     logger.info("服务已停止")
 
 
@@ -137,6 +162,13 @@ else:
 @app.get("/health", tags=["system"])
 async def health() -> dict[str, str]:
     return {"status": "ok", "service": settings.app_name, "environment": settings.app_env}
+
+
+@app.get("/metrics", include_in_schema=False, response_model=None)
+async def metrics() -> Response:
+    """Prometheus 拉取端点:缓存命中率、建模任务时长与状态计数。"""
+    payload, content_type = render_metrics()
+    return Response(content=payload, media_type=content_type)
 
 
 # Host the built frontend (GeoMine3D/dist) so the whole service is reachable

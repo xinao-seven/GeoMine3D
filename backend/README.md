@@ -6,13 +6,34 @@
 
 ```powershell
 Copy-Item .env.example .env
-docker compose up -d mysql
+# mysql + redis 一起起(redis 是建模任务队列/进度推送/分析缓存的单容器实例)
+docker compose up -d
 alembic upgrade head
 python scripts/import_server_data.py
 uvicorn app.main:app --reload --port 8000
 ```
 
 API 文档：`http://127.0.0.1:8000/docs`
+
+Redis 默认启用（`REDIS_ENABLED=true`）。没起 Redis 也能跑：建模任务会退回进程内后台执行，
+分析接口退化为无缓存，但进度 SSE 不可用（前端自动降级为轮询）。
+
+## CI / 本地检查
+
+```powershell
+docker compose up -d          # CI 里用 service 容器提供 mysql + redis
+pwsh scripts/ci_check.ps1     # ruff check app tests + pytest(覆盖率下限 60%)
+```
+
+与 `.github/workflows/backend-ci.yml` 跑**完全相同的命令**，CI 挂了可原样在本地复现。
+
+## 异步建模与进度
+
+- 上传钻孔 Excel：`POST /api/v1/modeling-jobs` → 202 + `job`（Redis Stream 排队，见
+  `app/services/modeling_queue.py`）；
+- 实时进度：`GET /api/v1/modeling-jobs/{id}/events`（SSE，`Last-Event-ID` 可续传）；
+- 队列水位：`GET /api/v1/modeling-queue`；指标：`GET /metrics`；
+- 设计取舍、键空间、重试/死信、降级与踩坑记录见 `../docs/Redis任务队列与进度推送.md`。
 
 ## 目录职责
 
@@ -38,6 +59,10 @@ API 文档：`http://127.0.0.1:8000/docs`
 | `LOG_LEVEL` | `INFO` | 应用日志级别 |
 | `ACCESS_LOG` | `true` | 是否输出 HTTP 访问日志 |
 | `DB_ECHO` | `false` | 是否打印 SQLAlchemy 生成的 SQL 语句 |
+| `REDIS_ENABLED` | `true` | 是否启用 Redis（任务队列/进度/缓存）；`false` 时全部走降级路径 |
+| `REDIS_URL` | `redis://127.0.0.1:6379/0` | Redis 连接串（docker compose 的单容器实例） |
+| `MODELING_MAX_ATTEMPTS` | `3` | 建模任务最大尝试次数，超过进死信 |
+| `MODELING_HEARTBEAT_TTL_SECONDS` | `15` | 心跳/租约 TTL，决定崩溃任务多久被判僵死 |
 
 ## 日志
 

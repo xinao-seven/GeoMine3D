@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 import traceback
@@ -28,8 +29,64 @@ from pathlib import Path
 import numpy as np
 
 
+# 进度事件行格式:`[progress] {"stage": ..., "percent": ..., "message": ...}`。
+# 后端(app/services/modeling_service.py::_pump_stdout)逐行解析后写 Redis 快照并通过
+# SSE 推送。为什么百分比由**引擎**给出而不是前端估算:建模耗时随网格/孔数变化
+# 很大(25s vs 数分钟),看上去均匀递增的假进度会让人觉得“卡死了”。
+INTERP_RE = re.compile(r"界面插值 (\d+)/(\d+)")
+
+
 def _log(message: str) -> None:
     print(f"[modeling] {message}", flush=True)
+
+
+def _emit(stage: str, percent: float, message: str) -> None:
+    payload = {
+        "stage": stage,
+        "percent": round(max(0.0, min(100.0, percent)), 1),
+        "message": message,
+    }
+    print("[progress] " + json.dumps(payload, ensure_ascii=False), flush=True)
+
+
+class _Reporter:
+    """把建模各阶段的进度归一化到 0-100 并保证单调不回退。
+
+    阶段权重(与 docs/Redis任务队列与进度推送.md 一致):
+    解析 0-5、界面插值 5-40、保序投影 45、TIN-GTP 55、自洽校验 75、
+    导出交付包 78-92、完成 95,最后的 100 由后端“注册数据”阶段补上。
+    """
+
+    def __init__(self) -> None:
+        self.percent = 0.0
+        self.layers_total = 0
+        self.export_done = 0
+
+    def mark(self, stage: str, percent: float, message: str) -> None:
+        self.percent = max(self.percent, float(percent))
+        _emit(stage, self.percent, message)
+
+    def report(self, message: str) -> None:
+        """子模块(surfaces/package_builder)的文本进度 → 百分比。"""
+        _log(message)
+        match = INTERP_RE.search(message)
+        if match:
+            done, total = int(match.group(1)), int(match.group(2))
+            self.mark("界面插值", 5 + 35 * done / max(1, total), message)
+            return
+        if message.startswith("向量化 TIN-GTP"):
+            self.mark("TIN-GTP 建模", 55, message)
+            return
+        if message.startswith("自洽断言"):
+            self.mark("自洽校验", 75, message)
+            return
+        if message.startswith("导出 "):
+            self.export_done += 1
+            ratio = min(1.0, self.export_done / max(1, self.layers_total))
+            self.mark("导出交付包", 78 + 14 * ratio, message)
+            return
+        # 其余文本(如控制点数、网格规模)只刷新提示语,不推进百分比。
+        self.mark("建模中", self.percent, message)
 
 
 def run(
@@ -46,10 +103,12 @@ def run(
 ) -> dict:
     from modeling_engine import data_io, package_builder, surfaces
 
+    reporter = _Reporter()
     timings: dict[str, float] = {}
     t_all = time.time()
 
     t0 = time.time()
+    reporter.mark("解析输入", 0, "开始解析钻孔数据")
     _log(f"解析分层表 {strata_path.name}")
     strata = data_io.parse_strata(strata_path)
     _log(f"分层表: {strata.hole_count} 孔, 列语义 {strata.convention}")
@@ -58,7 +117,12 @@ def run(
     _log(f"位置表: {len(locations)} 孔")
     inputs = data_io.build_model_inputs(strata, locations)
     timings["parse_s"] = time.time() - t0
-    _log(f"参与建模 {len(inputs.boreholes)} 孔, {len(inputs.layers)} 层")
+    reporter.layers_total = len(inputs.layers)
+    reporter.mark(
+        "解析输入",
+        5,
+        f"参与建模 {len(inputs.boreholes)} 孔, {len(inputs.layers)} 层",
+    )
 
     t0 = time.time()
     interfaces, points, all_points = surfaces.build_interface_points(
@@ -70,11 +134,11 @@ def run(
         boundary_padding_m=boundary_padding_m,
     )
     xy_global = support[["x", "y"]].to_numpy(float)
-    _log(f"共享网格 {len(support)} 节点 ({len(interfaces)} 界面)")
+    reporter.mark("界面插值", 5, f"共享网格 {len(support)} 节点 ({len(interfaces)} 界面)")
     raw, std = surfaces.direct_elevation_surfaces(
-        all_points, points, interfaces, support, progress=_log
+        all_points, points, interfaces, support, progress=reporter.report
     )
-    _log("保序投影与尖灭折叠")
+    reporter.mark("保序投影", 45, "保序投影与尖灭折叠")
     _, corrected, masks = surfaces.zero_thickness_projection(
         raw, std, pinchout_threshold_m=pinchout_threshold_m
     )
@@ -110,7 +174,7 @@ def run(
             "location_file": location_path.name,
             "engine": "backend/modeling_engine",
         },
-        progress=_log,
+        progress=reporter.report,
     )
     timings["package_s"] = time.time() - t0
     timings["total_s"] = time.time() - t_all
@@ -145,7 +209,7 @@ def run(
     result_path.write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    _log(f"完成, 总耗时 {timings['total_s']:.1f}s")
+    reporter.mark("完成", 95, f"引擎完成, 总耗时 {timings['total_s']:.1f}s")
     return summary
 
 

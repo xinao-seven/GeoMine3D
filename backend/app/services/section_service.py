@@ -14,15 +14,15 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import trimesh
 
 from app.services.model_paths import model_root
-
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,7 @@ def resolve_layer_files(
             continue
         # 合并模型(catalog_code=COMBINED,无 layer_index)不参与剖面,逐层壳体才有意义
         layer_index = metadata.get("layer_index")
-        if not isinstance(layer_index, (int, float)) or int(layer_index) < 1:
+        if not isinstance(layer_index, int | float) or int(layer_index) < 1:
             continue
         path = (root / file_path).resolve()
         shell_rel = metadata.get("shell_file")

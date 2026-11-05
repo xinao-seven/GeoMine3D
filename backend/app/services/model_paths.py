@@ -23,8 +23,14 @@
 """
 from __future__ import annotations
 
+import hashlib
+import json
+import os
+import shutil
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from app.core.config import settings
 from app.core.exceptions import AppError
@@ -35,6 +41,16 @@ PUBLIC_PREFIX = "/static/models"
 PROJECTS_DIR = "projects"
 # 手动上传模型版本的子目录
 USER_UPLOADS_DIR = "user_uploads"
+# 交付包内容区(不可变,按内容指纹分子目录)与生效指针
+PACKAGES_DIR = "packages"
+ACTIVE_POINTER = "active.json"
+# 历史交付包目录名:引入内容寻址之前引擎直接写到这里
+LEGACY_PACKAGE_DIR = "web_package"
+# 引擎输出先写到 projects/<pid>/.tmp-<job_id>/,校验后再搬进 packages/<hash>/
+STAGING_PREFIX = ".tmp-"
+# 参与内容指纹的产物(与注册进库、前端加载的集合一致)。
+# z20/ 与 vtu/ 是锦界专属额外交付物、不注册进库,故不计入指纹。
+HASHED_PATTERNS = ("*.glb", "shells/*.glb", "lods/*.glb")
 
 VARIANTS = ("render", "shell")
 
@@ -56,9 +72,15 @@ def relative_to_root(path: Path) -> str:
         ) from exc
 
 
-def public_url(relative_path: str) -> str:
-    """相对模型根的路径 → 浏览器可访问的静态地址。"""
-    return f"{PUBLIC_PREFIX}/{relative_path.lstrip('/')}"
+def public_url(relative_path: str, version: str | None = None) -> str:
+    """相对模型根的路径 → 浏览器可访问的静态地址。
+
+    带 ``version`` 时追加 ``?v=<内容指纹前 8 位>``:内容一变 URL 就变,于是可以放心
+    下发 ``Cache-Control: immutable``(见 app/main.py::NoCacheStaticFiles)——既根治了
+    “交付包重建后浏览器还在用旧 GLB”这类历史故障,又不用每次全量重下 20MB+ 的合并模型。
+    """
+    url = f"{PUBLIC_PREFIX}/{relative_path.lstrip('/')}"
+    return f"{url}?v={version}" if version else url
 
 
 def resolve_model_file(relative_path: str | None) -> Path | None:
@@ -73,8 +95,191 @@ def resolve_model_file(relative_path: str | None) -> Path | None:
 
 
 def project_package_dir(project_id: str) -> Path:
-    """上传建模项目的交付包目录(与锦界 ``web_package/`` 同构)。"""
-    return model_root() / PROJECTS_DIR / project_id / "web_package"
+    """上传建模项目的**当前生效**交付包目录(与锦界 ``web_package/`` 同构)。
+
+    引入内容寻址后目录结构变为::
+
+        projects/<pid>/packages/<content_hash>/   # 不可变产物(每次建模一份)
+        projects/<pid>/active.json                # 生效指针(单文件原子替换)
+        projects/<pid>/web_package/               # 历史包(只读回退,新项目不再写)
+
+    为什么用指针文件而不是 rename 目录:Windows/NTFS 下把非空目录 rename 成已存在的
+    目录不是原子操作,而单个小于 1KB 文件的 ``os.replace`` 是原子的。产物目录本身
+    不可变(换内容就换名字),所以“生效”只需原子地改一个指针。
+    """
+    pointer = project_package_pointer(project_id)
+    try:
+        payload = json.loads(pointer.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        payload = {}
+    active = str(payload.get("active") or "").strip()
+    if active:
+        candidate = project_packages_dir(project_id) / active
+        if candidate.is_dir():
+            return candidate
+    return project_legacy_package_dir(project_id)
+
+
+def project_dir(project_id: str) -> Path:
+    """单个建模项目的产物根目录(交付包 + 指针 + 临时区都在它下面)。"""
+    return model_root() / PROJECTS_DIR / project_id
+
+
+def project_packages_dir(project_id: str) -> Path:
+    """不可变交付包的父目录。"""
+    return project_dir(project_id) / PACKAGES_DIR
+
+
+def project_package_pointer(project_id: str) -> Path:
+    """生效指针文件(内容形如 ``{"active": "<content_hash>"}``)。"""
+    return project_dir(project_id) / ACTIVE_POINTER
+
+
+def project_legacy_package_dir(project_id: str) -> Path:
+    """引入内容寻址之前的历史交付包目录(只读回退)。"""
+    return project_dir(project_id) / LEGACY_PACKAGE_DIR
+
+
+def project_staging_dir(project_id: str, job_id: str) -> Path:
+    """建模引擎的输出暂存目录;校验通过后才会被搬进 ``packages/<hash>/``。"""
+    return project_dir(project_id) / f"{STAGING_PREFIX}{job_id}"
+
+
+@dataclass(slots=True)
+class PublishedPackage:
+    """一次发布的结果:内容指纹、不可变目录与逐文件哈希(注册时复用,不再重算)。"""
+
+    content_hash: str
+    directory: Path
+    catalog: dict[str, Any]
+    file_hashes: dict[str, str] = field(default_factory=dict)
+    file_sizes: dict[str, int] = field(default_factory=dict)
+
+    def relative(self, path: Path) -> str:
+        """包内文件 → 相对包目录的 POSIX 路径(即 file_hashes 的键)。"""
+        return path.resolve().relative_to(self.directory.resolve()).as_posix()
+
+
+def _hash_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def compute_package_hash(
+    package_dir: Path,
+) -> tuple[str, dict[str, str], dict[str, int]]:
+    """算交付包内容指纹:逐文件 sha256 → 按相对路径排序后聚合。
+
+    用**内容**而不是时间戳/大小做指纹,保证同一份输入重复建模得到同一个目录名,
+    重试与重建才能幂等;参与指纹的产物集合见 ``HASHED_PATTERNS``。
+    """
+    entries: dict[str, tuple[str, int]] = {}
+    for pattern in HASHED_PATTERNS:
+        for path in sorted(package_dir.glob(pattern)):
+            if not path.is_file():
+                continue
+            entries[path.relative_to(package_dir).as_posix()] = (
+                _hash_file(path),
+                path.stat().st_size,
+            )
+    if not entries:
+        raise AppError(
+            "MODEL_PACKAGE_EMPTY",
+            f"交付包没有可识别的模型产物: {package_dir}",
+            status_code=500,
+        )
+    digest = hashlib.sha256()
+    for relative_path in sorted(entries):
+        file_hash, size = entries[relative_path]
+        digest.update(f"{relative_path}:{size}:{file_hash}\n".encode())
+    return (
+        digest.hexdigest(),
+        {name: value[0] for name, value in entries.items()},
+        {name: value[1] for name, value in entries.items()},
+    )
+
+
+def publish_package(project_id: str, staging_dir: Path) -> PublishedPackage:
+    """把暂存区搬成不可变内容目录(幂等),**不**切换生效指针。
+
+    调用方应在数据库注册那笔事务 commit 成功后再调 ``activate_package()``:
+    “先让数据一致,再让产物可见”。同内容重复发布时目录已存在,直接丢弃暂存区。
+    """
+    if not staging_dir.is_dir():
+        raise AppError(
+            "MODEL_PACKAGE_MISSING",
+            f"交付包暂存目录不存在: {staging_dir}",
+            status_code=500,
+        )
+    content_hash, file_hashes, file_sizes = compute_package_hash(staging_dir)
+    target = project_packages_dir(project_id) / content_hash[:16]
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        # 同内容已发布过(重试/重建同一份数据):丢弃暂存区即可,目录保持不可变。
+        shutil.rmtree(staging_dir, ignore_errors=True)
+    else:
+        # 目标是全新名字:rename 到不存在的路径是安全的;用 shutil.move 兼容跨卷
+        # (upload 暂存区与模型根可能不在同一个盘)。
+        shutil.move(str(staging_dir), str(target))
+    catalog = json.loads((target / "catalog.json").read_text(encoding="utf-8"))
+    return PublishedPackage(
+        content_hash=content_hash,
+        directory=target,
+        catalog=catalog,
+        file_hashes=file_hashes,
+        file_sizes=file_sizes,
+    )
+
+
+def activate_package(project_id: str, content_hash: str) -> Path:
+    """原子切换生效指针(单文件 ``os.replace``)。返回指针文件路径。"""
+    pointer = project_package_pointer(project_id)
+    pointer.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(
+        {"active": content_hash[:16], "content_hash": content_hash},
+        ensure_ascii=False,
+        indent=2,
+    )
+    tmp = pointer.with_name(pointer.name + ".tmp")
+    tmp.write_text(payload, encoding="utf-8")
+    os.replace(tmp, pointer)
+    return pointer
+
+
+def prune_packages(project_id: str, keep_hash: str) -> list[str]:
+    """删除除生效包之外的旧内容目录(DB 提交后才调,避免删掉仍在被引用的包)。"""
+    keep = keep_hash[:16]
+    removed: list[str] = []
+    root = project_packages_dir(project_id)
+    if not root.is_dir():
+        return removed
+    for entry in root.iterdir():
+        if not entry.is_dir() or entry.name == keep:
+            continue
+        shutil.rmtree(entry, ignore_errors=True)
+        removed.append(entry.name)
+    return removed
+
+
+def cleanup_staging(project_id: str, job_id: str | None = None) -> list[str]:
+    """清理暂存区:给定 job_id 只清那一个,否则清掉所有残留的 ``.tmp-*``。"""
+    root = project_dir(project_id)
+    if not root.is_dir():
+        return []
+    targets = (
+        [project_staging_dir(project_id, job_id)]
+        if job_id
+        else [path for path in root.iterdir() if path.name.startswith(STAGING_PREFIX)]
+    )
+    removed: list[str] = []
+    for path in targets:
+        if path.is_dir():
+            shutil.rmtree(path, ignore_errors=True)
+            removed.append(path.name)
+    return removed
 
 
 def user_upload_dir(asset_id: str) -> Path:
@@ -104,7 +309,9 @@ def package_combined_variant_files(package_dir: Path) -> dict[str, Path]:
     }
 
 
-def _variant_urls(files: dict[str, Path]) -> tuple[dict[str, str | None], str | None]:
+def _variant_urls(
+    files: dict[str, Path], version: str | None = None
+) -> tuple[dict[str, str | None], str | None]:
     """渲染轨必然存在(已在上游校验);分析轨存在时才写 shell_file。"""
     render_rel = relative_to_root(files["render"])
     shell_path = files.get("shell")
@@ -114,16 +321,18 @@ def _variant_urls(files: dict[str, Path]) -> tuple[dict[str, str | None], str | 
         else None
     )
     variant_urls: dict[str, str | None] = {
-        "render": public_url(render_rel),
-        "shell": public_url(shell_rel) if shell_rel else None,
+        "render": public_url(render_rel, version),
+        "shell": public_url(shell_rel, version) if shell_rel else None,
     }
     return variant_urls, shell_rel
 
 
-def combined_variant_metadata(package_dir: Path) -> dict[str, Any]:
+def combined_variant_metadata(
+    package_dir: Path, version: str | None = None
+) -> dict[str, Any]:
     """合并场景的双轨 metadata(前端“含内部壁 / 空心壳”两个加载按钮都靠它)。"""
     files = package_combined_variant_files(package_dir)
-    variant_urls, shell_rel = _variant_urls(files)
+    variant_urls, shell_rel = _variant_urls(files, version)
     return {
         "render_file": relative_to_root(files["render"]),
         "shell_file": shell_rel,
@@ -135,6 +344,7 @@ def variant_metadata(
     package_dir: Path,
     code: str,
     layer: Mapping[str, Any],
+    version: str | None = None,
 ) -> dict[str, Any]:
     """生成模型资产的双轨 metadata 片段(路径为相对模型根,URL 为静态地址)。
 
@@ -142,7 +352,7 @@ def variant_metadata(
     (旧包),前端/接口据此判断 ``variant=shell`` 不可用。
     """
     files = package_variant_files(package_dir, code)
-    variant_urls, shell_rel = _variant_urls(files)
+    variant_urls, shell_rel = _variant_urls(files, version)
 
     lod_urls: dict[str, str] = {}
     lod_files: dict[str, str] = {}
@@ -159,7 +369,7 @@ def variant_metadata(
             continue
         rel = relative_to_root(lod_path)
         lod_files[name] = rel
-        lod_urls[name] = public_url(rel)
+        lod_urls[name] = public_url(rel, version)
 
     return {
         "render_file": relative_to_root(files["render"]),

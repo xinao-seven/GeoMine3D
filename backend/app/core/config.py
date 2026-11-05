@@ -4,7 +4,6 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 
@@ -52,6 +51,20 @@ class Settings(BaseSettings):
     # 钻孔建模引擎(modeling_engine):上传 14层汇总表后异步生成模型交付包。
     modeling_max_concurrent: int = 1
     modeling_timeout_seconds: int = 1800
+    # Redis:建模任务队列 / 进度推送 / 分析结果缓存共用。由 backend/docker-compose.yml
+    # 的单容器 redis 服务提供(``docker compose up -d``)。
+    # ``redis_enabled=false`` 时后端自动降级回进程内后台任务(与引入 Redis 之前一致),
+    # 保证没起 Redis 也能开发调试;所有调用方都必须容忍 ``get_redis()`` 返回 None。
+    redis_enabled: bool = True
+    redis_url: str = "redis://127.0.0.1:6379/0"
+    redis_key_prefix: str = "geomine"
+    # 建模任务队列(Redis Stream):重试与存活语义
+    modeling_max_attempts: int = 3
+    modeling_retry_backoff_seconds: float = 5.0
+    # worker 心跳刷新间隔小于 TTL 1/3;TTL 过期即视为“没人真在跑这个任务”
+    modeling_heartbeat_ttl_seconds: int = 15
+    # 消息被某个 worker 读走但迟迟不 ACK(进程崩了),超过这个空闲时长后允许重认领
+    modeling_reclaim_idle_ms: int = 60000
 
     @property
     def log_level_name(self) -> str:
