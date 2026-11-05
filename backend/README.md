@@ -27,6 +27,15 @@ pwsh scripts/ci_check.ps1     # ruff check app tests + pytest(覆盖率下限 60
 
 与 `.github/workflows/backend-ci.yml` 跑**完全相同的命令**，CI 挂了可原样在本地复现。
 
+改 `requirements*.txt` 后先在本地验证版本号确实存在（CI 装依赖失败时只会在日志里报
+`No matching distribution`，白等一轮）：
+
+```powershell
+pip install --dry-run --ignore-installed -r requirements-dev.txt   # 只解析不安装
+```
+
+> 注意 `tifffile` 用的是 CalVer（`2026.10.15`），**没有 6.x 版本**，写错会直接装不上。
+
 ## 异步建模与进度
 
 - 上传钻孔 Excel：`POST /api/v1/modeling-jobs` → 202 + `job`（Redis Stream 排队，见

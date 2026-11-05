@@ -26,6 +26,8 @@ trimesh==4.11.0
 pytest==8.4.1
 pytest-asyncio==1.1.0
 httpx==0.28.1
-tifffile==6.1.0  # 底图预处理脚本(scripts/preprocess_basemap.py)可选依赖
+# 底图预处理脚本(scripts/preprocess_basemap.py)的依赖。注意 tifffile 用的是 CalVer
+# (2026.10.15 这种),不存在 6.x 版本号;写错会在 CI 里直接 "No matching distribution"。
+tifffile==2026.10.15
 # Prometheus 指标(/metrics):缓存命中率、建模任务时长与状态
 prometheus-client==0.21.0
