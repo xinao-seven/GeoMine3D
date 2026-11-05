@@ -55,6 +55,10 @@ export interface ModelingJobRecord {
     status: 'pending' | 'running' | 'completed' | 'failed'
     stage: string | null
     message: string | null
+    /** 实时百分比（后端从 Redis 进度快照读，SSE 与轮询两条路都能拿到） */
+    percent?: number
+    /** 已尝试执行次数（Redis 队列的退避重试计数） */
+    attempts?: number
     params_json: Record<string, any>
     output_dir: string | null
     result_json: Record<string, any> | null

@@ -66,6 +66,17 @@
                     <h3>{{ project.name }}</h3>
                     <p v-if="activeJobOf(project.id)">{{ activeJobOf(project.id)!.message || '建模进行中…' }}</p>
                     <p v-else>{{ project.description || '尚未填写项目说明。' }}</p>
+                    <div v-if="activeJobOf(project.id)" class="build-progress">
+                        <el-progress :percentage="jobPercent(project.id)" :stroke-width="6" :show-text="false"
+                            color="#e8b25f" />
+                        <span class="build-progress-meta">
+                            <b>{{ jobPercent(project.id) }}%</b>
+                            <span>{{ activeJobOf(project.id)!.stage || '排队中' }}</span>
+                            <span v-if="(activeJobOf(project.id)!.attempts || 0) > 1" class="build-progress-retry">
+                                第 {{ activeJobOf(project.id)!.attempts }} 次尝试
+                            </span>
+                        </span>
+                    </div>
                 </div>
                 <div class="card-meta"><span>{{ formatDate(project.updated_at) }}</span><span>DATABASE</span></div>
             </button>
@@ -133,6 +144,11 @@ import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { workspaceApi, type ModelingJobRecord, type ProjectRecord } from '@/api/workspace'
+import {
+    subscribeModelingProgress,
+    type ModelingProgressFrame,
+    type ModelingProgressSubscription,
+} from '@/api/modelingProgress'
 
 const router = useRouter()
 const projects = ref<ProjectRecord[]>([])
@@ -150,9 +166,13 @@ const modelingForm = reactive<{ name: string; description: string; strata: File 
     location: null,
 })
 
-// projectId → 该项目最近一次建模任务;轮询期间实时刷新,驱动卡片状态条。
+// projectId → 该项目最近一次建模任务;SSE 实时刷新进度,SSE 不可用时退回轮询。
 const jobsByProject = ref<Record<string, ModelingJobRecord>>({})
 let pollTimer: number | null = null
+// jobId → 进度订阅(SSE)。同一任务只开一条连接。
+const progressStreams = new Map<string, ModelingProgressSubscription>()
+// 一旦判定 SSE 不可用(后端未启用队列 / 中间层吞长连接)就不再尝试,全量退回轮询。
+let sseDisabled = false
 
 function openProject(projectId: string) {
     const job = jobsByProject.value[projectId]
@@ -179,6 +199,77 @@ function activeJobOf(projectId: string) {
     const job = jobsByProject.value[projectId]
     if (!job || (job.status !== 'pending' && job.status !== 'running')) return null
     return job
+}
+
+function jobPercent(projectId: string) {
+    const job = jobsByProject.value[projectId]
+    return Math.round(Math.max(0, Math.min(100, job?.percent ?? 0)))
+}
+
+/** 把一帧 SSE 进度合并到卡片状态上。 */
+function applyProgress(jobId: string, frame: ModelingProgressFrame) {
+    const job = jobsByProject.value[jobId]
+    if (!job) return
+    jobsByProject.value[jobId] = {
+        ...job,
+        percent: frame.percent,
+        stage: frame.stage || job.stage,
+        message: frame.message || job.message,
+        // 有进度帧就说明已被 worker 领走执行
+        status: job.status === 'pending' ? 'running' : job.status,
+    }
+}
+
+function stopStream(jobId: string) {
+    progressStreams.get(jobId)?.close()
+    progressStreams.delete(jobId)
+}
+
+function stopAllStreams() {
+    progressStreams.forEach(subscription => subscription.close())
+    progressStreams.clear()
+}
+
+function ensureStream(job: ModelingJobRecord) {
+    if (sseDisabled || progressStreams.has(job.id)) return
+    const subscription = subscribeModelingProgress(job.id, {
+        onProgress: frame => applyProgress(job.id, frame),
+        onDone: frame => {
+            applyProgress(job.id, frame)
+            stopStream(job.id)
+            void settleJob(job.project_id, job.id)
+        },
+        onFallback: reason => {
+            sseDisabled = true
+            console.warn('[建模进度] SSE 不可用，退回轮询：', reason)
+            ensurePolling()
+        },
+    })
+    progressStreams.set(job.id, subscription)
+}
+
+/** 给所有在建任务挂上进度订阅(SSE)。 */
+function trackActiveJobs() {
+    if (sseDisabled) return
+    Object.values(jobsByProject.value).forEach(job => {
+        if (job.status === 'pending' || job.status === 'running') ensureStream(job)
+    })
+}
+
+/** 收到 done 后回读一次任务详情,拿到最终状态并刷新项目列表。 */
+async function settleJob(projectId: string, jobId: string) {
+    try {
+        const fresh = await workspaceApi.getModelingJob(jobId)
+        jobsByProject.value[fresh.project_id] = fresh
+        if (fresh.status === 'completed') {
+            ElMessage.success(`「${projectNameOf(projectId)}」建模完成，可进入工作台查看`)
+            await loadProjects()
+        } else if (fresh.status === 'failed') {
+            ElMessage.error(`「${projectNameOf(projectId)}」建模失败：${(fresh.error_message || '未知错误').slice(0, 160)}`)
+        }
+    } catch {
+        // 瞬时不可达:保持现有状态,列表下次刷新会纠正
+    }
 }
 
 function onModelingFile(kind: 'strata' | 'location', uploadFile: any) {
@@ -214,6 +305,8 @@ async function loadLatestJobs() {
             jobsByProject.value[projects.value[index].id] = result.value[0]
         }
     })
+    // 刷新页面后也要把在建任务的进度条接回去(SSE 会先补一帧当前快照)。
+    trackActiveJobs()
 }
 
 function ensurePolling() {
@@ -286,7 +379,9 @@ async function createModelingProject() {
         modelingForm.location = null
         jobsByProject.value[job.project_id] = job
         ElMessage.success('项目已创建，建模任务已启动')
-        ensurePolling()
+        // 优先用 SSE 实时进度;若前端判定 SSE 不可用,sseDisabled 已置真时会自动走轮询。
+        if (sseDisabled) ensurePolling()
+        else ensureStream(job)
         await loadProjects()
     } catch (error: any) {
         const message = error?.response?.data?.message
@@ -297,7 +392,10 @@ async function createModelingProject() {
 }
 
 onMounted(loadProjects)
-onBeforeUnmount(stopPolling)
+onBeforeUnmount(() => {
+    stopAllStreams()
+    stopPolling()
+})
 </script>
 
 <style scoped>
@@ -474,7 +572,6 @@ onBeforeUnmount(stopPolling)
 }
 
 @keyframes chip-pulse {
-
     0%,
     100% {
         opacity: .25;
@@ -640,6 +737,37 @@ onBeforeUnmount(stopPolling)
     line-height: 1.65;
     opacity: .62;
     min-height: 42px;
+}
+
+/* 建模进度条:百分比来自引擎埋点,不是前端估算 */
+.build-progress {
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    opacity: .95;
+}
+
+.build-progress :deep(.el-progress-bar__outer) {
+    background: rgba(232, 178, 95, .16);
+}
+
+.build-progress-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font: 500 11px/1.3 Bahnschrift, 'Noto Sans SC', sans-serif;
+    letter-spacing: .06em;
+    opacity: .72;
+}
+
+.build-progress-meta b {
+    color: #e8b25f;
+    font-weight: 600;
+}
+
+.build-progress-retry {
+    color: #ffb9a8;
 }
 
 .card-meta {
