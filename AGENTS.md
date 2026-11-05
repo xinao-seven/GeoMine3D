@@ -86,8 +86,9 @@ server/                     # 业务数据与模型文件的唯一存放处（�
   `python -m modeling_engine.generate`（同一 venv，共享趋势+ARD GP 插值 → 保序投影/尖灭折叠
   → TIN-GTP 建模 → GLB/LOD/VTU/z20 + catalog.json，约 25s）→ 注册进库
   （`metadata.source="modeling"`；钻孔分层颜色按层名映射；`origin_restore` 写回 project）。
-  产物在模型根下的 `projects/<project_id>/web_package/`（与锦界包同构），
-  任务输入/日志在 `backend/uploads/modeling-jobs/<job_id>/`，删项目时两者一并清理。
+  产物在模型根下的 `projects/<project_id>/packages/<content_hash>/`（不可变，与锦界包同构；
+  `projects/<project_id>/active.json` 是指向当前生效包的指针），任务输入/日志在
+  `backend/uploads/modeling-jobs/<job_id>/`，删项目时整个 `projects/<project_id>/` 一并清理。
   层序由上传表的层顶深度自动推导（不再需要 strat_order_refined.json）；网格规模由数据决定
   （锦界 182 孔 → 16641 节点）；不含 roadways/working_faces/沉陷场（锦界专属）。
   `import_server_data.py` 重跑时按 `metadata.source=="modeling"` 跳过建模资产、按“项目含建模
@@ -97,6 +98,34 @@ server/                     # 业务数据与模型文件的唯一存放处（�
   壳（surface_mesh）供剖面求交等分析。渲染网格相邻层底面整体下移 `RENDER_INTERFACE_GAP=0.05m`
   抗界面共面闪烁。`build_web_package` 支持 `--z-origin` 显式高程基准（替换既有包时保持对齐）。
   锦界交付包已用本引擎重新生成替换（原包备份 `server/static/models/_backup_web_package_20261026/`）。
+- **建模任务队列与实时进度（Redis）**：`backend/app/services/modeling_queue.py` 用 Redis Stream
+  （XADD / XREADGROUP / XACK+XDEL / XAUTOCLAIM）+ consumer group 承载建模任务，`modeling_jobs`
+  新增 `attempts / next_retry_at / last_heartbeat_at` 三列（迁移 `20261105_0001`）。三层防护各管
+  一件事：PEL 认领「读走但没 ACK」的消息、`lease:<job>` 租约保证同一任务不并发、DB 心跳判定
+  重启后的僵死任务（`recover_pending_jobs()` 重入队，超 `modeling_max_attempts` 进死信）。
+  分布式并发闸门 `slot:<i>`（SET NX PX + 心跳续期）替代进程内 `asyncio.Semaphore`。
+  进度由引擎埋点（`modeling_engine/generate.py::_Reporter` 输出 `[progress] {stage,percent,message}`，
+  百分比单调不回退）→ Redis Hash 快照 + Redis Stream 事件 → `GET /api/v1/modeling-jobs/{id}/events`
+  的 SSE（首帧快照、`Last-Event-ID` 续传、终态 `event: done`、15s keep-alive）；普通任务详情接口
+  也带 `percent`，供前端 SSE 不可用时降级轮询。`REDIS_ENABLED=false` 或 Redis 不可用时退回进程内
+  任务（与引入 Redis 前行为一致）。水位接口 `GET /api/v1/modeling-queue`。详见
+  `docs/Redis任务队列与进度推送.md`。
+- **交付包原子生效 + 注册幂等**：引擎先写 `projects/<pid>/.tmp-<job_id>/`，校验 catalog 后按内容
+  指纹搬进 `packages/<hash16>/`（同内容重复发布幂等）；数据注册（钻孔/分层/资产/完成状态）在
+  **单个事务**里 commit，成功后才用单文件 `os.replace` 切换 `active.json` 指针（Windows 上目录
+  rename 非原子），随后回收旧内容目录。资产 identity 是 `(project_id, catalog_code)` 而非文件路径，
+  重试/重建都不会多出资产行；`metadata` 新增 `package_hash / package_dir`，公开 URL 带
+  `?v=<hash8>`（静态缓存见下）。
+- **分析结果共享缓存**：`backend/app/services/analysis_cache.py` 以「真实输入 JSON 的 sha256」为键
+  （输入变则键变，缓存自然失效），未命中时 `SET NX PX` 单飞、其余短暂等锁后自己算；接入
+  `contours / section / virtual-borehole` 三个分析接口，CPU 重活统一 `asyncio.to_thread`。
+- **静态模型缓存策略**：`NoCacheStaticFiles`（`app/main.py`）对带 `?v=<内容指纹>` 的请求下发
+  `public, max-age=31536000, immutable`，不带 `v=` 仍 `no-cache, must-revalidate`（历史「时而空心」
+  脏读故障不回归）；`/api/v1/models/{id}/file` 用 `model_versions.content_hash` 作强 ETag，
+  `If-None-Match` 命中返回 304（Starlette 0.47 的 FileResponse 支持 Range 206 但不做条件请求）。
+- **指标与 CI**：`GET /metrics`（prometheus-client）暴露缓存命中率、建模任务时长/状态计数；
+  `backend/scripts/ci_check.ps1` 与 `.github/workflows/backend-ci.yml` 跑同一套命令
+  （`ruff check app tests` + `pytest --cov --cov-fail-under=60`，CI 带 mysql+redis service）。
 - **几何双轨（渲染轨 / 分析轨）**：每个交付包同时含两套几何，注册进库时分别写到
   `metadata.source_file`（渲染轨 `L*.glb`，含内部壁、非水密、渲染端必须 `DoubleSide`）与
   `metadata.shell_file`（分析轨 `shells/L*_shell.glb`，闭合壳），另存 `metadata.lod_urls`
