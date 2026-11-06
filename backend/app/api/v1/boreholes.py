@@ -1,3 +1,5 @@
+"""钻孔端点：项目钻孔列表与手工 CRUD（分层整表替换见 PUT segments）。"""
+
 from fastapi import APIRouter, Response, status
 
 from app.api.dependencies import DbSession

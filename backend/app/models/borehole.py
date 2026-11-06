@@ -1,3 +1,9 @@
+"""钻孔 ORM：孔口(boreholes) 与分层段(borehole_segments)。
+
+坐标语义：x/y 是高斯-克吕格投影坐标（前端再减项目原点转 Three.js 坐标），
+z 是标高；深度(top/bottom/thickness)一律是孔口向下的米制深度。
+"""
+
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import JSON, Double, Float, ForeignKey, Integer, String, UniqueConstraint
@@ -11,6 +17,7 @@ if TYPE_CHECKING:
 
 
 class Borehole(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """一个钻孔：孔口位置 + 总深 + 状态；分层数据在 ``segments`` 里。"""
     __tablename__ = "boreholes"
     __table_args__ = (UniqueConstraint("project_id", "code", name="uq_project_borehole_code"),)
 
@@ -35,6 +42,7 @@ class Borehole(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class BoreholeSegment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """钻孔的一个分层段（层名、顶/底深、厚度与展示颜色）。"""
     __tablename__ = "borehole_segments"
 
     borehole_id: Mapped[str] = mapped_column(

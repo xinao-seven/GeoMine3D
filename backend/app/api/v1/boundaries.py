@@ -1,3 +1,5 @@
+"""矿区边界端点：井田边界/工作面范围折线（CAD 导出的 shp）。"""
+
 from fastapi import APIRouter
 
 from app.api.dependencies import DbSession

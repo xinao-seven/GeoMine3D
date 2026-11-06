@@ -145,6 +145,7 @@ def vertex_attribute_arrays(layer: "LayerResultLike") -> dict[str, np.ndarray]:
 
 
 def write_catalog(catalog: dict, output_path: Path) -> None:
+    """写出 catalog.json（缩进 JSON，前端/后端注册都读它）。"""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
         json.dumps(catalog, ensure_ascii=False, indent=2), encoding="utf-8"

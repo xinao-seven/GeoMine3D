@@ -1,3 +1,10 @@
+"""全局配置（pydantic-settings）。
+
+所有配置项都可用环境变量 / backend/.env 覆盖（大小写不敏感），默认值面向
+"本机 docker compose 起 MySQL+Redis" 的开发场景。相对路径一律相对 backend/
+目录解析（见各 *path 属性），使 uvicorn 从任意工作目录启动行为一致。
+"""
+
 from functools import lru_cache
 from pathlib import Path
 
@@ -8,6 +15,8 @@ BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
+    """应用配置。字段分组与默认值见模块 docstring 与各组行内注释。"""
+
     model_config = SettingsConfigDict(
         env_file=BACKEND_DIR / ".env",
         env_file_encoding="utf-8",
@@ -68,36 +77,43 @@ class Settings(BaseSettings):
 
     @property
     def log_level_name(self) -> str:
+        """日志级别名（统一大写，供 dictConfig 使用）。"""
         return self.log_level.upper()
 
     @property
     def upload_path(self) -> Path:
+        """运行期上传根目录（建模任务输入/日志），绝对化到 backend/。"""
         path = self.upload_dir
         return path if path.is_absolute() else BACKEND_DIR / path
 
     @property
     def source_data_path(self) -> Path:
+        """业务源数据目录（server/data），绝对化到仓库根。"""
         path = self.source_data_dir
         return path if path.is_absolute() else (BACKEND_DIR / path).resolve()
 
     @property
     def source_model_path(self) -> Path:
+        """模型文件唯一根目录（server/static/models），绝对化到仓库根。"""
         path = self.source_model_dir
         return path if path.is_absolute() else (BACKEND_DIR / path).resolve()
 
     @property
     def source_model_catalog_path(self) -> Path:
+        """锦界交付包 catalog.json 路径。"""
         path = self.source_model_catalog
         return path if path.is_absolute() else (BACKEND_DIR / path).resolve()
 
     @property
     def frontend_dist_path(self) -> Path:
+        """前端构建产物目录（serve_frontend=true 时由后端托管）。"""
         path = self.frontend_dist_dir
         return path if path.is_absolute() else (BACKEND_DIR / path).resolve()
 
 
 @lru_cache
 def get_settings() -> Settings:
+    """进程级单例配置（lru_cache 保证只读一次 .env/环境变量）。"""
     return Settings()
 
 

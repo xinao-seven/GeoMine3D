@@ -1,3 +1,5 @@
+"""工作面与导入历史 ORM：开采工作面(working_faces) 与导入流水(import_runs)。"""
+
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import JSON, Float, ForeignKey, String, Text, UniqueConstraint
@@ -11,6 +13,7 @@ if TYPE_CHECKING:
 
 
 class WorkingFace(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """一个开采工作面（状态/尺寸/煤层；储量估算按它的圈闭范围统计）。"""
     __tablename__ = "working_faces"
     __table_args__ = (UniqueConstraint("project_id", "code", name="uq_project_working_face_code"),)
 
@@ -33,6 +36,7 @@ class WorkingFace(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class ImportRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """一次数据导入的流水（来源/状态/摘要），含建模引擎写入的完成记录。"""
     __tablename__ = "import_runs"
 
     project_id: Mapped[str] = mapped_column(

@@ -66,10 +66,12 @@ PRESERVED_KEYS = ("act_params", "source", "workings", "workings_glb", "consumer"
 
 
 def _read_json(path: Path) -> dict[str, Any]:
+    """读 JSON 文件。"""
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _load_surfaces(npz_path: Path) -> dict[str, Any]:
+    """读取曲面 npz 并转成 build_web_package 的入参字典(缺字段即报错)。"""
     data = np.load(npz_path, allow_pickle=True)
     missing = [k for k in ("x", "y", "corrected", "latent_std", "pinchout_masks") if k not in data]
     if missing:
@@ -86,6 +88,7 @@ def _load_surfaces(npz_path: Path) -> dict[str, Any]:
 
 
 def _layer_names_from_catalog(catalog: dict[str, Any]) -> list[str]:
+    """从旧 catalog 取层名(重建需要与原包相同的层序)。"""
     names = [str(layer.get("name_cn") or layer.get("code")) for layer in catalog.get("layers") or []]
     if not names:
         raise SystemExit("旧 catalog 没有 layers,无法确定层名;请提供 --layer-names")
@@ -144,6 +147,7 @@ def rebuild(
     z_origin_m: float | None,
     z_scale: float | None,
 ) -> dict[str, Any]:
+    """按既有曲面 npz 重建交付包(保持原 z_origin 与既有元数据,不动数据库)。"""
     package_dir = package_dir.resolve()
     catalog_path = package_dir / "catalog.json"
     old_catalog = _read_json(catalog_path)
@@ -202,6 +206,7 @@ def rebuild(
 
 
 def main(argv: list[str] | None = None) -> int:
+    """CLI 入口:解析参数 → rebuild() → ``--project-id`` 时同步数据库注册。"""
     parser = argparse.ArgumentParser(description="按曲面 npz 重建交付包(双轨产物)并同步注册")
     parser.add_argument("--package", required=True, help="交付包目录(含 catalog.json)")
     parser.add_argument("--npz", required=True, help="曲面 npz(x/y/corrected/latent_std/pinchout_masks)")

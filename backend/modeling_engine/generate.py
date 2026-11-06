@@ -37,10 +37,12 @@ INTERP_RE = re.compile(r"界面插值 (\d+)/(\d+)")
 
 
 def _log(message: str) -> None:
+    """普通日志行（后端写进 engine.log 并节流刷新任务 message）。"""
     print(f"[modeling] {message}", flush=True)
 
 
 def _emit(stage: str, percent: float, message: str) -> None:
+    """输出一条结构化进度事件行（后端解析后写 Redis 并经 SSE 推送）。"""
     payload = {
         "stage": stage,
         "percent": round(max(0.0, min(100.0, percent)), 1),
@@ -63,6 +65,7 @@ class _Reporter:
         self.export_done = 0
 
     def mark(self, stage: str, percent: float, message: str) -> None:
+        """推进百分比（只升不降）并发出一帧进度。"""
         self.percent = max(self.percent, float(percent))
         _emit(stage, self.percent, message)
 
@@ -101,6 +104,11 @@ def run(
     z_origin_m: float | None = None,
     surfaces_npz_path: Path | None = None,
 ) -> dict:
+    """执行完整建模管线，返回写入 ``result_path`` 的摘要 dict。
+
+    阶段顺序：解析输入 → 界面点/共享网格 → 共享趋势+ARD GP 插值 → 保序投影/
+    尖灭折叠（负厚度即失败）→ 组装交付包。``z_origin_m`` 为空时取孔口高程均值。
+    """
     from modeling_engine import data_io, package_builder, surfaces
 
     reporter = _Reporter()
@@ -214,6 +222,7 @@ def run(
 
 
 def main(argv: list[str] | None = None) -> int:
+    """CLI 入口：解析参数 → run()；任何异常打印堆栈并以 1 退出。"""
     parser = argparse.ArgumentParser(description="钻孔 Excel → 三维地质模型交付包")
     parser.add_argument("--strata", required=True, help="14层汇总长表 xlsx")
     parser.add_argument("--location", required=True, help="钻孔位置 xlsx")

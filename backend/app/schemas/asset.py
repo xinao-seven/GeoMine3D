@@ -1,12 +1,17 @@
+"""模型资产与版本的请求/响应模型。"""
+
 from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+# stratum=地层 / working_face=工作面地表 / roadway=井巷 / other=自定义上传
 ModelType = Literal["stratum", "working_face", "other", "roadway"]
 
 
 class ModelAssetCreate(BaseModel):
+    """登记新资产（文件通过 ``POST /models/{id}/versions`` 另行上传）。"""
+
     name: str = Field(min_length=1, max_length=160)
     model_type: ModelType
     metadata_json: dict[str, Any] = Field(default_factory=dict)

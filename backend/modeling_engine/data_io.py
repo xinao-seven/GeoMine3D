@@ -27,6 +27,7 @@ class DataFormatError(ValueError):
 
 
 def _read_rows(path: Path) -> list[dict[str, Any]]:
+    """读 Excel 首个工作表为字典行列表（首行作表头，跳过全空行）。"""
     workbook = load_workbook(path, read_only=True, data_only=True)
     try:
         sheet = workbook.active
@@ -40,14 +41,17 @@ def _read_rows(path: Path) -> list[dict[str, Any]]:
 
 
 def normalize_match_key(value: Any) -> str:
+    """钻孔名匹配键：去空白、转大写、只留字母数字（与后端导入服务一致）。"""
     return "".join(char for char in str(value or "").strip().upper() if char.isalnum())
 
 
 def canonical_code(value: Any) -> str:
+    """展示用孔号：仅去空白并转大写。"""
     return re.sub(r"\s+", "", str(value or "")).upper()
 
 
 def _as_float(value: Any, field_label: str, context: str) -> float:
+    """单元格 → 有限浮点数，失败时抛带上下文的 DataFormatError。"""
     try:
         result = float(value)
     except (TypeError, ValueError) as exc:
@@ -58,6 +62,7 @@ def _as_float(value: Any, field_label: str, context: str) -> float:
 
 
 def _pick(row: dict[str, Any], names: tuple[str, ...]) -> Any:
+    """按候选表头名取第一个非空值（兼容中英文表头）。"""
     for name in names:
         if name in row and row[name] not in (None, ""):
             return row[name]
@@ -74,15 +79,19 @@ class StrataHole:
 
 @dataclass
 class StrataData:
+    """整份分层表解析结果（``convention`` 记录判定出的列语义）。"""
+
     convention: str
     holes: dict[str, StrataHole]  # 匹配键 → 孔
 
     @property
     def hole_count(self) -> int:
+        """有效钻孔数量。"""
         return len(self.holes)
 
 
 def detect_strata_convention(rows: list[dict[str, Any]]) -> str:
+    """推断分层表 (深度, 厚度) 两列的真实语义（判据见模块 docstring）。"""
     pairs: list[tuple[float, float]] = []
     for row in rows:
         if not normalize_match_key(_pick(row, ("钻孔名称", "name", "borehole_id"))):
@@ -97,6 +106,7 @@ def detect_strata_convention(rows: list[dict[str, Any]]) -> str:
 
 
 def parse_strata(path: Path) -> StrataData:
+    """解析分层长表为逐孔分层数据（自动判别列语义，负厚度/缺列直接报错）。"""
     rows = _read_rows(path)
     if not rows:
         raise DataFormatError(f"{path.name}: 分层表没有数据行")
@@ -198,9 +208,9 @@ class ModelInputs:
 
     boreholes: pd.DataFrame      # borehole_id, x, y, z
     intervals: pd.DataFrame      # borehole_id, layer_name, top_depth, bottom_depth
-    layers: list[str]
+    layers: list[str]            # 自上而下的层序
     display_codes: dict[str, str]  # 匹配键 → 展示编号
-    skipped: list[dict[str, str]]
+    skipped: list[dict[str, str]]  # 被排除的孔及原因
 
 
 def build_model_inputs(

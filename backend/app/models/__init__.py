@@ -1,3 +1,5 @@
+"""全部 SQLAlchemy ORM 模型（alembic env 以 ``app.models`` 汇总元数据）。"""
+
 from app.models.asset import GeologicalLayer, ModelAsset, ModelVersion
 from app.models.borehole import Borehole, BoreholeSegment
 from app.models.modeling import ModelingJob

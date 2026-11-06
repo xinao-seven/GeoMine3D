@@ -1,3 +1,9 @@
+"""项目 CRUD 服务。
+
+删除项目时会连带清理建模交付包目录与任务输入/日志（``collect_project_files``），
+因为 model_assets 有 ``ondelete=SET NULL`` 外键，文件不会随行级联删除。
+"""
+
 from __future__ import annotations
 
 import shutil
@@ -18,11 +24,14 @@ logger = get_logger("app.project")
 
 
 class ProjectService:
+    """项目聚合根的增删改查（分页列表 / 详情 / 更新 / 级联删除）。"""
+
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.repository = ProjectRepository(session)
 
     async def list(self, *, page: int, page_size: int) -> PageResponse[ProjectRead]:
+        """分页列表（按更新时间倒序）。"""
         projects = await self.repository.list(offset=(page - 1) * page_size, limit=page_size)
         total = await self.repository.count()
         return PageResponse(
@@ -31,12 +40,14 @@ class ProjectService:
         )
 
     async def get_or_404(self, project_id: str) -> Project:
+        """按 ID 取项目，不存在抛 ``PROJECT_NOT_FOUND``。"""
         project = await self.repository.get(project_id)
         if project is None:
             raise AppError("PROJECT_NOT_FOUND", "项目不存在", status_code=404)
         return project
 
     async def create(self, payload: ProjectCreate) -> Project:
+        """新建项目（本地坐标系默认值；建模/导入流程会再回填原点与比例）。"""
         project = Project(**payload.model_dump())
         self.repository.add(project)
         await self.session.commit()
@@ -44,6 +55,7 @@ class ProjectService:
         return project
 
     async def update(self, project_id: str, payload: ProjectUpdate) -> Project:
+        """部分更新（只覆盖请求里出现的字段）。"""
         project = await self.get_or_404(project_id)
         for field, value in payload.model_dump(exclude_unset=True).items():
             setattr(project, field, value)
@@ -52,6 +64,7 @@ class ProjectService:
         return project
 
     async def delete(self, project_id: str) -> None:
+        """删除项目行并清理建模产物目录（交付包/任务输入与日志）。"""
         project = await self.get_or_404(project_id)
         job_ids = (
             await self.session.scalars(

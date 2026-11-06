@@ -52,6 +52,7 @@ NOISY_LOGGERS = {
 
 
 def build_logging_config() -> dict:
+    """组装 dictConfig 字典（级别/降噪/格式全部由 settings 驱动）。"""
     level = settings.log_level.upper()
     # SQL 语句是否输出取决于 DB_ECHO,而不是 DEBUG,避免调试模式下刷屏。
     sqlalchemy_level = "INFO" if settings.db_echo else "WARNING"
@@ -121,4 +122,5 @@ def setup_logging() -> None:
 
 
 def get_logger(name: str) -> logging.Logger:
+    """取命名 logger（``app.*`` 前缀才会按配置输出，根级只留 WARNING）。"""
     return logging.getLogger(name)

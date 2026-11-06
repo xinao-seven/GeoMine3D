@@ -31,14 +31,17 @@ TERMINAL_STATUSES = ("completed", "failed")
 
 
 def snapshot_key(job_id: str) -> str:
+    """当前进度快照 Hash 的键。"""
     return keys("modeling", "progress", job_id)
 
 
 def stream_key(job_id: str) -> str:
+    """进度事件 Stream 的键（断线续传用）。"""
     return keys("modeling", "progress", "stream", job_id)
 
 
 def _normalize(payload: dict[str, Any]) -> dict[str, Any]:
+    """把任意来源的进度字段裁成统一的 {stage, percent, message} 结构。"""
     percent = payload.get("percent", 0)
     try:
         value = float(percent)
@@ -110,6 +113,7 @@ async def read_events(
 
 
 def json_dumps(data: dict[str, Any]) -> str:
+    """SSE data 行的 JSON 序列化（保留中文）。"""
     return json.dumps(data, ensure_ascii=False)
 
 
@@ -136,6 +140,7 @@ async def final_progress(job: Any) -> dict[str, Any]:
 
 
 def is_terminal(status: str | None) -> bool:
+    """任务状态是否已终态（completed/failed），终态后 SSE 推 done 帧并收尾。"""
     return str(status) in TERMINAL_STATUSES
 
 

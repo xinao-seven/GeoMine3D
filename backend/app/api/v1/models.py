@@ -1,3 +1,9 @@
+"""模型资产端点：资产 CRUD、双轨文件下载（render/shell，带 ETag 条件请求）与版本上传。
+
+下载链路里的缓存/条件请求逻辑（``_file_etag`` / ``_etag_matches``）是 HTTP 关注点，
+留在路由层；数据访问与 404 语义在 ``workspace_service.ModelService``。
+"""
+
 import hashlib
 from pathlib import Path
 from typing import Annotated, Literal
@@ -7,7 +13,6 @@ from fastapi.responses import FileResponse
 
 from app.api.dependencies import DbSession
 from app.core.exceptions import AppError
-from app.models.asset import ModelVersion
 from app.schemas.asset import (
     ModelAssetCreate,
     ModelAssetRead,
@@ -85,11 +90,7 @@ async def get_model_file(
       否则分析代码会与内部壁求交得到错误结果)。
     """
     asset = await ModelService(session).get_or_404(model_id)
-    if not asset.current_version_id:
-        raise AppError("MODEL_FILE_NOT_FOUND", "模型尚未上传文件", status_code=404)
-    version = await session.get(ModelVersion, asset.current_version_id)
-    if version is None:
-        raise AppError("MODEL_FILE_NOT_FOUND", "模型版本不存在", status_code=404)
+    version = await ModelService(session).get_current_version_or_404(asset)
     metadata = asset.metadata_json or {}
     relative_path = resolve_variant_path(metadata, variant, version.file_path)
     if relative_path is None:

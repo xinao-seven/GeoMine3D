@@ -19,6 +19,7 @@ LOCATION = Path("../server/data/location/钻孔位置.xlsx")
 
 
 def main() -> int:
+    """端到端冒烟:上传样例 Excel 建模 → 轮询 SSE 进度 → 校验产物与注册结果。"""
     keep = "--keep" in sys.argv
     with httpx.Client(timeout=120) as client:
         health = client.get(f"{BASE}/health")

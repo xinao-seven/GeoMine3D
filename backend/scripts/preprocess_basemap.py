@@ -125,6 +125,7 @@ def to_grayscale(surface: np.ndarray, zmin: float | None, zmax: float | None) ->
 
 
 def main() -> None:
+    """把 UTM49N DEM 重投影到矿区 GK37 带,输出底图 jpg+json 到模型根 basemap/。"""
     args = parse_args()
     source = Path(args.source)
     if not source.exists():

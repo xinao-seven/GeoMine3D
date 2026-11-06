@@ -1,3 +1,5 @@
+"""场景配置快照的请求/响应模型（结构由前端序列化/解释，后端只透传）。"""
+
 from datetime import datetime
 from typing import Any
 
@@ -5,6 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class SceneConfigBase(BaseModel):
+    """场景快照字段（相机/图层/剖切/炸开/渲染设置，均为前端 JSON 结构）。"""
+
     name: str = Field(min_length=1, max_length=120)
     camera_json: dict[str, Any] = Field(default_factory=dict)
     layers_json: list[dict[str, Any]] = Field(default_factory=list)

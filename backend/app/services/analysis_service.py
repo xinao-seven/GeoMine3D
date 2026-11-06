@@ -1,7 +1,8 @@
 """项目统计分析服务。
 
 数值核心抽成纯函数，便于在不依赖数据库的情况下单元测试；
-数据库聚合部分只负责取数，再把行记录交给纯函数计算。
+数据库聚合部分（本模块顶部的 *fetch/load* 系列函数）只负责取数，
+把 ORM 行转换成字典后再交给下面的纯函数计算。
 """
 
 from __future__ import annotations
@@ -10,6 +11,159 @@ import math
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.exceptions import AppError
+from app.models.asset import ModelAsset, ModelVersion
+from app.models.borehole import Borehole, BoreholeSegment
+from app.models.project import Project
+from app.models.workspace import WorkingFace
+
+# ---------------------------------------------------------------------------
+# 取数入口（被 app/api/v1/analysis.py 调用；缓存编排仍留在 API 层）
+# ---------------------------------------------------------------------------
+
+
+async def fetch_borehole_data(
+    session: AsyncSession, project_id: str
+) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]], list[dict[str, Any]]]:
+    """取项目钻孔与分层，返回 ``(钻孔列表, 按钻孔分组的分层, 平铺分层)``。
+
+    分层按 ``top_depth`` 升序返回，保证虚拟钻孔/储量估算逐层配对时顺序稳定。
+    """
+    borehole_rows = (
+        await session.scalars(
+            select(Borehole).where(Borehole.project_id == project_id).order_by(Borehole.code)
+        )
+    ).all()
+    segment_rows = (
+        await session.scalars(
+            select(BoreholeSegment)
+            .join(Borehole, BoreholeSegment.borehole_id == Borehole.id)
+            .where(Borehole.project_id == project_id)
+            .order_by(BoreholeSegment.top_depth)
+        )
+    ).all()
+
+    segments_by_borehole: dict[str, list[dict[str, Any]]] = {}
+    flat_segments: list[dict[str, Any]] = []
+    for seg in segment_rows:
+        item = {
+            "borehole_id": seg.borehole_id,
+            "layer_name": seg.layer_name,
+            "top_depth": seg.top_depth,
+            "bottom_depth": seg.bottom_depth,
+            "thickness": seg.thickness,
+            "color": seg.color,
+        }
+        segments_by_borehole.setdefault(seg.borehole_id, []).append(item)
+        flat_segments.append(item)
+
+    boreholes = [
+        {"id": b.id, "code": b.code, "name": b.name, "x": b.x, "y": b.y, "total_depth": b.total_depth}
+        for b in borehole_rows
+    ]
+    return boreholes, segments_by_borehole, flat_segments
+
+
+async def load_overview_inputs(
+    session: AsyncSession, project_id: str
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], int]:
+    """概览统计取数：钻孔、分层、工作面与模型资产数量（已转为纯函数入参字典）。"""
+    borehole_rows = (
+        await session.scalars(
+            select(Borehole).where(Borehole.project_id == project_id).order_by(Borehole.code)
+        )
+    ).all()
+    segment_rows = (
+        await session.scalars(
+            select(BoreholeSegment)
+            .join(Borehole, BoreholeSegment.borehole_id == Borehole.id)
+            .where(Borehole.project_id == project_id)
+            .order_by(BoreholeSegment.top_depth)
+        )
+    ).all()
+    face_rows = (
+        await session.scalars(
+            select(WorkingFace).where(WorkingFace.project_id == project_id).order_by(WorkingFace.code)
+        )
+    ).all()
+    model_count = await session.scalar(
+        select(func.count()).select_from(ModelAsset).where(ModelAsset.project_id == project_id)
+    )
+
+    segments = [
+        {
+            "borehole_id": seg.borehole_id,
+            "layer_name": seg.layer_name,
+            "top_depth": seg.top_depth,
+            "bottom_depth": seg.bottom_depth,
+            "thickness": seg.thickness,
+        }
+        for seg in segment_rows
+    ]
+    faces = [
+        {
+            "code": face.code,
+            "name": face.name,
+            "status": face.status,
+            "length": face.length,
+            "width": face.width,
+        }
+        for face in face_rows
+    ]
+    boreholes = [
+        {
+            "code": b.code,
+            "name": b.name,
+            "total_depth": b.total_depth,
+        }
+        for b in borehole_rows
+    ]
+    return boreholes, segments, faces, int(model_count or 0)
+
+
+async def load_section_context(
+    session: AsyncSession, project_id: str
+) -> tuple[Project, list[tuple[str, dict[str, Any], str, str]], list[tuple[str, str]]]:
+    """剖面分析取数：项目行(原点) + 分层资产当前版本的文件行。
+
+    返回 ``(project, layer_rows, dataset)``：
+
+    - ``layer_rows``: ``(资产名, metadata, storage_scope, 文件相对路径)``，
+      交给 ``section_service.resolve_layer_files`` 解析双轨几何;
+    - ``dataset``: ``(文件相对路径, 内容哈希)``，作为分析缓存键的一部分，
+      交付包重建(内容变化)后缓存自然失效。
+    """
+    project = await session.get(Project, project_id)
+    if project is None:
+        raise AppError("PROJECT_NOT_FOUND", "项目不存在", status_code=404)
+
+    rows = (
+        await session.execute(
+            select(
+                ModelAsset.name,
+                ModelAsset.metadata_json,
+                ModelVersion.storage_scope,
+                ModelVersion.file_path,
+                ModelVersion.content_hash,
+            )
+            .join(ModelVersion, ModelVersion.id == ModelAsset.current_version_id)
+            .where(ModelAsset.project_id == project_id, ModelAsset.model_type == "stratum")
+        )
+    ).all()
+    layer_rows = [
+        (row.name, row.metadata_json or {}, row.storage_scope, row.file_path) for row in rows
+    ]
+    dataset = [(row.file_path, row.content_hash or "") for row in rows]
+    return project, layer_rows, dataset
+
+
+# ---------------------------------------------------------------------------
+# 纯函数（不依赖数据库，单测直接覆盖）
+# ---------------------------------------------------------------------------
 
 
 def thickness_distribution(
@@ -106,6 +260,7 @@ def depth_distribution(
 def _histogram(
     values: Sequence[float], lo: float, hi: float, target_bins: int
 ) -> list[dict[str, Any]]:
+    """等宽直方图：箱宽向上取整到 1/2/2.5/5/10 × 10^k 的“好看”刻度。"""
     if hi <= lo:
         return [
             {
@@ -411,6 +566,7 @@ def idw_grid(
 
 
 def _nice_step(raw: float) -> float:
+    """把任意步长取整到 1/2/2.5/5/10 × 10^k（等值线默认步长用）。"""
     if raw <= 0:
         return 1.0
     magnitude = 10 ** math.floor(math.log10(raw))
@@ -450,6 +606,7 @@ def marching_squares(
         return float(grid[row][col])
 
     def edge_point(row: int, col: int, edge: int, level: float) -> tuple[float, float]:
+        """求 level 与单元格某条边的交点坐标（线性插值）。"""
         x0 = xmin + col * step_x
         y0 = ymin + row * step_y
         if edge == 0:  # 下边 (row,col)-(row,col+1)

@@ -48,22 +48,27 @@ CONSUMER_NAME = f"{socket.gethostname()}-{os.getpid()}"
 
 
 def stream_key() -> str:
+    """待执行任务 Stream 的键。"""
     return keys("modeling", "jobs")
 
 
 def delayed_key() -> str:
+    """退避重试 ZSet 的键（score=可见时间戳）。"""
     return keys("modeling", "delayed")
 
 
 def dead_key() -> str:
+    """死信 Stream 的键。"""
     return keys("modeling", "dead")
 
 
 def lease_key(job_id: str) -> str:
+    """任务运行租约的键（值=持有者 token）。"""
     return keys("modeling", "lease", job_id)
 
 
 def slot_key(index: int) -> str:
+    """第 index 个分布式并发槽位的键。"""
     return keys("modeling", "slot", index)
 
 
@@ -141,6 +146,7 @@ async def refresh_lease(job_id: str, token: str) -> bool:
 
 
 async def release_lease(job_id: str, token: str) -> None:
+    """释放租约（只释放自己持有的；被别人接手后不动）。"""
     redis = await get_redis()
     if redis is None:
         return
@@ -188,6 +194,7 @@ async def refresh_slot(index: int) -> bool:
 
 
 async def release_slot(index: int) -> None:
+    """释放并发槽位（任务结束/异常时都要调用）。"""
     redis = await get_redis()
     if redis is None:
         return
@@ -269,6 +276,7 @@ class ModelingWorker:
 
     # -------------------------------------------------------------- 生命周期
     async def start(self) -> bool:
+        """启动 consume/promote 两个循环；Redis 不可用返回 False（进程内降级）。"""
         redis = await get_redis()
         if redis is None:
             logger.warning("Redis 未启用,建模任务队列 worker 不启动(走进程内降级路径)")
@@ -284,6 +292,7 @@ class ModelingWorker:
         return True
 
     async def stop(self) -> None:
+        """停止所有循环并等待任务收尾（lifespan shutdown 调用）。"""
         self._stop.set()
         for task in self._tasks:
             task.cancel()
@@ -294,6 +303,7 @@ class ModelingWorker:
 
     # ------------------------------------------------------------------ 循环
     async def _consume_loop(self) -> None:
+        """主循环：优先认领僵死消息（XAUTOCLAIM），否则读新消息（XREADGROUP）。"""
         while not self._stop.is_set():
             redis = await get_redis()
             if redis is None:
@@ -346,6 +356,7 @@ class ModelingWorker:
     # ------------------------------------------------------------- 消息获取
     @staticmethod
     def _first(messages: Any) -> tuple[str, str] | None:
+        """从 XREADGROUP/XAUTOCLAIM 的返回结构里取第一条 ``(entry_id, job_id)``。"""
         for _stream, entries in messages or []:
             for entry_id, fields in entries:
                 job_id = str(fields.get("job_id") or "").strip()
@@ -354,6 +365,7 @@ class ModelingWorker:
         return None
 
     async def _read_new(self, redis) -> tuple[str, str] | None:
+        """阻塞读一条新投递的任务（1s 超时，避免停机信号被卡住）。"""
         messages = await redis.xreadgroup(
             GROUP,
             self._consumer,
@@ -388,6 +400,11 @@ class ModelingWorker:
         await redis.xdel(stream_key(), entry_id)
 
     async def _handle(self, redis, message: tuple[str, str]) -> None:
+        """执行一条消息：抢租约 → 等并发槽位 → 跑任务 → 按结果 ACK/重试/死信。
+
+        任何路径最终都会 ACK（包括跳过与失败安排重试后），消息不会滞留在 PEL；
+        执行期间由 ``_heartbeat`` 协程同时续租约与 DB 心跳。
+        """
         from app.core.metrics import record_job_result
         from app.services.modeling_service import JobOutcome, run_modeling_job
 
@@ -458,6 +475,7 @@ _worker: ModelingWorker | None = None
 
 
 async def start_modeling_worker() -> bool:
+    """启动进程级单例 worker（已启动则幂等返回 True）。"""
     global _worker
     if _worker is not None:
         return True
@@ -469,6 +487,7 @@ async def start_modeling_worker() -> bool:
 
 
 async def stop_modeling_worker() -> None:
+    """停掉单例 worker（未启动时为空操作）。"""
     global _worker
     worker, _worker = _worker, None
     if worker is not None:

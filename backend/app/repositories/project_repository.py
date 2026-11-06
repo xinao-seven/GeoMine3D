@@ -1,3 +1,5 @@
+"""项目表的数据访问层（目前唯一使用 repository 模式的域；其余 service 直接持会话查询）。"""
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -5,6 +7,8 @@ from app.models.project import Project
 
 
 class ProjectRepository:
+    """projects 表的封装（列表/计数/取行/增删，commit 交给上层 service）。"""
+
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 

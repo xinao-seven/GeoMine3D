@@ -45,6 +45,7 @@ class BrowserSession:
         self._pending: dict[str, asyncio.Future[dict[str, Any]]] = {}
 
     def summary(self) -> dict[str, Any]:
+        """会话摘要（/remote/sessions 返回与 pick 报错时的 available 列表）。"""
         return {
             "id": self.id,
             "projectId": self.project_id,
@@ -54,10 +55,12 @@ class BrowserSession:
         }
 
     async def send(self, payload: dict[str, Any]) -> None:
+        """串行化下发一条 JSON 消息（避免并发写同一 WebSocket）。"""
         async with self._send_lock:
             await self.websocket.send_json(payload)
 
     async def invoke(self, command: str, args: list[Any], timeout_s: float) -> Any:
+        """下发命令并等待浏览器回包，超时/断线/执行失败都转成 AppError。"""
         invoke_id = secrets.token_hex(8)
         future: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
         self._pending[invoke_id] = future
@@ -86,11 +89,13 @@ class BrowserSession:
         return payload.get("result")
 
     def resolve(self, message: dict[str, Any]) -> None:
+        """按回包里的 invoke id 唤醒等待中的 Future。"""
         future = self._pending.get(str(message.get("id") or ""))
         if future is not None and not future.done():
             future.set_result(message)
 
     def fail_all(self, reason: str) -> None:
+        """会话断开时让所有等待中的命令立即失败（而不是干等到超时）。"""
         for future in self._pending.values():
             if not future.done():
                 future.set_exception(ConnectionError(reason))
@@ -98,18 +103,23 @@ class BrowserSession:
 
 
 class SessionRegistry:
+    """在线浏览器会话表（进程内单例 ``registry``）。"""
+
     def __init__(self) -> None:
         self._sessions: dict[str, BrowserSession] = {}
 
     def register(self, websocket: Any, project_id: str) -> BrowserSession:
+        """WebSocket 接入时登记新会话。"""
         session = BrowserSession(websocket, project_id)
         self._sessions[session.id] = session
         return session
 
     def remove(self, session: BrowserSession) -> None:
+        """会话断开后移除。"""
         self._sessions.pop(session.id, None)
 
     def list(self) -> list[BrowserSession]:
+        """当前全部在线会话。"""
         return list(self._sessions.values())
 
     def pick(self, project_id: str | None, session_id: str | None) -> BrowserSession:
@@ -184,11 +194,13 @@ async def session_loop(session: BrowserSession, registry: SessionRegistry) -> No
 
 
 def ensure_remote_enabled() -> None:
+    """远程调试总开关守卫（settings.remote_debug_enabled=false 时 403）。"""
     if not settings.remote_debug_enabled:
         raise AppError("REMOTE_DEBUG_DISABLED", "远程调试已在后端配置中关闭", status_code=403)
 
 
 class InvokeRequest(BaseModel):
+    """MCP 服务转发来的命令调用请求。"""
     command: str = Field(min_length=1, description="__geomine 上的方法名（白名单内）")
     args: list[Any] = Field(default_factory=list, description="位置参数列表，逐个传给方法")
     project_id: str | None = Field(default=None, description="目标项目 id（会话注册时携带）")
@@ -197,12 +209,14 @@ class InvokeRequest(BaseModel):
 
 
 class InvokeResponse(BaseModel):
+    """命令执行结果（错误以 AppError 形式走统一错误体，不进这里）。"""
     ok: bool
     result: Any = None
 
 
 @router.post("/remote/invoke", response_model=InvokeResponse)
 async def remote_invoke(request: InvokeRequest) -> InvokeResponse:
+    """HTTP 命令入口（MCP 服务调用）：选定会话 → 下发 → 等回包。"""
     ensure_remote_enabled()
     session = registry.pick(request.project_id, request.session_id)
     result = await session.invoke(request.command, request.args, request.timeout_s)
@@ -211,12 +225,14 @@ async def remote_invoke(request: InvokeRequest) -> InvokeResponse:
 
 @router.get("/remote/sessions", response_model=DataResponse[list[dict[str, Any]]])
 async def list_remote_sessions() -> DataResponse[list[dict[str, Any]]]:
+    """当前在线的浏览器会话列表（排查“为什么找不到会话”用）。"""
     ensure_remote_enabled()
     return DataResponse(data=[s.summary() for s in registry.list()])
 
 
 @router.websocket("/remote/ws")
 async def remote_ws(websocket: WebSocket, projectId: str = "default") -> None:
+    """浏览器接入端点：注册会话、发 hello、进入消息循环直到断开。"""
     if not settings.remote_debug_enabled:
         await websocket.close(code=1008, reason="remote debug disabled")
         return

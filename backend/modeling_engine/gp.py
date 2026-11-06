@@ -22,6 +22,8 @@ from sklearn.gaussian_process.kernels import (
 
 
 class ExtendedConfig:
+    """残差 GP 的超参初值（与论文 route_a_extended_validation 一致）。"""
+
     random_state: int = 42
     initial_length_scale_m: float = 800.0
     initial_noise_level: float = 8.0
@@ -29,6 +31,11 @@ class ExtendedConfig:
 
 
 def make_gp(kind: str, cfg: ExtendedConfig) -> GaussianProcessRegressor:
+    """构造逐界面残差 GP：常数核 × 空间核 + 白噪声核，y 归一化。
+
+    ``kind`` 选择空间核：``matern_ard``（x/y 各自学习长度尺度，默认）、
+    ``rbf``（各向同性高斯核）、``matern_iso``（各向同性 Matérn ν=1.5）。
+    """
     if kind == "matern_ard":
         spatial = Matern(
             np.array([cfg.initial_length_scale_m, cfg.initial_length_scale_m]),
@@ -57,12 +64,14 @@ class SharedTrend:
     """各界面共享一个截距 + 平面线性项的趋势模型。"""
 
     def __init__(self, interfaces: list[str]):
+        """记录界面名 → 设计矩阵列的映射，coef 由 ``shared_trend`` 拟合填入。"""
         self.interfaces = interfaces
         self.interface_to_idx = {name: idx for idx, name in enumerate(interfaces)}
         self.center = np.zeros(2)
         self.coef = np.zeros(len(interfaces) + 2)
 
     def predict(self, interface: str, xy: np.ndarray) -> np.ndarray:
+        """给定界面的趋势面预测值（xy 为米制投影坐标）。"""
         xy = np.asarray(xy, dtype=float)
         xy_km = (xy - self.center) / 1000.0
         return self.coef[self.interface_to_idx[interface]] + xy_km @ self.coef[-2:]

@@ -198,6 +198,7 @@ def _chain_segments(
 
 
 def _loop_area_2d(points: Sequence[tuple[float, float]]) -> float:
+    """鞋带公式算环的面积（用于丢弃尖灭面贴合产生的发丝碎环）。"""
     area = 0.0
     for i in range(len(points)):
         x1, y1 = points[i]

@@ -1,3 +1,5 @@
+"""v1 路由汇总：各域 router 在此集中注册（前缀/标签也在这里统一管理）。"""
+
 from fastapi import APIRouter
 
 from app.api.v1 import (

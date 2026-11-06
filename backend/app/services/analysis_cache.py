@@ -42,6 +42,7 @@ def cache_key(namespace: str, parts: Sequence[Any]) -> str:
 
 
 def lock_key(key: str) -> str:
+    """single-flight 锁的键（在缓存键后追加 ``:lock``）。"""
     return f"{key}:lock"
 
 
@@ -98,6 +99,7 @@ async def cached_result(
 
 
 async def _read(redis, key: str) -> Any | None:
+    """读缓存并反序列化；Redis 故障/JSON 损坏一律按未命中处理。"""
     try:
         raw = await redis.get(key)
     except Exception as exc:  # noqa: BLE001 - 缓存读失败按未命中处理
@@ -112,6 +114,7 @@ async def _read(redis, key: str) -> Any | None:
 
 
 async def _write(redis, key: str, value: Any, ttl_seconds: int) -> None:
+    """写缓存（失败只记 debug，不影响本次请求结果）。"""
     try:
         await redis.set(key, json.dumps(value, ensure_ascii=False), ex=max(1, ttl_seconds))
     except Exception as exc:  # noqa: BLE001 - 写缓存失败不影响本次结果
@@ -119,6 +122,7 @@ async def _write(redis, key: str, value: Any, ttl_seconds: int) -> None:
 
 
 async def _acquire_lock(redis, key: str) -> bool:
+    """抢 single-flight 锁（SET NX PX；故障时按"没抢到"处理，不会挡住计算）。"""
     try:
         return bool(await redis.set(lock_key(key), "1", nx=True, px=LOCK_TTL_MS))
     except Exception:  # noqa: BLE001
@@ -126,6 +130,7 @@ async def _acquire_lock(redis, key: str) -> bool:
 
 
 async def _release_lock(redis, key: str) -> None:
+    """释放 single-flight 锁（永远静默，不掩盖计算阶段的异常）。"""
     try:
         await redis.delete(lock_key(key))
     except Exception:  # noqa: BLE001

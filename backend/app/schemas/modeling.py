@@ -1,3 +1,5 @@
+"""建模任务的响应模型。"""
+
 from datetime import datetime
 from typing import Any
 
@@ -5,6 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ModelingJobRead(BaseModel):
+    """建模任务视图（详情与列表共用；``percent`` 由 Redis 快照补齐）。"""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: str

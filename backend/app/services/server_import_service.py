@@ -1,3 +1,14 @@
+"""server/data 全量导入服务：把钻孔 Excel、工作面 JSON 与锦界交付包 catalog 一次性入库。
+
+入口是 ``scripts/import_server_data.py`` 调用的 ``ServerDataImportService.run()``。
+两个关键幂等约定：
+
+- 重跑不会重复建行：钻孔按 code、资产按 source_file、工作面按 code 做 upsert，
+  且已从源数据消失的“server/data 来源”钻孔会被清掉（手工创建与建模产物不动）；
+- 重名项目若含建模内容（``metadata.source=="modeling"`` 或有建模任务）则不劫持，
+  另建新项目，避免 import 脚本覆盖上传建模项目的原点与交付包。
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -50,20 +61,24 @@ STRATA_TOP_BOTTOM = "top_bottom"
 
 
 def normalize_match_key(value: Any) -> str:
+    """钻孔名匹配键：去空白、转大写、只留字母数字（吸收全半角/空格差异）。"""
     return "".join(char for char in str(value or "").strip().upper() if char.isalnum())
 
 
 def canonical_code(value: Any) -> str:
+    """展示用孔号：仅去空白并转大写（保留中文与连字符）。"""
     return re.sub(r"\s+", "", str(value or "")).upper()
 
 
 def as_float(value: Any, default: float = 0) -> float:
+    """Excel 单元格 → float，空值给默认值。"""
     if value in (None, ""):
         return default
     return float(value)
 
 
 def rows_as_dicts(path: Path) -> list[dict[str, Any]]:
+    """读取首个工作表为字典行列表（首行作表头，跳过全空行）。"""
     workbook = load_workbook(path, read_only=True, data_only=True)
     try:
         sheet = workbook.active
@@ -94,6 +109,7 @@ def detect_strata_convention(rows: list[dict[str, Any]]) -> str:
 
 
 def file_sha256(path: Path) -> str:
+    """流式计算文件 sha256（用于版本 content_hash 与幂等比对）。"""
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
@@ -102,6 +118,12 @@ def file_sha256(path: Path) -> str:
 
 
 class ServerDataImportService:
+    """server/data → MySQL 的全量导入（项目/钻孔/模型资产/工作面）。
+
+    ``run()`` 按顺序执行：校验源文件 → 读三份源数据 → upsert 项目 → upsert
+    钻孔与分层 → upsert 模型资产 → upsert 工作面 → 写 ImportRun 流水并提交。
+    """
+
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.data_root = settings.source_data_path
@@ -111,6 +133,7 @@ class ServerDataImportService:
         self.model_catalog_path = settings.source_model_catalog_path
 
     async def run(self, project_name: str) -> dict[str, Any]:
+        """执行一次全量导入，返回写入统计（钻孔/分层/资产/工作面数量等）。"""
         self._validate_sources()
         locations = self._read_locations()
         strata = self._read_strata()
@@ -138,6 +161,7 @@ class ServerDataImportService:
         return summary
 
     async def _has_modeling_content(self, project: Project) -> bool:
+        """项目是否包含上传建模的产物（建模任务或 modeling 来源资产）。"""
         from sqlalchemy import func
 
         from app.models.modeling import ModelingJob
@@ -153,6 +177,7 @@ class ServerDataImportService:
         return any((meta or {}).get("source") == "modeling" for meta in assets)
 
     def _validate_sources(self) -> None:
+        """校验四份必需源数据存在（位置表/分层表/工作面 JSON/catalog）。"""
         required = (
             self.location_path,
             self.strata_path,
@@ -164,6 +189,7 @@ class ServerDataImportService:
             raise AppError("IMPORT_SOURCE_MISSING", f"数据源不存在: {', '.join(missing)}")
 
     def _read_locations(self) -> dict[str, dict[str, Any]]:
+        """读钻孔位置表为 ``匹配键 → {code,x,y,z}``（缺失坐标的孔 x/y/z 记 0）。"""
         path = self.location_path
         result: dict[str, dict[str, Any]] = {}
         for row in rows_as_dicts(path):
@@ -228,6 +254,7 @@ class ServerDataImportService:
         return grouped
 
     def _read_model_catalog(self) -> dict[str, Any]:
+        """读锦界交付包 catalog.json。"""
         return json.loads(self.model_catalog_path.read_text(encoding="utf-8"))
 
     async def _upsert_project(
@@ -236,6 +263,11 @@ class ServerDataImportService:
         locations: dict[str, dict[str, Any]],
         catalog: dict[str, Any],
     ) -> Project:
+        """按名称 upsert 项目；原点与垂向比例优先取 catalog ``origin_restore``。
+
+        catalog 未提供时回退为孔口坐标均值。重名项目若含建模内容则放弃复用
+        （避免覆盖），由调用方拿到新项目行。
+        """
         project = await self.session.scalar(select(Project).where(Project.name == project_name))
         if project is not None and await self._has_modeling_content(project):
             # 重名但属于“上传钻孔建模”的项目:不要劫持(会覆盖原点并混入交付包数据),另建新项目。
@@ -273,6 +305,10 @@ class ServerDataImportService:
         locations: dict[str, dict[str, Any]],
         strata: dict[str, list[dict[str, Any]]],
     ) -> dict[str, int]:
+        """upsert 钻孔与分层段（整表重建 segments），并清理已从分层表移除的旧孔。
+
+        只导入分层表里有的孔；颜色按 ``sequence`` 取 ``LAYER_COLORS`` 配色表。
+        """
         existing_rows = await self.session.scalars(
             select(Borehole).where(Borehole.project_id == project.id)
         )
@@ -493,6 +529,7 @@ class ServerDataImportService:
         return len(catalog_rel_paths)
 
     def _package_relative_path(self, glb_path: Path) -> str:
+        """文件绝对路径 → 相对模型根目录的 posix 相对路径（越界即报错）。"""
         try:
             return glb_path.relative_to(self.model_root).as_posix()
         except ValueError as exc:
@@ -505,6 +542,7 @@ class ServerDataImportService:
     async def _assign_asset_version(
         self, asset: ModelAsset, glb_path: Path, relative_path: str
     ) -> None:
+        """把文件登记为资产的 v1 版本（已存在则原地更新路径/大小/哈希后重新指向）。"""
         version = await self.session.scalar(
             select(ModelVersion).where(
                 ModelVersion.model_id == asset.id,
@@ -523,6 +561,7 @@ class ServerDataImportService:
         asset.current_version_id = version.id
 
     async def _upsert_working_faces(self, project: Project) -> int:
+        """按 workingfaces.json upsert 工作面（code 匹配，字段整体刷新）。"""
         rows = json.loads((self.data_root / "workingfaces.json").read_text(encoding="utf-8"))
         existing_rows = await self.session.scalars(
             select(WorkingFace).where(WorkingFace.project_id == project.id)

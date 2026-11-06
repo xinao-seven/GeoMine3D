@@ -1,3 +1,5 @@
+"""项目 ORM：一切业务数据的聚合根（模型/钻孔/场景/标注/工作面/导入/建模任务）。"""
+
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Double, Float, String, Text
@@ -15,6 +17,12 @@ if TYPE_CHECKING:
 
 
 class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """项目聚合根。
+
+    ``origin_*`` 与 ``vertical_scale`` 由交付包 catalog 的 ``origin_restore`` 写回：
+    前端用「真实坐标 − 原点 × 垂向拉伸」把钻孔/模型放回同一基准（见 AGENTS.md
+    的坐标换算约定）。上传建模的项目这三个字段由建模引擎回填。
+    """
     __tablename__ = "projects"
 
     name: Mapped[str] = mapped_column(String(120), nullable=False, index=True)

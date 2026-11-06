@@ -21,6 +21,7 @@ _lock = threading.Lock()
 
 
 def _resolve(relative: str) -> Path:
+    """相对路径按 source_data 解析；绝对路径原样返回。"""
     path = Path(relative)
     if path.is_absolute():
         return path

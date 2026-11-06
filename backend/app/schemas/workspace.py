@@ -1,3 +1,5 @@
+"""工作面与导入历史的响应模型。"""
+
 from datetime import datetime
 from typing import Any
 
@@ -5,6 +7,8 @@ from pydantic import BaseModel, ConfigDict
 
 
 class TimestampedRead(BaseModel):
+    """带 id 与时间戳的只读基类。"""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: str
@@ -13,7 +17,6 @@ class TimestampedRead(BaseModel):
 
 
 class WorkingFaceRead(TimestampedRead):
-
     project_id: str
     code: str
     name: str

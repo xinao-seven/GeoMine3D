@@ -210,6 +210,7 @@ def check_package_dir(package_dir: Path) -> int:
 
 
 async def main() -> int:
+    """核对交付包双轨产物(渲染轨/分析轨)与注册 metadata 是否一致。"""
     parser = argparse.ArgumentParser(description="校验交付包渲染轨(含内部壁)/分析轨(闭合壳)")
     parser.add_argument("--project-id", help="只检查指定项目")
     parser.add_argument(

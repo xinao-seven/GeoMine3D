@@ -1,3 +1,11 @@
+"""FastAPI 应用入口：中间件、静态模型挂载、建模 worker 生命周期与 SPA 托管。
+
+- 所有业务路由挂在 ``settings.api_v1_prefix``（默认 /api/v1）下，见 api/v1/router;
+- 模型文件只有一个根目录:锦界交付包 + 上传建模交付包(projects/) + 手动上传版本
+  (user_uploads/) + 固定数据集,统一对外挂载 /static/models;
+- ``serve_frontend=true`` 时托管 GeoMine3D/dist,单端口对外提供整套服务。
+"""
+
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -61,6 +69,7 @@ class NoCacheStaticFiles(StaticFiles):
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    """启动/关闭钩子：连接 Redis、拉起建模队列 worker 并恢复中断任务。"""
     logger.info(
         "服务启动 env=%s debug=%s log_level=%s db_echo=%s",
         settings.app_env,
@@ -161,6 +170,7 @@ else:
 
 @app.get("/health", tags=["system"])
 async def health() -> dict[str, str]:
+    """存活探针（不做 DB/Redis 探测，降级也不影响服务可达性判断）。"""
     return {"status": "ok", "service": settings.app_name, "environment": settings.app_env}
 
 

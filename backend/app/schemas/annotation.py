@@ -1,9 +1,13 @@
+"""标注的请求/响应模型（坐标为场景 Three.js 坐标，颜色为 #RRGGBB）。"""
+
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
 class AnnotationCreate(BaseModel):
+    """新增标注入参。"""
+
     title: str = Field(min_length=1, max_length=120)
     content: str | None = None
     position_x: float

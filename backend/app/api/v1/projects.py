@@ -1,3 +1,5 @@
+"""项目端点：分页列表与 CRUD（删除会连带清理建模产物，见 ProjectService）。"""
+
 from fastapi import APIRouter, Query, Response, status
 
 from app.api.dependencies import DbSession

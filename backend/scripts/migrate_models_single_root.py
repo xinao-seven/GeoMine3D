@@ -168,6 +168,7 @@ async def migrate_db(dry_run: bool) -> tuple[int, int, list[str]]:
 
 
 def main() -> int:
+    """执行历史模型目录 → 单一模型根的迁移(文件搬移 + DB 路径改写,支持 --dry-run)。"""
     parser = argparse.ArgumentParser(description="模型文件迁移到单一根目录")
     parser.add_argument("--apply", action="store_true", help="实际执行(默认只打印计划)")
     args = parser.parse_args()

@@ -1,11 +1,11 @@
+"""工作台辅助端点：工作面列表与导入历史。"""
+
 from fastapi import APIRouter
-from sqlalchemy import select
 
 from app.api.dependencies import DbSession
-from app.models.workspace import ImportRun, WorkingFace
 from app.schemas.common import DataResponse
 from app.schemas.workspace import ImportRunRead, WorkingFaceRead
-from app.services.workspace_service import ensure_project
+from app.services import workspace_service
 
 router = APIRouter()
 
@@ -15,13 +15,8 @@ router = APIRouter()
     response_model=DataResponse[list[WorkingFaceRead]],
 )
 async def list_working_faces(project_id: str, session: DbSession):
-    await ensure_project(session, project_id)
-    rows = await session.scalars(
-        select(WorkingFace)
-        .where(WorkingFace.project_id == project_id)
-        .order_by(WorkingFace.code)
-    )
-    return DataResponse(data=list(rows))
+    """项目工作面列表（资源树“工作面”分组数据源）。"""
+    return DataResponse(data=await workspace_service.list_working_faces(session, project_id))
 
 
 @router.get(
@@ -29,10 +24,5 @@ async def list_working_faces(project_id: str, session: DbSession):
     response_model=DataResponse[list[ImportRunRead]],
 )
 async def list_import_runs(project_id: str, session: DbSession):
-    await ensure_project(session, project_id)
-    rows = await session.scalars(
-        select(ImportRun)
-        .where(ImportRun.project_id == project_id)
-        .order_by(ImportRun.created_at.desc())
-    )
-    return DataResponse(data=list(rows))
+    """项目导入历史（最近一次导入的来源/状态/摘要）。"""
+    return DataResponse(data=await workspace_service.list_import_runs(session, project_id))

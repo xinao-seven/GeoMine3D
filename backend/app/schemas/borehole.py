@@ -1,3 +1,9 @@
+"""钻孔与分层的请求/响应模型。
+
+两套 Excel 方言（深度=层底 或 深度=层顶）在导入时已折算成统一的
+top/bottom 深度语义，这里只做最终一致性校验（thickness == bottom - top）。
+"""
+
 from datetime import datetime
 from typing import Any
 
@@ -5,6 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class BoreholeSegmentInput(BaseModel):
+    """一个分层段入参；厚度缺省时按顶底深差计算。"""
+
     layer_name: str = Field(min_length=1, max_length=120)
     lithology: str | None = Field(default=None, max_length=120)
     top_depth: float

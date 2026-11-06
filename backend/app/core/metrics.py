@@ -36,18 +36,22 @@ MODELING_JOB_RESULTS = Counter(
 
 
 def record_cache_hit(namespace: str) -> None:
+    """缓存命中计数（按 namespace 维度）。"""
     CACHE_HITS.labels(namespace=namespace).inc()
 
 
 def record_cache_miss(namespace: str, reason: str = "miss") -> None:
+    """缓存未命中计数（reason 区分 miss / redis 不可用 / 值损坏）。"""
     CACHE_MISSES.labels(namespace=namespace, reason=reason).inc()
 
 
 def record_cache_shared(namespace: str) -> None:
+    """single-flight 等待者计数（衡量防击穿省掉的重复计算量）。"""
     CACHE_SHARED.labels(namespace=namespace).inc()
 
 
 def record_job_result(status: str, duration_seconds: float | None = None) -> None:
+    """建模任务结束状态计数；``duration_seconds`` 非 None 时顺带观测时长直方图。"""
     MODELING_JOB_RESULTS.labels(status=status).inc()
     if duration_seconds is not None:
         MODELING_JOB_DURATION.observe(max(0.0, duration_seconds))

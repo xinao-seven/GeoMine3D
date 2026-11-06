@@ -10,6 +10,7 @@ import numpy as np
 
 
 def pava_increasing(values: np.ndarray, weights: np.ndarray) -> np.ndarray:
+    """加权 PAVA 单调增拟合：相邻块均值违反递增时按质量加权合并，O(n)。"""
     means: list[float] = []
     masses: list[float] = []
     starts: list[int] = []

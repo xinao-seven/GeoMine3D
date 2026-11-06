@@ -55,6 +55,7 @@ from app.services.model_paths import (
 )
 from app.services.modeling_progress import record_progress
 from app.services.server_import_service import file_sha256
+from app.services.workspace_service import ensure_project
 
 # 建模引擎是 backend 顶层包;uvicorn 不一定以 backend 为工作目录启动,兜底注入 sys.path。
 if str(BACKEND_DIR) not in sys.path:
@@ -78,6 +79,17 @@ def _semaphore() -> asyncio.Semaphore:
 def job_input_dir(job_id: str) -> Path:
     """任务输入/日志目录(Excel、engine.log),仍在 uploads 下,不属于模型资产。"""
     return settings.upload_path / "modeling-jobs" / job_id
+
+
+async def get_job_status(job_id: str) -> str | None:
+    """开**新会话**查一次任务状态(SSE 循环里用)。
+
+    SSE 是长连接,不能一直拿着请求级会话(会长期占着事务/连接);而且 MySQL 默认
+    REPEATABLE READ,同一事务里反复读会永远看不到 worker 提交的新状态。
+    """
+    async with AsyncSessionFactory() as session:
+        job = await session.get(ModelingJob, job_id)
+        return None if job is None else job.status
 
 
 def project_output_dir(project_id: str) -> Path:
@@ -121,8 +133,29 @@ async def save_upload(upload: UploadFile, target: Path) -> int:
 
 
 class ModelingService:
+    """建模任务的请求级操作（创建任务 / 查询任务），随请求会话开关。"""
+
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
+
+    async def get_job_or_404(self, job_id: str) -> ModelingJob:
+        """按 ID 取建模任务；不存在抛 404（SSE 端点靠它提前拦掉无效长连接）。"""
+        job = (
+            await self.session.scalars(select(ModelingJob).where(ModelingJob.id == job_id))
+        ).first()
+        if job is None:
+            raise AppError("MODELING_JOB_NOT_FOUND", "建模任务不存在", status_code=404)
+        return job
+
+    async def list_project_jobs(self, project_id: str) -> list[ModelingJob]:
+        """项目的建模任务列表（按创建时间倒序；项目不存在抛 404）。"""
+        await ensure_project(self.session, project_id)
+        jobs = await self.session.scalars(
+            select(ModelingJob)
+            .where(ModelingJob.project_id == project_id)
+            .order_by(ModelingJob.created_at.desc())
+        )
+        return list(jobs)
 
     async def create_job(
         self,
@@ -133,6 +166,11 @@ class ModelingService:
         location_file: UploadFile,
         params: dict[str, Any],
     ) -> ModelingJob:
+        """创建独立项目 + pending 任务，并把两份上传 Excel 流式落盘。
+
+        ``output_dir`` 先空占位为项目产物根目录（相对模型根），发布成功后由
+        ``run_modeling_job`` 改写成具体 ``packages/<hash>`` 路径。
+        """
         project = Project(name=name.strip(), description=description, coordinate_system="Gauss-Kruger")
         self.session.add(project)
         await self.session.flush()
@@ -348,6 +386,7 @@ async def _execute_engine(
         last_commit = datetime.now(UTC)
 
         async def _pump_stdout() -> None:
+            """逐行消费引擎 stdout：写日志、解析进度帧、节流刷新任务 message。"""
             nonlocal last_commit
             assert process.stdout is not None
             async for raw in process.stdout:
@@ -582,6 +621,7 @@ async def _register_models(
             return None
 
     async def _assign_version(asset: ModelAsset, glb_path: Path, relative_path: str) -> None:
+        """把文件登记为资产的 v1 版本并指向它（优先复用发布阶段算好的哈希）。"""
         version = await session.scalar(
             select(ModelVersion).where(
                 ModelVersion.model_id == asset.id, ModelVersion.version == 1

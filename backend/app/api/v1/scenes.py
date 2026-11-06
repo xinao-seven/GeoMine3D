@@ -1,3 +1,5 @@
+"""场景配置端点：视角/图层/剖切/炸开快照的保存与恢复。"""
+
 from fastapi import APIRouter, Response, status
 
 from app.api.dependencies import DbSession

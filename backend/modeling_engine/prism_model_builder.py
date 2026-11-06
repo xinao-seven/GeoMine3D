@@ -58,6 +58,7 @@ class LayerResult:
 
 
 def _triangle_areas(xy: np.ndarray, simplices: np.ndarray) -> np.ndarray:
+    """三角形面积的绝对值（只关心大小，翻转检测用带符号版本）。"""
     return np.abs(_signed_triangle_areas(xy, simplices))
 
 
@@ -212,6 +213,7 @@ class PrismModel:
 
     # ------------------------------------------------------------------
     def _build_layers(self) -> None:
+        """逐层调用 ``_build_layer``（体元分类判断先在界面上整体向量化）。"""
         z = self.surfaces
         corner_thickness = z[:-1][:, self.simplices] - z[1:][:, self.simplices]
         negative = (corner_thickness < NEGATIVE_TOL).any(axis=2)
@@ -228,6 +230,12 @@ class PrismModel:
 
     # ------------------------------------------------------------------
     def _build_layer(self, layer_index, d, negative, deleted, retained) -> LayerResult:
+        """把一层建模成表面网格 + 含壁渲染网格 + 体网格。
+
+        步骤：装配保留体元的 6 顶点 → np.unique 顶点去重（带顶点→共享节点/
+        界面映射）→ 上下顶点重合计数给体元分类（wedge/pyramid/tetra）→
+        解析体积（竖直侧面用 A·h̄，逐界面位移用六面体分解）→ 组装三种网格。
+        """
         t0 = time.perf_counter()
         T = self.simplices
         node_idx = T[retained]                       # (P,3) 保留体元的节点索引

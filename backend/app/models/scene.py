@@ -1,3 +1,5 @@
+"""工作台场景 ORM：场景配置快照(scene_configs) 与持久化标注(annotations)。"""
+
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import JSON, Float, ForeignKey, String, Text
@@ -11,6 +13,7 @@ if TYPE_CHECKING:
 
 
 class SceneConfig(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """一份可保存/恢复的场景快照（相机、图层显隐、剖切、炸开与渲染参数）。"""
     __tablename__ = "scene_configs"
 
     project_id: Mapped[str] = mapped_column(
@@ -27,6 +30,7 @@ class SceneConfig(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 class Annotation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """一条三维标注（位置/标题/内容/颜色）；target_* 可选关联具体对象。"""
     __tablename__ = "annotations"
 
     project_id: Mapped[str] = mapped_column(

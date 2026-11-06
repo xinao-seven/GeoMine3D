@@ -39,6 +39,7 @@ _COLOR_BY_KIND = {
 
 
 def layer_color(name: str) -> str:
+    """层名 → 展示色（按岩性类别匹配，未识别回退中性色）。"""
     if name in _COLOR_BY_KIND:
         return _COLOR_BY_KIND[name]
     if "旋回泥岩" in name:
@@ -49,6 +50,7 @@ def layer_color(name: str) -> str:
 
 
 def layer_codes(n_layers: int) -> list[str]:
+    """层序 → 交付包文件代码（L01、L02…）。"""
     return [f"L{i + 1:02d}" for i in range(n_layers)]
 
 
@@ -128,6 +130,7 @@ def _semantic_volume_and_expected_keys(model: PrismModel, layer_index: int):
 
 
 def _mesh_face_keys(mesh) -> set:
+    """把 PolyData 的 faces 摊平成"排序顶点元组"集合（与预期键集比对用）。"""
     raw = mesh.faces
     out = set()
     i = 0
@@ -182,6 +185,7 @@ def consistency_check(model: PrismModel, layer_names: list[str], total_volume: f
 
 
 def write_readme(catalog: dict, package_dir: Path) -> None:
+    """按 catalog 生成包内 README.md（层序表、坐标口径、双轨说明、已知事项）。"""
     totals = catalog["totals"]
     contact = [r["layer"] for r in catalog["edge_integrity"] if r["non_manifold_edges"] > 0]
     lines = [

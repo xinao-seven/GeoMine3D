@@ -1,3 +1,5 @@
+"""异步建模任务 ORM（modeling_jobs，重试/心跳字段见类 docstring）。"""
+
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
