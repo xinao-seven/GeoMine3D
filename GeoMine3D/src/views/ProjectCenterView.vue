@@ -400,7 +400,10 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .project-center {
-    min-height: 100%;
+    /* 全局样式把 #app 设为 height:100% + overflow:hidden,这里必须用固定
+       height(而非 min-height)把自己限定在视口内,overflow-y:auto 才会生效;
+       否则内容随卡片数量撑高后被 #app 裁掉,页面多项目时无法滚动。 */
+    height: 100%;
     overflow-y: auto;
     position: relative;
     padding: 34px 5vw 24px;
